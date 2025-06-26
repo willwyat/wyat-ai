@@ -1,0 +1,11 @@
+# Global
+.env
+.env.local
+
+# Node
+node_modules/
+frontend/.next/
+frontend/out/
+
+# Rust
+backend/target/
