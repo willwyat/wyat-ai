@@ -1,5 +1,7 @@
+use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 use tokio::fs;
+use tower_http::cors::{Any, CorsLayer};
 
 use axum::{
     Json, Router,
@@ -8,16 +10,19 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, patch, post},
 };
+use hyper;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Deserialize)]
 struct NewJournalEntry {
+    title: String,
     text: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct JournalVersion {
+    title: String,
     text: String,
     timestamp: chrono::DateTime<chrono::Utc>,
 }
@@ -26,6 +31,7 @@ struct JournalVersion {
 struct VersionedJournalEntry {
     id: u32,
     versions: Vec<JournalVersion>,
+    preview_text: String,
 }
 
 #[derive(Serialize)]
@@ -35,7 +41,8 @@ struct JournalResponse {
 
 async fn create_journal_entry(Json(payload): Json<NewJournalEntry>) -> Json<JournalResponse> {
     let new_version = JournalVersion {
-        text: payload.text,
+        title: payload.title.clone(),
+        text: payload.text.clone(),
         timestamp: chrono::Utc::now(),
     };
 
@@ -54,6 +61,7 @@ async fn create_journal_entry(Json(payload): Json<NewJournalEntry>) -> Json<Jour
     let new_entry = VersionedJournalEntry {
         id: new_id,
         versions: vec![new_version],
+        preview_text: payload.text.chars().take(300).collect(),
     };
 
     entries.push(new_entry);
@@ -121,9 +129,11 @@ async fn edit_journal_entry(
     for entry in &mut entries {
         if entry.id == id {
             entry.versions.push(JournalVersion {
-                text: payload.text,
+                title: payload.title.clone(),
+                text: payload.text.clone(),
                 timestamp: chrono::Utc::now(),
             });
+            entry.preview_text = payload.text.chars().take(300).collect();
             found = true;
             break;
         }
@@ -185,6 +195,15 @@ async fn fetch_oura_sleep() -> axum::Json<SleepData> {
 async fn main() {
     dotenv().ok();
 
+    let cors = CorsLayer::new()
+        .allow_origin(HeaderValue::from_static("http://localhost:3000")) // ✅ match frontend origin
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_headers([
+            HeaderName::from_static("content-type"),
+            HeaderName::from_static("accept"),
+        ])
+        .allow_credentials(true);
+
     let app = Router::new()
         .route("/", get(|| async { "Hello from backend" }))
         .route("/oura/sleep", get(fetch_oura_sleep))
@@ -197,10 +216,16 @@ async fn main() {
             get(get_journal_entry_by_id)
                 .patch(edit_journal_entry)
                 .delete(delete_journal_entry),
-        );
+        )
+        .layer(cors);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
     println!("Backend listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let std_listener = listener.into_std().unwrap();
+    hyper::Server::from_tcp(std_listener)
+        .unwrap()
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
