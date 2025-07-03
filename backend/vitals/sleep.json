@@ -1,0 +1,93 @@
+[
+  {
+    "date": "2025-06-21",
+    "sleep_score": null,
+    "total_sleep_minutes": 384,
+    "rem_sleep_minutes": 78,
+    "deep_sleep_minutes": 102,
+    "light_sleep_minutes": 203,
+    "time_in_bed_minutes": 446,
+    "efficiency": 86,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-22",
+    "sleep_score": null,
+    "total_sleep_minutes": 331,
+    "rem_sleep_minutes": 79,
+    "deep_sleep_minutes": 89,
+    "light_sleep_minutes": 163,
+    "time_in_bed_minutes": 362,
+    "efficiency": 91,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-25",
+    "sleep_score": null,
+    "total_sleep_minutes": 41,
+    "rem_sleep_minutes": 2,
+    "deep_sleep_minutes": 3,
+    "light_sleep_minutes": 35,
+    "time_in_bed_minutes": 77,
+    "efficiency": 53,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-26",
+    "sleep_score": null,
+    "total_sleep_minutes": 333,
+    "rem_sleep_minutes": 74,
+    "deep_sleep_minutes": 89,
+    "light_sleep_minutes": 170,
+    "time_in_bed_minutes": 364,
+    "efficiency": 91,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-28",
+    "sleep_score": null,
+    "total_sleep_minutes": 339,
+    "rem_sleep_minutes": 78,
+    "deep_sleep_minutes": 109,
+    "light_sleep_minutes": 151,
+    "time_in_bed_minutes": 376,
+    "efficiency": 90,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-27",
+    "sleep_score": null,
+    "total_sleep_minutes": 401,
+    "rem_sleep_minutes": 94,
+    "deep_sleep_minutes": 100,
+    "light_sleep_minutes": 207,
+    "time_in_bed_minutes": 459,
+    "efficiency": 87,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  },
+  {
+    "date": "2025-06-20",
+    "sleep_score": null,
+    "total_sleep_minutes": 16,
+    "rem_sleep_minutes": 0,
+    "deep_sleep_minutes": 0,
+    "light_sleep_minutes": 16,
+    "time_in_bed_minutes": 31,
+    "efficiency": 52,
+    "average_hr": null,
+    "lowest_hr": null,
+    "hrv": null
+  }
+]

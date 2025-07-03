@@ -1,0 +1,52 @@
+[
+  {
+    "id": "30d0b3ac-444b-4535-bb6e-fb24530a2a0e",
+    "date": "2025-06-01",
+    "start": "2025-06-01T16:41:00-05:00",
+    "end": "2025-06-01T16:55:00-05:00",
+    "activity": "walking",
+    "calories": 28.768068,
+    "distance": 304.2465,
+    "intensity": "moderate"
+  },
+  {
+    "id": "1b09a3ef-175f-4b24-80d6-27a7dc5b5716",
+    "date": "2025-06-13",
+    "start": "2025-06-13T16:32:00-05:00",
+    "end": "2025-06-13T16:56:00-05:00",
+    "activity": "walking",
+    "calories": 69.590935,
+    "distance": 1504.4772,
+    "intensity": "moderate"
+  },
+  {
+    "id": "c4aad408-3ea4-4c7f-9936-876495f7a3bc",
+    "date": "2025-06-01",
+    "start": "2025-06-01T20:50:00-05:00",
+    "end": "2025-06-01T21:04:00-05:00",
+    "activity": "walking",
+    "calories": 35.722908,
+    "distance": 758.51215,
+    "intensity": "moderate"
+  },
+  {
+    "id": "ca5213d5-c5be-4443-9d13-766d99d343ce",
+    "date": "2025-06-09",
+    "start": "2025-06-09T15:34:00-04:00",
+    "end": "2025-06-09T15:45:00-04:00",
+    "activity": "walking",
+    "calories": 33.51438,
+    "distance": 412.27698,
+    "intensity": "moderate"
+  },
+  {
+    "id": "e88f22d1-672a-48f9-a506-f1d77671b852",
+    "date": "2025-06-13",
+    "start": "2025-06-13T23:53:00-04:00",
+    "end": "2025-06-14T00:15:00-04:00",
+    "activity": "walking",
+    "calories": 56.761803,
+    "distance": null,
+    "intensity": "moderate"
+  }
+]
