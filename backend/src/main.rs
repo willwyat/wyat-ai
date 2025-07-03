@@ -5,7 +5,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use axum::{
     Extension, Json, Router,
-    extract::Path as AxumPath,
+    extract::{Path as AxumPath, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, patch, post},
@@ -108,39 +108,25 @@ async fn create_journal_entry(Json(payload): Json<NewJournalEntry>) -> Json<Jour
     })
 }
 
+async fn test_mongo() -> impl IntoResponse {
+    Json(json!({"status": "MongoDB endpoint ready"}))
+}
+
 async fn create_journal_entry_mongo(
+    State(state): State<Arc<AppState>>,
     Json(payload): Json<NewJournalEntry>,
-    Extension(state): Extension<AppState>,
 ) -> impl IntoResponse {
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
-
     let mongo_entry = JournalEntry {
         title: payload.title,
         text: payload.text,
         timestamp: chrono::Utc::now(),
     };
-
     match collection.insert_one(mongo_entry, None).await {
         Ok(_) => Json(json!({"status": "success", "message": "Saved to MongoDB"})).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
-}
-
-async fn create_journal_entry_mongo_simple(
-    Json(payload): Json<NewJournalEntry>,
-) -> impl IntoResponse {
-    // For now, just return success - we'll add MongoDB later
-    Json(json!({
-        "status": "success",
-        "message": "MongoDB endpoint ready - would save to MongoDB",
-        "data": {
-            "title": payload.title,
-            "text": payload.text,
-            "timestamp": chrono::Utc::now()
-        }
-    }))
-    .into_response()
 }
 
 async fn get_journal_entries() -> Json<Vec<VersionedJournalEntry>> {
@@ -494,10 +480,6 @@ async fn log_oura_sleep_data(
     }
 }
 
-async fn test_mongo() -> impl IntoResponse {
-    Json(json!({"status": "MongoDB endpoint ready"}))
-}
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -512,7 +494,7 @@ async fn main() {
 
     println!("✅ Connected to MongoDB Atlas");
 
-    let state = AppState { mongo_client };
+    let state = Arc::new(AppState { mongo_client });
 
     let cors = CorsLayer::new()
         .allow_origin(HeaderValue::from_static("http://localhost:3000")) // ✅ match frontend origin
@@ -529,10 +511,7 @@ async fn main() {
             "/journal",
             get(get_journal_entries).post(create_journal_entry),
         )
-        .route(
-            "/journal/mongo-simple",
-            post(create_journal_entry_mongo_simple),
-        )
+        .route("/journal/mongo", post(create_journal_entry_mongo))
         .route(
             "/journal/:id",
             get(get_journal_entry_by_id)
@@ -552,7 +531,7 @@ async fn main() {
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
         .layer(cors)
-        .layer(Extension(state.clone()));
+        .with_state(state.clone());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
     println!("Backend listening on {}", addr);
