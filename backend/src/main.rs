@@ -1,5 +1,11 @@
+mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
+use journal::{
+    AppState, JournalResponse, NewJournalEntry, create_journal_entry_mongo,
+    delete_journal_entry_mongo, edit_journal_entry_mongo, get_journal_entries_mongo,
+    get_journal_entry_by_id_mongo,
+};
 use tokio::fs;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -36,12 +42,6 @@ use reqwest::Client;
 use std::env;
 use std::sync::Arc;
 
-#[derive(Deserialize)]
-struct NewJournalEntry {
-    title: String,
-    text: String,
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 struct JournalVersion {
     title: String,
@@ -54,24 +54,6 @@ struct VersionedJournalEntry {
     id: u32,
     versions: Vec<JournalVersion>,
     preview_text: String,
-}
-
-#[derive(Serialize)]
-struct JournalResponse {
-    message: String,
-}
-
-// MongoDB journal entry struct for storage
-#[derive(Serialize, Deserialize, Debug)]
-struct JournalEntry {
-    title: String,
-    text: String,
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Clone)]
-struct AppState {
-    mongo_client: MongoClient,
 }
 
 async fn create_journal_entry(Json(payload): Json<NewJournalEntry>) -> Json<JournalResponse> {
@@ -115,23 +97,6 @@ async fn test_mongo() -> impl IntoResponse {
     Json(json!({"status": "MongoDB endpoint ready"}))
 }
 
-async fn create_journal_entry_mongo(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<NewJournalEntry>,
-) -> impl IntoResponse {
-    let db = state.mongo_client.database("wyat");
-    let collection: Collection<JournalEntry> = db.collection("journal");
-    let mongo_entry = JournalEntry {
-        title: payload.title,
-        text: payload.text,
-        timestamp: chrono::Utc::now(),
-    };
-    match collection.insert_one(mongo_entry, None).await {
-        Ok(_) => Json(json!({"status": "success", "message": "Saved to MongoDB"})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
-
 async fn get_journal_entries() -> Json<Vec<VersionedJournalEntry>> {
     let path = std::path::Path::new("journal.json");
 
@@ -145,22 +110,6 @@ async fn get_journal_entries() -> Json<Vec<VersionedJournalEntry>> {
     };
 
     Json(entries)
-}
-
-async fn get_journal_entries_mongo(
-    State(state): State<Arc<AppState>>,
-) -> axum::Json<Vec<JournalEntry>> {
-    let db = state.mongo_client.database("wyat");
-    let collection: Collection<JournalEntry> = db.collection("journal");
-    let mut cursor = match collection.find(None, None).await {
-        Ok(cursor) => cursor,
-        Err(_) => return axum::Json(vec![]),
-    };
-    let mut entries = Vec::new();
-    while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
-        entries.push(doc);
-    }
-    axum::Json(entries)
 }
 
 async fn get_journal_entry_by_id(AxumPath(id): AxumPath<u32>) -> impl IntoResponse {
@@ -532,6 +481,9 @@ async fn main() {
         )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
+        .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))
+        .route("/journal/mongo/:id", patch(edit_journal_entry_mongo))
+        .route("/journal/mongo/:id", delete(delete_journal_entry_mongo))
         .route(
             "/journal/:id",
             get(get_journal_entry_by_id)
