@@ -18,6 +18,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
 
+use futures::stream::TryStreamExt;
+use mongodb::options::FindOptions;
+
 mod oura;
 use oura::{
     SleepData, fetch_oura_heart_rate_data, fetch_oura_sleep_data, fetch_oura_stress_data,
@@ -142,6 +145,22 @@ async fn get_journal_entries() -> Json<Vec<VersionedJournalEntry>> {
     };
 
     Json(entries)
+}
+
+async fn get_journal_entries_mongo(
+    State(state): State<Arc<AppState>>,
+) -> axum::Json<Vec<JournalEntry>> {
+    let db = state.mongo_client.database("wyat");
+    let collection: Collection<JournalEntry> = db.collection("journal");
+    let mut cursor = match collection.find(None, None).await {
+        Ok(cursor) => cursor,
+        Err(_) => return axum::Json(vec![]),
+    };
+    let mut entries = Vec::new();
+    while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+        entries.push(doc);
+    }
+    axum::Json(entries)
 }
 
 async fn get_journal_entry_by_id(AxumPath(id): AxumPath<u32>) -> impl IntoResponse {
@@ -512,6 +531,7 @@ async fn main() {
             get(get_journal_entries).post(create_journal_entry),
         )
         .route("/journal/mongo", post(create_journal_entry_mongo))
+        .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route(
             "/journal/:id",
             get(get_journal_entry_by_id)

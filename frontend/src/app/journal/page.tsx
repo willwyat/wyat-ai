@@ -3,28 +3,22 @@
 
 import { useEffect, useState, FormEvent } from "react";
 
-type JournalVersion = {
+type JournalEntry = {
   title: string;
   text: string;
   timestamp: string;
 };
 
-type VersionedJournalEntry = {
-  id: number;
-  versions: JournalVersion[];
-  preview_text: string;
-};
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export default function JournalPage() {
-  const [entries, setEntries] = useState<VersionedJournalEntry[]>([]);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState("");
   const [newText, setNewText] = useState("");
 
   useEffect(() => {
-    fetch(`${API_URL}/journal`)
+    fetch(`${API_URL}/journal/mongo/all`)
       .then((res) => res.json())
       .then((data) => {
         setEntries(data);
@@ -36,7 +30,7 @@ export default function JournalPage() {
     e.preventDefault();
     if (!newTitle.trim() || !newText.trim()) return;
 
-    await fetch(`${API_URL}/journal`, {
+    await fetch(`${API_URL}/journal/mongo`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -49,7 +43,7 @@ export default function JournalPage() {
     setNewTitle("");
     setNewText("");
     setLoading(true);
-    const res = await fetch(`${API_URL}/journal`);
+    const res = await fetch(`${API_URL}/journal/mongo/all`);
     const data = await res.json();
     setEntries(data);
     setLoading(false);
@@ -94,24 +88,18 @@ export default function JournalPage() {
               <p>No journal entries found.</p>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {entries.map((entry) => (
-                  <div key={entry.id}>
-                    {entry.versions.map((version, i) => (
-                      <div
-                        className="flex flex-col gap-5 rounded px-6 py-5 transition-colors ease-in-out duration-300 bg-zinc-100 hover:bg-zinc-100/50 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 cursor-pointer"
-                        key={i}
-                      >
-                        <h3 className="font-semibold">{version.title}</h3>
-
-                        <p className="text-zinc-700 dark:text-zinc-300 line-clamp-4">
-                          {entry.preview_text}
-                        </p>
-                        <p className="text-zinc-400 dark:text-zinc-600">
-                          Last updated{" "}
-                          {new Date(version.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                    ))}
+                {entries.map((entry, i) => (
+                  <div
+                    key={i}
+                    className="flex flex-col gap-5 rounded px-6 py-5 transition-colors ease-in-out duration-300 bg-zinc-100 hover:bg-zinc-100/50 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 cursor-pointer"
+                  >
+                    <h3 className="font-semibold">{entry.title}</h3>
+                    <p className="text-zinc-700 dark:text-zinc-300 line-clamp-4">
+                      {entry.text.slice(0, 300)}
+                    </p>
+                    <p className="text-zinc-400 dark:text-zinc-600">
+                      Last updated {new Date(entry.timestamp).toLocaleString()}
+                    </p>
                   </div>
                 ))}
               </div>
