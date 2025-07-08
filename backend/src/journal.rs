@@ -5,9 +5,13 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::stream::TryStreamExt;
-use mongodb::{Client as MongoClient, Collection, bson::doc};
+use mongodb::bson::oid::ObjectId;
+use mongodb::{
+    Client as MongoClient, Collection,
+    bson::{doc, to_bson},
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -16,19 +20,25 @@ pub struct AppState {
     pub mongo_client: MongoClient,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JournalVersion {
+    pub text: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JournalEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub title: String,
+    pub versions: Vec<JournalVersion>,
+    pub preview_text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NewJournalEntry {
     pub title: String,
     pub text: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct JournalEntry {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<mongodb::bson::oid::ObjectId>,
-    pub title: String,
-    pub text: String,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Serialize)]
@@ -42,13 +52,20 @@ pub async fn create_journal_entry_mongo(
 ) -> impl axum::response::IntoResponse {
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
-    let mongo_entry = JournalEntry {
-        id: None,
-        title: payload.title,
-        text: payload.text,
+    let version = JournalVersion {
+        text: payload.text.clone(),
         timestamp: Utc::now(),
     };
-    match collection.insert_one(mongo_entry, None).await {
+
+    let preview_text = payload.text.chars().take(100).collect::<String>();
+
+    let new_entry = JournalEntry {
+        id: None,
+        title: payload.title.clone(),
+        versions: vec![version],
+        preview_text,
+    };
+    match collection.insert_one(new_entry, None).await {
         Ok(_) => Json(serde_json::json!({"status": "success", "message": "Saved to MongoDB"}))
             .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -75,7 +92,7 @@ pub async fn get_journal_entry_by_id_mongo(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    use mongodb::bson::{Bson, doc};
+    use mongodb::bson::doc;
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
 
@@ -106,12 +123,14 @@ pub async fn edit_journal_entry_mongo(
     };
 
     let filter = doc! { "_id": object_id };
+    let new_version = JournalVersion {
+        text: payload.text.clone(),
+        timestamp: Utc::now(),
+    };
+    let preview_text = payload.text.chars().take(100).collect::<String>();
     let update = doc! {
-        "$set": {
-            "title": payload.title,
-            "text": payload.text,
-            "timestamp": mongodb::bson::DateTime::from(std::time::SystemTime::now()),
-        }
+        "$push": { "versions": to_bson(&new_version).unwrap() },
+        "$set": { "preview_text": preview_text }
     };
 
     match collection.update_one(filter, update, None).await {

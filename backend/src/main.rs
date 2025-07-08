@@ -2,7 +2,7 @@ mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 use journal::{
-    AppState, JournalResponse, NewJournalEntry, create_journal_entry_mongo,
+    AppState, JournalEntry, JournalResponse, NewJournalEntry, create_journal_entry_mongo,
     delete_journal_entry_mongo, edit_journal_entry_mongo, get_journal_entries_mongo,
     get_journal_entry_by_id_mongo,
 };
