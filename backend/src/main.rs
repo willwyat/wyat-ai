@@ -2,344 +2,33 @@ mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 use journal::{
-    AppState, JournalEntry, JournalResponse, NewJournalEntry, create_journal_entry_mongo,
-    delete_journal_entry_mongo, edit_journal_entry_mongo, get_journal_entries_mongo,
-    get_journal_entry_by_id_mongo,
+    AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
+    get_journal_entries_mongo, get_journal_entry_by_id_mongo,
 };
-use tokio::fs;
 use tower_http::cors::{Any, CorsLayer};
 
 use axum::{
-    Extension, Json, Router,
-    extract::{Path as AxumPath, State},
-    http::StatusCode,
+    Json, Router,
     response::IntoResponse,
     routing::{delete, get, patch, post},
 };
-use chrono::Utc;
 use hyper;
 use mongodb::bson::doc;
-use mongodb::{Client as MongoClient, Collection, options::ClientOptions};
+use mongodb::{Client as MongoClient, options::ClientOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
 
-use futures::stream::TryStreamExt;
-use mongodb::options::FindOptions;
-
 mod oura;
-use oura::{
-    SleepData, fetch_oura_heart_rate_data, fetch_oura_sleep_data, fetch_oura_stress_data,
-    fetch_oura_vo2_data, fetch_oura_workout_data, write_heart_rate_to_file, write_stress_to_file,
-    write_vo2_to_file, write_workout_to_file,
-};
-
-use axum::extract::Query;
-use std::collections::HashMap;
+use oura::handle_oura_sleep_sync;
 
 use axum::Json as AxumJson;
 use reqwest::Client;
 use std::env;
 use std::sync::Arc;
 
-#[derive(Serialize, Deserialize, Clone)]
-struct JournalVersion {
-    title: String,
-    text: String,
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct VersionedJournalEntry {
-    id: u32,
-    versions: Vec<JournalVersion>,
-    preview_text: String,
-}
-
-async fn create_journal_entry(Json(payload): Json<NewJournalEntry>) -> Json<JournalResponse> {
-    let new_version = JournalVersion {
-        title: payload.title.clone(),
-        text: payload.text.clone(),
-        timestamp: chrono::Utc::now(),
-    };
-
-    let path = std::path::Path::new("journal.json");
-    let mut entries: Vec<VersionedJournalEntry> = if path.exists() {
-        let data = fs::read_to_string(path)
-            .await
-            .unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    let new_id = entries.last().map_or(1, |entry| entry.id + 1);
-
-    let new_entry = VersionedJournalEntry {
-        id: new_id,
-        versions: vec![new_version.clone()],
-        preview_text: payload.text.chars().take(300).collect(),
-    };
-
-    entries.push(new_entry);
-
-    let json = serde_json::to_string_pretty(&entries).unwrap();
-    fs::write(path, json).await.unwrap();
-
-    println!("Saved new journal entry with id {}", new_id);
-
-    Json(JournalResponse {
-        message: format!("Journal entry #{} saved to journal.json.", new_id),
-    })
-}
-
 async fn test_mongo() -> impl IntoResponse {
     Json(json!({"status": "MongoDB endpoint ready"}))
-}
-
-async fn get_journal_entries() -> Json<Vec<VersionedJournalEntry>> {
-    let path = std::path::Path::new("journal.json");
-
-    let entries: Vec<VersionedJournalEntry> = if path.exists() {
-        let data = fs::read_to_string(path)
-            .await
-            .unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    Json(entries)
-}
-
-async fn get_journal_entry_by_id(AxumPath(id): AxumPath<u32>) -> impl IntoResponse {
-    let path = std::path::Path::new("journal.json");
-
-    let entries: Vec<VersionedJournalEntry> = if path.exists() {
-        let data = fs::read_to_string(path)
-            .await
-            .unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    match entries.into_iter().find(|entry| entry.id == id) {
-        Some(entry) => Json(entry).into_response(),
-        None => (StatusCode::NOT_FOUND, "Entry not found").into_response(),
-    }
-}
-
-async fn edit_journal_entry(
-    AxumPath(id): AxumPath<u32>,
-    Json(payload): Json<NewJournalEntry>,
-) -> impl IntoResponse {
-    let path = std::path::Path::new("journal.json");
-
-    let mut entries: Vec<VersionedJournalEntry> = if path.exists() {
-        let data = fs::read_to_string(path)
-            .await
-            .unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    let mut found = false;
-
-    for entry in &mut entries {
-        if entry.id == id {
-            entry.versions.push(JournalVersion {
-                title: payload.title.clone(),
-                text: payload.text.clone(),
-                timestamp: chrono::Utc::now(),
-            });
-            entry.preview_text = payload.text.chars().take(300).collect();
-            found = true;
-            break;
-        }
-    }
-
-    if found {
-        let json = serde_json::to_string_pretty(&entries).unwrap();
-        fs::write(path, json).await.unwrap();
-        Json(JournalResponse {
-            message: format!("Journal entry #{} updated.", id),
-        })
-        .into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "Entry not found").into_response()
-    }
-}
-
-async fn delete_journal_entry(AxumPath(id): AxumPath<u32>) -> impl IntoResponse {
-    let path = std::path::Path::new("journal.json");
-
-    let mut entries: Vec<VersionedJournalEntry> = if path.exists() {
-        let data = fs::read_to_string(path)
-            .await
-            .unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str(&data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    let original_len = entries.len();
-    entries.retain(|entry| entry.id != id);
-
-    if entries.len() < original_len {
-        let json = serde_json::to_string_pretty(&entries).unwrap();
-        fs::write(path, json).await.unwrap();
-        Json(JournalResponse {
-            message: format!("Journal entry #{} deleted.", id),
-        })
-        .into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "Entry not found").into_response()
-    }
-}
-
-async fn fetch_oura_sleep() -> impl IntoResponse {
-    println!("Loaded OURA_API_URL: {:?}", std::env::var("OURA_API_URL"));
-    match fetch_oura_sleep_data("2025-06-25", "2025-06-26").await {
-        Ok(data) => Json(data).into_response(),
-        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
-    }
-}
-
-async fn sync_oura_sleep(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default_date = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-
-    let start_date = params
-        .get("start")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_date);
-    let end_date = params
-        .get("end")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_date);
-
-    match fetch_oura_sleep_data(start_date, end_date).await {
-        Ok(sleep_data) => match oura::write_sleep_summary_to_file(&sleep_data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced sleep data for {} → {}", start_date, end_date),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
-    }
-}
-
-async fn fetch_oura_workouts() -> impl IntoResponse {
-    match fetch_oura_workout_data("2025-06-02", "2025-06-24").await {
-        Ok(data) => Json(data).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn sync_oura_workouts(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let start = params.get("start").unwrap_or(&default).as_str();
-    let end = params.get("end").unwrap_or(&default).as_str();
-
-    match fetch_oura_workout_data(start, end).await {
-        Ok(data) => match write_workout_to_file(&data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced workouts {}→{}", start, end),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn fetch_oura_heart_rate() -> impl IntoResponse {
-    match fetch_oura_heart_rate_data("2025-06-01", "2025-06-25").await {
-        Ok(data) => Json(data).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn sync_oura_heart_rate(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let start = params.get("start").unwrap_or(&default).as_str();
-    let end = params.get("end").unwrap_or(&default).as_str();
-
-    match fetch_oura_heart_rate_data(start, end).await {
-        Ok(data) => match write_heart_rate_to_file(&data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced heart rate {}→{}", start, end),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn fetch_oura_vo2() -> impl IntoResponse {
-    match fetch_oura_vo2_data("2025-06-01", "2025-06-25").await {
-        Ok(data) => Json(data).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn sync_oura_vo2(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let start = params.get("start").unwrap_or(&default).as_str();
-    let end = params.get("end").unwrap_or(&default).as_str();
-
-    match fetch_oura_vo2_data(start, end).await {
-        Ok(data) => match write_vo2_to_file(&data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced VO2 max {}→{}", start, end),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn fetch_oura_stress() -> impl IntoResponse {
-    match fetch_oura_stress_data("2025-06-01", "2025-06-25").await {
-        Ok(data) => Json(data).into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
-}
-
-async fn sync_oura_stress(Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let start = params.get("start").unwrap_or(&default).as_str();
-    let end = params.get("end").unwrap_or(&default).as_str();
-
-    match fetch_oura_stress_data(start, end).await {
-        Ok(data) => match write_stress_to_file(&data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced stress {}→{}", start, end),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
-        Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
-    }
 }
 
 #[derive(Serialize)]
@@ -420,34 +109,6 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
     AxumJson(json).into_response()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct OuraSleepRecord {
-    summary_date: String,
-    total_sleep: i32,
-    score: i32,
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-async fn log_oura_sleep_data(
-    Json(payload): Json<OuraSleepRecord>,
-    Extension(mongo_client): Extension<MongoClient>,
-) -> impl IntoResponse {
-    let db = mongo_client.database("wyat");
-    let collection: Collection<OuraSleepRecord> = db.collection("oura_sleep");
-
-    let record = OuraSleepRecord {
-        summary_date: payload.summary_date,
-        total_sleep: payload.total_sleep,
-        score: payload.score,
-        timestamp: chrono::Utc::now(),
-    };
-
-    match collection.insert_one(record, None).await {
-        Ok(_) => Json(json!({"status": "success"})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -475,31 +136,12 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "Hello from backend" }))
-        .route(
-            "/journal",
-            get(get_journal_entries).post(create_journal_entry),
-        )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))
         .route("/journal/mongo/:id", patch(edit_journal_entry_mongo))
         .route("/journal/mongo/:id", delete(delete_journal_entry_mongo))
-        .route(
-            "/journal/:id",
-            get(get_journal_entry_by_id)
-                .patch(edit_journal_entry)
-                .delete(delete_journal_entry),
-        )
-        .route("/oura/sleep", get(fetch_oura_sleep))
-        .route("/oura/sleep/sync", get(sync_oura_sleep))
-        .route("/oura/workout", get(fetch_oura_workouts))
-        .route("/oura/workout/sync", get(sync_oura_workouts))
-        .route("/oura/heart_rate", get(fetch_oura_heart_rate))
-        .route("/oura/heart_rate/sync", get(sync_oura_heart_rate))
-        .route("/oura/vO2_max", get(fetch_oura_vo2))
-        .route("/oura/vO2_max/sync", get(sync_oura_vo2))
-        .route("/oura/stress", get(fetch_oura_stress))
-        .route("/oura/stress/sync", get(sync_oura_stress))
+        .route("/oura/sleep/sync", get(handle_oura_sleep_sync))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
         .layer(cors)
