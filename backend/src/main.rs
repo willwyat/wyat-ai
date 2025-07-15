@@ -125,8 +125,11 @@ async fn main() {
 
     let state = Arc::new(AppState { mongo_client });
 
+    let origin =
+        std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
+
     let cors = CorsLayer::new()
-        .allow_origin(HeaderValue::from_static("http://localhost:3000")) // ✅ match frontend origin
+        .allow_origin(origin.parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([
             HeaderName::from_static("content-type"),
