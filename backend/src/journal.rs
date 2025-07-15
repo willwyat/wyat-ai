@@ -48,8 +48,20 @@ pub struct JournalResponse {
 
 pub async fn create_journal_entry_mongo(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<NewJournalEntry>,
 ) -> impl axum::response::IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
+
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
     let version = JournalVersion {
@@ -74,7 +86,19 @@ pub async fn create_journal_entry_mongo(
 
 pub async fn get_journal_entries_mongo(
     State(state): State<Arc<AppState>>,
-) -> Json<Vec<JournalEntry>> {
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
+
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
     let mut cursor = collection
@@ -85,13 +109,24 @@ pub async fn get_journal_entries_mongo(
     while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
         entries.push(doc);
     }
-    Json(entries)
+    Json(entries).into_response()
 }
 
 pub async fn get_journal_entry_by_id_mongo(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
     use mongodb::bson::doc;
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
@@ -112,8 +147,19 @@ pub async fn get_journal_entry_by_id_mongo(
 pub async fn edit_journal_entry_mongo(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<NewJournalEntry>,
 ) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
 
@@ -151,7 +197,18 @@ pub async fn edit_journal_entry_mongo(
 pub async fn delete_journal_entry_mongo(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
 
