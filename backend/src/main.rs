@@ -134,6 +134,7 @@ async fn main() {
         .allow_headers([
             HeaderName::from_static("content-type"),
             HeaderName::from_static("accept"),
+            HeaderName::from_static("x-wyat-api-key"),
         ])
         .allow_credentials(true);
 
