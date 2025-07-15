@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { API_URL } from "@/lib/config";
 
 interface JournalEntry {
   _id: string;
@@ -10,9 +11,11 @@ interface JournalEntry {
 export default async function JournalEntryPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const res = await fetch(`http://localhost:3001/journal/mongo/${params.id}`, {
+  const { id } = await params;
+
+  const res = await fetch(`${API_URL}/journal/mongo/${id}`, {
     cache: "no-store",
   });
 

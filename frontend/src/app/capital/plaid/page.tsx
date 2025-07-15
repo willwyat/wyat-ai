@@ -2,13 +2,14 @@
 
 import { PlaidLink } from "react-plaid-link";
 import { useEffect, useState } from "react";
+import { API_URL } from "@/lib/config";
 
 export default function PlaidPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
 
   useEffect(() => {
     // Call your backend to create a new link token
-    fetch("http://localhost:3001/plaid/link-token/create")
+    fetch(`${API_URL}/plaid/link-token/create`)
       .then((res) => res.json())
       .then((data) => setLinkToken(data.link_token));
   }, []);
@@ -19,7 +20,7 @@ export default function PlaidPage() {
     <PlaidLink
       token={linkToken}
       onSuccess={(public_token, metadata) => {
-        fetch("http://localhost:3001/plaid/exchange-public-token", {
+        fetch(`${API_URL}/plaid/exchange-public-token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_token }),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/lib/config";
 
 type JournalEntry = {
   title: string;
@@ -9,8 +10,6 @@ type JournalEntry = {
   timestamp: string;
   _id: string | { $oid: string };
 };
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
