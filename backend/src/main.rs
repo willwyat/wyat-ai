@@ -147,7 +147,11 @@ async fn main() {
         .layer(cors)
         .with_state(state.clone());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3001));
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3001);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("Backend listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let std_listener = listener.into_std().unwrap();
