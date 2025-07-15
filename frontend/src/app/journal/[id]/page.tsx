@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { API_URL } from "@/lib/config";
+import { API_URL, WYAT_API_KEY } from "@/lib/config";
 
 interface JournalEntry {
   _id: string;
@@ -17,6 +17,9 @@ export default async function JournalEntryPage({
 
   const res = await fetch(`${API_URL}/journal/mongo/${id}`, {
     cache: "no-store",
+    headers: {
+      "x-wyat-api-key": WYAT_API_KEY,
+    },
   });
 
   if (!res.ok) return notFound();

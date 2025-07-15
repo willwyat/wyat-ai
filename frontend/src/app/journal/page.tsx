@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { API_URL } from "@/lib/config";
+import { API_URL, WYAT_API_KEY } from "@/lib/config";
 
 type JournalEntry = {
   title: string;
@@ -19,7 +19,11 @@ export default function JournalPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch(`${API_URL}/journal/mongo/all`)
+    fetch(`${API_URL}/journal/mongo/all`, {
+      headers: {
+        "x-wyat-api-key": WYAT_API_KEY,
+      },
+    })
       .then((res) => res.json())
       .then((data) => {
         setEntries(data);
@@ -37,6 +41,7 @@ export default function JournalPage() {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        "x-wyat-api-key": WYAT_API_KEY,
       },
       body: JSON.stringify({ title: newTitle, text: newText }),
     });
@@ -44,7 +49,11 @@ export default function JournalPage() {
     setNewTitle("");
     setNewText("");
     setLoading(true);
-    const res = await fetch(`${API_URL}/journal/mongo/all`);
+    const res = await fetch(`${API_URL}/journal/mongo/all`, {
+      headers: {
+        "x-wyat-api-key": WYAT_API_KEY,
+      },
+    });
     const data = await res.json();
     setEntries(data);
     setLoading(false);
