@@ -8,6 +8,7 @@ type JournalEntry = {
   title: string;
   versions: { text: string; timestamp: string }[];
   timestamp: string;
+  date_unix: number;
   _id: string | { $oid: string };
 };
 
@@ -16,6 +17,9 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState("");
   const [newText, setNewText] = useState("");
+  const [newDate, setNewDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
   const router = useRouter();
 
   useEffect(() => {
@@ -26,7 +30,11 @@ export default function JournalPage() {
     })
       .then((res) => res.json())
       .then((data) => {
-        setEntries(data);
+        // Sort entries by date_unix in descending order (newest first)
+        const sortedEntries = data.sort(
+          (a: JournalEntry, b: JournalEntry) => b.date_unix - a.date_unix
+        );
+        setEntries(sortedEntries);
         setLoading(false);
       });
   }, []);
@@ -34,6 +42,9 @@ export default function JournalPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newText.trim()) return;
+
+    // Convert the date string to Unix timestamp
+    const dateUnix = Math.floor(new Date(newDate).getTime() / 1000);
 
     await fetch(`${API_URL}/journal/mongo`, {
       method: "POST",
@@ -43,11 +54,16 @@ export default function JournalPage() {
         Accept: "application/json",
         "x-wyat-api-key": WYAT_API_KEY,
       },
-      body: JSON.stringify({ title: newTitle, text: newText }),
+      body: JSON.stringify({
+        title: newTitle,
+        text: newText,
+        date_unix: dateUnix,
+      }),
     });
 
     setNewTitle("");
     setNewText("");
+    setNewDate(new Date().toISOString().split("T")[0]);
     setLoading(true);
     const res = await fetch(`${API_URL}/journal/mongo/all`, {
       headers: {
@@ -55,14 +71,18 @@ export default function JournalPage() {
       },
     });
     const data = await res.json();
-    setEntries(data);
+    // Sort entries by date_unix in descending order (newest first)
+    const sortedEntries = data.sort(
+      (a: JournalEntry, b: JournalEntry) => b.date_unix - a.date_unix
+    );
+    setEntries(sortedEntries);
     setLoading(false);
   };
 
   if (loading) return <p>Loading...</p>;
 
   return (
-    <div className="bg-zinc-200 dark:bg-zinc-900 min-h-screen">
+    <div className="min-h-screen">
       <div className="p-6 flex flex-col gap-8 max-w-screen-xl mx-auto">
         <h1 className="text-4xl font-bold">Journal</h1>
         <div className="flex flex-col gap-4">
@@ -75,6 +95,12 @@ export default function JournalPage() {
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full font-bold text-xl"
                   placeholder="Title"
+                />
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <textarea
                   value={newText}
@@ -97,7 +123,7 @@ export default function JournalPage() {
             {entries.length === 0 ? (
               <p>No journal entries found.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="flex flex-col">
                 {entries.map((entry, i) => {
                   const latestText =
                     entry.versions?.[entry.versions.length - 1]?.text ?? "";
@@ -107,22 +133,14 @@ export default function JournalPage() {
                     <div
                       key={i}
                       onClick={() => router.push(`/journal/${id}`)}
-                      className="flex flex-col gap-3
-                      rounded px-6 py-5 transition-colors ease-in-out duration-300 bg-zinc-100 hover:bg-zinc-100/50 dark:bg-zinc-800 dark:hover:bg-zinc-700/50 cursor-pointer"
+                      className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ease-in-out duration-300 cursor-pointer"
                     >
-                      {/* <div className="flex flex-col gap-5"> */}
-                      <h3 className="font-semibold">{entry.title}</h3>
-                      <p className="text-zinc-700 dark:text-zinc-300 line-clamp-4">
-                        {latestText.slice(0, 300)}
+                      <div className="min-w-40">
+                        <h3 className="font-semibold">{entry.title}</h3>
+                      </div>
+                      <p className="text-zinc-700 dark:text-zinc-300 line-clamp-1">
+                        {latestText.slice(0, 200)}
                       </p>
-                      {/* </div> */}
-                      {/* <p className="text-zinc-400 dark:text-zinc-600">
-                        Last updated{" "}
-                        {new Date(
-                          entry.versions?.[entry.versions.length - 1]
-                            ?.timestamp || ""
-                        ).toLocaleString()}
-                      </p> */}
                     </div>
                   );
                 })}

@@ -31,6 +31,7 @@ pub struct JournalEntry {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
     pub title: String,
+    pub date_unix: i64,
     pub versions: Vec<JournalVersion>,
     pub preview_text: String,
 }
@@ -39,6 +40,7 @@ pub struct JournalEntry {
 pub struct NewJournalEntry {
     pub title: String,
     pub text: String,
+    pub date_unix: i64,
 }
 
 #[derive(Serialize)]
@@ -70,10 +72,12 @@ pub async fn create_journal_entry_mongo(
     };
 
     let preview_text = payload.text.chars().take(100).collect::<String>();
+    let date_unix = payload.date_unix;
 
     let new_entry = JournalEntry {
         id: None,
         title: payload.title.clone(),
+        date_unix,
         versions: vec![version],
         preview_text,
     };
