@@ -135,8 +135,24 @@ export default function JournalPage() {
                       onClick={() => router.push(`/journal/${id}`)}
                       className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ease-in-out duration-300 cursor-pointer"
                     >
-                      <div className="min-w-40">
-                        <h3 className="font-semibold">{entry.title}</h3>
+                      <div className="min-w-30">
+                        <h3 className="font-semibold">
+                          {new Date(entry.date_unix * 1000).toLocaleDateString(
+                            "en-US",
+                            {
+                              month: "short",
+                              day: "numeric",
+                            }
+                          )}{" "}
+                          (
+                          {new Date(entry.date_unix * 1000).toLocaleDateString(
+                            "en-US",
+                            {
+                              weekday: "short",
+                            }
+                          )}
+                          )
+                        </h3>
                       </div>
                       <p className="text-zinc-700 dark:text-zinc-300 line-clamp-1">
                         {latestText.slice(0, 200)}

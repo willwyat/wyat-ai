@@ -43,6 +43,11 @@ pub struct NewJournalEntry {
     pub date_unix: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EditJournalEntry {
+    pub text: String,
+}
+
 #[derive(Serialize)]
 pub struct JournalResponse {
     pub message: String,
@@ -152,7 +157,7 @@ pub async fn edit_journal_entry_mongo(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    Json(payload): Json<NewJournalEntry>,
+    Json(payload): Json<EditJournalEntry>,
 ) -> impl IntoResponse {
     let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
     let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
