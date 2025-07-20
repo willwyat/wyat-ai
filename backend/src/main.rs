@@ -19,8 +19,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
 
-mod oura;
-use oura::handle_oura_sleep_sync;
+mod services;
+use services::oura::{
+    generate_oura_auth_url, get_oura_sleep_data_from_api, handle_oura_callback,
+    handle_oura_heartrate_sync, handle_oura_sleep_sync,
+};
 
 use axum::Json as AxumJson;
 use reqwest::Client;
@@ -146,6 +149,9 @@ async fn main() {
         .route("/journal/mongo/:id", patch(edit_journal_entry_mongo))
         .route("/journal/mongo/:id", delete(delete_journal_entry_mongo))
         .route("/oura/sleep/sync", get(handle_oura_sleep_sync))
+        .route("/oura/heartrate/sync", get(handle_oura_heartrate_sync))
+        .route("/oura/auth", get(generate_oura_auth_url))
+        .route("/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
         .layer(cors)

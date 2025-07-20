@@ -14,6 +14,7 @@
     "/journal/mongo": {
       "post": {
         "summary": "Create a new journal entry",
+        "description": "Creates a completely new journal entry with title, text content, and date. Use this endpoint for new entries only.",
         "operationId": "createJournalEntry",
         "requestBody": {
           "required": true,
@@ -119,6 +120,7 @@
       },
       "patch": {
         "summary": "Edit a journal entry (creates new version)",
+        "description": "Updates an existing journal entry by creating a new version. Only the text content can be modified - title and date remain unchanged. This endpoint creates a new version in the versions array.",
         "operationId": "editJournalEntry",
         "parameters": [
           {
@@ -229,10 +231,11 @@
       },
       "EditJournalEntry": {
         "type": "object",
+        "description": "Payload for editing an existing journal entry. Only the text content can be modified.",
         "properties": {
           "text": {
             "type": "string",
-            "description": "New content for the journal entry"
+            "description": "New content for the journal entry. This will create a new version while preserving the original title and date."
           }
         },
         "required": ["text"]
