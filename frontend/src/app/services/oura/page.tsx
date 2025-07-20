@@ -49,9 +49,9 @@ export default function OuraServicesPage() {
   const handleSyncData = async () => {
     setSyncing(true);
     try {
-      // Sync sleep data
-      await fetch(
-        `${API_URL}/oura/sleep/sync?start=2025-01-19&end=2025-01-19`,
+      // Sync daily sleep data (backend handles dates automatically)
+      const dailySleepResponse = await fetch(
+        `${API_URL}/oura/daily-sleep/sync`,
         {
           headers: {
             "x-wyat-api-key": WYAT_API_KEY,
@@ -59,15 +59,116 @@ export default function OuraServicesPage() {
         }
       );
 
-      // Sync heart rate data
-      await fetch(
-        `${API_URL}/oura/heartrate/sync?start=2025-01-19&end=2025-01-19`,
+      // Sync daily activity data (backend handles dates automatically)
+      const dailyActivityResponse = await fetch(
+        `${API_URL}/oura/daily-activity/sync`,
         {
           headers: {
             "x-wyat-api-key": WYAT_API_KEY,
           },
         }
       );
+
+      // Sync daily cardiovascular age data (backend handles dates automatically)
+      const dailyCardiovascularAgeResponse = await fetch(
+        `${API_URL}/oura/daily-cardiovascular-age/sync`,
+        {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        }
+      );
+
+      // Sync daily readiness data (backend handles dates automatically)
+      const dailyReadinessResponse = await fetch(
+        `${API_URL}/oura/daily-readiness/sync`,
+        {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        }
+      );
+
+      // Sync daily resilience data (backend handles dates automatically)
+      const dailyResilienceResponse = await fetch(
+        `${API_URL}/oura/daily-resilience/sync`,
+        {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        }
+      );
+
+      // Sync daily SpO2 data (backend handles dates automatically)
+      const dailySpO2Response = await fetch(`${API_URL}/oura/daily-spo2/sync`, {
+        headers: {
+          "x-wyat-api-key": WYAT_API_KEY,
+        },
+      });
+
+      // Sync VO2 max data (backend handles dates automatically)
+      const vo2MaxResponse = await fetch(`${API_URL}/oura/vo2-max/sync`, {
+        headers: {
+          "x-wyat-api-key": WYAT_API_KEY,
+        },
+      });
+
+      // Sync daily stress data (backend handles dates automatically)
+      const dailyStressResponse = await fetch(
+        `${API_URL}/oura/daily-stress/sync`,
+        {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        }
+      );
+
+      // Sync heart rate data (backend handles dates automatically)
+      const heartrateResponse = await fetch(`${API_URL}/oura/heartrate/sync`, {
+        headers: {
+          "x-wyat-api-key": WYAT_API_KEY,
+        },
+      });
+
+      // Log sync results
+      if (dailySleepResponse.ok) {
+        const dailySleepData = await dailySleepResponse.json();
+        console.log("Daily sleep sync result:", dailySleepData);
+      }
+
+      if (dailyActivityResponse.ok) {
+        const dailyActivityData = await dailyActivityResponse.json();
+        console.log("Daily activity sync result:", dailyActivityData);
+      }
+
+      if (dailyStressResponse.ok) {
+        const dailyStressData = await dailyStressResponse.json();
+        console.log("Daily stress sync result:", dailyStressData);
+      }
+
+      if (dailyCardiovascularAgeResponse.ok) {
+        const dailyCardiovascularAgeData =
+          await dailyCardiovascularAgeResponse.json();
+        console.log(
+          "Daily cardiovascular age sync result:",
+          dailyCardiovascularAgeData
+        );
+      }
+
+      if (dailyReadinessResponse.ok) {
+        const dailyReadinessData = await dailyReadinessResponse.json();
+        console.log("Daily readiness sync result:", dailyReadinessData);
+      }
+
+      if (dailyResilienceResponse.ok) {
+        const dailyResilienceData = await dailyResilienceResponse.json();
+        console.log("Daily resilience sync result:", dailyResilienceData);
+      }
+
+      if (heartrateResponse.ok) {
+        const heartrateData = await heartrateResponse.json();
+        console.log("Heart rate sync result:", heartrateData);
+      }
 
       // Refresh status
       await checkConnectionStatus();

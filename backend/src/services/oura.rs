@@ -8,12 +8,11 @@ use axum::{
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 
-// Import JournalResponse from the journal module
 use crate::AppState;
-use crate::journal::JournalResponse;
 use mongodb::bson::doc;
 use mongodb::options::ReplaceOptions;
 use std::sync::Arc;
@@ -31,9 +30,139 @@ pub struct VO2Data {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct StressData {
+pub struct DailyStressData {
+    pub id: Option<String>,
     pub day: String,
-    pub score: Option<u8>,
+    pub stress_high: Option<i32>,
+    pub recovery_high: Option<i32>,
+    pub day_summary: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailySpO2Data {
+    pub id: Option<String>,
+    pub day: String,
+    pub spo2_percentage: Option<serde_json::Value>,
+    pub breathing_disturbance_index: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VO2MaxData {
+    pub id: Option<String>,
+    pub day: String,
+    pub timestamp: Option<String>,
+    pub vo2_max: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyActivityData {
+    pub id: Option<String>,
+    pub day: String,
+    pub class_5_min: Option<String>,
+    pub score: Option<i32>,
+    pub active_calories: Option<i32>,
+    pub average_met_minutes: Option<f32>,
+    pub contributors: Option<DailyActivityContributors>,
+    pub equivalent_walking_distance: Option<i32>,
+    pub high_activity_met_minutes: Option<i32>,
+    pub high_activity_time: Option<i32>,
+    pub inactivity_alerts: Option<i32>,
+    pub low_activity_met_minutes: Option<i32>,
+    pub low_activity_time: Option<i32>,
+    pub medium_activity_met_minutes: Option<i32>,
+    pub medium_activity_time: Option<i32>,
+    pub met: Option<DailyActivityMet>,
+    pub meters_to_target: Option<i32>,
+    pub non_wear_time: Option<i32>,
+    pub resting_time: Option<i32>,
+    pub sedentary_met_minutes: Option<i32>,
+    pub sedentary_time: Option<i32>,
+    pub steps: Option<i32>,
+    pub target_calories: Option<i32>,
+    pub target_meters: Option<i32>,
+    pub total_calories: Option<i32>,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyActivityContributors {
+    pub meet_daily_targets: Option<i32>,
+    pub move_every_hour: Option<i32>,
+    pub recovery_time: Option<i32>,
+    pub stay_active: Option<i32>,
+    pub training_frequency: Option<i32>,
+    pub training_volume: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyActivityMet {
+    pub interval: Option<i32>,
+    pub items: Option<Vec<f32>>,
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyCardiovascularAgeData {
+    pub day: String,
+    pub vascular_age: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyReadinessData {
+    pub id: Option<String>,
+    pub day: String,
+    pub score: Option<i32>,
+    pub temperature_deviation: Option<f32>,
+    pub temperature_trend_deviation: Option<f32>,
+    pub timestamp: Option<String>,
+    pub contributors: Option<DailyReadinessContributors>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyReadinessContributors {
+    pub activity_balance: Option<i32>,
+    pub body_temperature: Option<i32>,
+    pub hrv_balance: Option<i32>,
+    pub previous_day_activity: Option<i32>,
+    pub previous_night: Option<i32>,
+    pub recovery_index: Option<i32>,
+    pub resting_heart_rate: Option<i32>,
+    pub sleep_balance: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailySleepData {
+    pub id: Option<String>,
+    pub day: String,
+    pub score: Option<i32>,
+    pub timestamp: Option<String>,
+    pub contributors: Option<DailySleepContributors>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailySleepContributors {
+    pub deep_sleep: Option<i32>,
+    pub efficiency: Option<i32>,
+    pub latency: Option<i32>,
+    pub rem_sleep: Option<i32>,
+    pub restfulness: Option<i32>,
+    pub timing: Option<i32>,
+    pub total_sleep: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyResilienceData {
+    pub id: Option<String>,
+    pub day: String,
+    pub contributors: Option<DailyResilienceContributors>,
+    pub level: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DailyResilienceContributors {
+    pub sleep_recovery: Option<f32>,
+    pub daytime_recovery: Option<f32>,
+    pub stress: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -117,37 +246,324 @@ pub async fn get_oura_sleep_data_from_api(
     Ok(results)
 }
 
+pub async fn get_oura_daily_sleep_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailySleepData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_sleep?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailySleepResponse {
+        data: Vec<DailySleepData>,
+    }
+
+    let response: OuraDailySleepResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_stress_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailyStressData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_stress?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailyStressResponse {
+        data: Vec<DailyStressData>,
+    }
+
+    let response: OuraDailyStressResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_activity_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailyActivityData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_activity?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailyActivityResponse {
+        data: Vec<DailyActivityData>,
+    }
+
+    let response: OuraDailyActivityResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_cardiovascular_age_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailyCardiovascularAgeData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_cardiovascular_age?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailyCardiovascularAgeResponse {
+        data: Vec<DailyCardiovascularAgeData>,
+    }
+
+    let response: OuraDailyCardiovascularAgeResponse =
+        res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_readiness_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailyReadinessData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_readiness?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailyReadinessResponse {
+        data: Vec<DailyReadinessData>,
+    }
+
+    let response: OuraDailyReadinessResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_resilience_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailyResilienceData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_resilience?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailyResilienceResponse {
+        data: Vec<DailyResilienceData>,
+    }
+
+    let response: OuraDailyResilienceResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_daily_spo2_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<DailySpO2Data>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/daily_spo2?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraDailySpO2Response {
+        data: Vec<DailySpO2Data>,
+    }
+
+    let response: OuraDailySpO2Response = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
+pub async fn get_oura_vo2_max_data_from_api(
+    start_date: &str,
+    end_date: &str,
+    access_token: &str,
+) -> Result<Vec<VO2MaxData>, String> {
+    let base_url = "https://api.ouraring.com/v2";
+
+    let url = format!(
+        "{}/usercollection/vo2_max?start_date={}&end_date={}",
+        base_url, start_date, end_date
+    );
+
+    let client = Client::new();
+    let res = client
+        .get(&url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Oura API error: {}", res.status()));
+    }
+
+    #[derive(Deserialize)]
+    struct OuraVO2MaxResponse {
+        data: Vec<VO2MaxData>,
+    }
+
+    let response: OuraVO2MaxResponse = res.json().await.map_err(|e| e.to_string())?;
+    Ok(response.data)
+}
+
 pub async fn handle_oura_sleep_sync(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default_date = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
+    let user_id = "default_user";
 
-    let start_date = params
-        .get("start")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_date);
-    let end_date = params
-        .get("end")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_date);
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "sleep").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("💤 Sleep Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
 
     // Try to get OAuth access token, fallback to personal token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, "default_user").await
-    {
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
         Ok(Some(token)) => {
             println!("💤 Sleep Sync - Using OAuth token: {}", &token[..10]);
             token
         }
         Ok(None) => {
             let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
-            println!(
-                "💤 Sleep Sync - Using personal token: {}",
-                &personal_token[..10]
-            );
             personal_token
         }
         Err(e) => {
@@ -156,14 +572,46 @@ pub async fn handle_oura_sleep_sync(
         }
     };
 
-    match get_oura_sleep_data_from_api(start_date, end_date, &access_token).await {
-        Ok(sleep_data) => match save_sleep_data_to_mongo(&state.mongo_client, &sleep_data).await {
-            Ok(_) => Json(JournalResponse {
-                message: format!("Synced sleep data for {} → {}", start_date, end_date),
-            })
-            .into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-        },
+    println!("💤 Sleep Sync - Date range: {} → {}", start_date, end_date);
+
+    match get_oura_sleep_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(sleep_data) => {
+            println!(
+                "💤 Sleep Sync - Retrieved {} sleep records",
+                sleep_data.len()
+            );
+
+            match save_sleep_data_to_mongo(&state.mongo_client, &sleep_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) =
+                        update_oura_sync_status(&state.mongo_client, user_id, "sleep", &end_date)
+                            .await
+                    {
+                        println!(
+                            "💤 Sleep Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "💤 Sleep Sync - Saved {} sleep records to MongoDB",
+                        sleep_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} sleep records from {} to {}", sleep_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": sleep_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
         Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
     }
 }
@@ -175,15 +623,369 @@ pub async fn save_sleep_data_to_mongo(
     let db = mongo_client.database("wyat");
     let collection = db.collection::<SleepData>("oura_sleep");
 
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
     for entry in sleep_data {
+        // Check if this date already exists
         let filter = doc! { "date": &entry.date };
-        let options = ReplaceOptions::builder().upsert(true).build();
-        collection
-            .replace_one(filter, entry, options)
+        let existing = collection
+            .find_one(filter.clone(), None)
             .await
-            .map_err(|e| format!("MongoDB error: {}", e))?;
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
     }
 
+    println!(
+        "💾 Sleep data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_sleep_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_sleep_data: &[DailySleepData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailySleepData>("oura_daily_sleep");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_sleep_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Daily sleep data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_stress_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_stress_data: &[DailyStressData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailyStressData>("oura_daily_stress");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_stress_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Daily stress data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_activity_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_activity_data: &[DailyActivityData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailyActivityData>("oura_daily_activity");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_activity_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Daily activity data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_cardiovascular_age_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_cardiovascular_age_data: &[DailyCardiovascularAgeData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailyCardiovascularAgeData>("oura_daily_cardiovascular_age");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_cardiovascular_age_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = doc! { "day": &entry.day };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Daily cardiovascular age data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_readiness_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_readiness_data: &[DailyReadinessData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailyReadinessData>("oura_daily_readiness");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_readiness_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Daily readiness data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_resilience_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_resilience_data: &[DailyResilienceData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailyResilienceData>("oura_daily_resilience");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_resilience_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+        inserted_count += 1;
+    }
+
+    println!(
+        "Saved {} daily resilience records, skipped {} duplicates",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_daily_spo2_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    daily_spo2_data: &[DailySpO2Data],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<DailySpO2Data>("oura_daily_spo2");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in daily_spo2_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+        inserted_count += 1;
+    }
+
+    println!(
+        "Saved {} daily SpO2 records, skipped {} duplicates",
+        inserted_count, skipped_count
+    );
+    Ok(())
+}
+
+pub async fn save_vo2_max_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    vo2_max_data: &[VO2MaxData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<VO2MaxData>("oura_vo2_max");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in vo2_max_data {
+        // Check if this record already exists using id if available, otherwise use day
+        let filter = if let Some(ref id) = entry.id {
+            doc! { "id": id }
+        } else {
+            doc! { "day": &entry.day }
+        };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+        inserted_count += 1;
+    }
+
+    println!(
+        "Saved {} VO2 max records, skipped {} duplicates",
+        inserted_count, skipped_count
+    );
     Ok(())
 }
 
@@ -239,6 +1041,18 @@ pub struct OuraTokens {
     pub refresh_token: Option<String>,
     pub token_type: String,
     pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OuraSyncStatus {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<mongodb::bson::oid::ObjectId>,
+    pub user_id: String,
+    pub data_type: String, // "heartrate", "sleep", etc.
+    pub last_sync_at: DateTime<Utc>,
+    pub last_sync_date: String, // YYYY-MM-DD format
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -344,45 +1158,484 @@ pub async fn handle_oura_callback(
     }
 }
 
-// #[allow(dead_code)]
-// pub async fn write_sleep_summary_to_file(sleep_data: &[SleepData]) -> Result<(), String> {
-//     let path = Path::new("vitals/sleep.json");
+pub async fn handle_oura_daily_sleep_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
 
-//     // Load existing data if file exists
-//     let existing_data: Vec<SleepData> = if path.exists() {
-//         let content = fs::read_to_string(path)
-//             .await
-//             .map_err(|e| format!("Failed to read file: {}", e))?;
-//         serde_json::from_str(&content).unwrap_or_default()
-//     } else {
-//         Vec::new()
-//     };
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "daily_sleep").await;
+    let today = chrono::Utc::now().date_naive();
 
-//     // Index by date
-//     let mut map: HashMap<String, SleepData> = existing_data
-//         .into_iter()
-//         .map(|entry| (entry.date.clone(), entry))
-//         .collect();
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
 
-//     // Insert/overwrite with new data
-//     for entry in sleep_data {
-//         map.insert(entry.date.clone(), entry.clone());
-//     }
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
 
-//     // Save merged results
-//     let merged: Vec<SleepData> = map.into_values().collect();
-//     let json = serde_json::to_string_pretty(&merged)
-//         .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("😴 Daily Sleep Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
 
-//     fs::create_dir_all("vitals")
-//         .await
-//         .map_err(|e| format!("Failed to create vitals directory: {}", e))?;
-//     fs::write(path, json)
-//         .await
-//         .map_err(|e| format!("Failed to write file: {}", e))?;
+    let end_date = today.format("%Y-%m-%d").to_string();
 
-//     Ok(())
-// }
+    // Try to get OAuth access token, fallback to personal token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!("😴 Daily Sleep Sync - Using OAuth token: {}", &token[..10]);
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            personal_token
+        }
+        Err(e) => {
+            println!(
+                "😴 Daily Sleep Sync - Token error: {}, using personal token",
+                e
+            );
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    println!(
+        "😴 Daily Sleep Sync - Date range: {} → {}",
+        start_date, end_date
+    );
+
+    match get_oura_daily_sleep_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_sleep_data) => {
+            println!(
+                "😴 Daily Sleep Sync - Retrieved {} daily sleep records",
+                daily_sleep_data.len()
+            );
+
+            match save_daily_sleep_data_to_mongo(&state.mongo_client, &daily_sleep_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_sleep",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "😴 Daily Sleep Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "😴 Daily Sleep Sync - Saved {} daily sleep records to MongoDB",
+                        daily_sleep_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily sleep records from {} to {}", daily_sleep_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_sleep_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
+    }
+}
+
+pub async fn handle_oura_daily_stress_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "daily_stress").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("😰 Daily Stress Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    // Try to get OAuth access token, fallback to personal token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!("😰 Daily Stress Sync - Using OAuth token: {}", &token[..10]);
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            personal_token
+        }
+        Err(e) => {
+            println!(
+                "😰 Daily Stress Sync - Token error: {}, using personal token",
+                e
+            );
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    println!(
+        "😰 Daily Stress Sync - Date range: {} → {}",
+        start_date, end_date
+    );
+
+    match get_oura_daily_stress_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_stress_data) => {
+            println!(
+                "😰 Daily Stress Sync - Retrieved {} daily stress records",
+                daily_stress_data.len()
+            );
+
+            match save_daily_stress_data_to_mongo(&state.mongo_client, &daily_stress_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_stress",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "😰 Daily Stress Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "😰 Daily Stress Sync - Saved {} daily stress records to MongoDB",
+                        daily_stress_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily stress records from {} to {}", daily_stress_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_stress_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
+    }
+}
+
+pub async fn handle_oura_daily_activity_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status =
+        get_oura_sync_status(&state.mongo_client, user_id, "daily_activity").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("🏃 Daily Activity Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    // Try to get OAuth access token, fallback to personal token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!(
+                "🏃 Daily Activity Sync - Using OAuth token: {}",
+                &token[..10]
+            );
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            personal_token
+        }
+        Err(e) => {
+            println!(
+                "🏃 Daily Activity Sync - Token error: {}, using personal token",
+                e
+            );
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    println!(
+        "🏃 Daily Activity Sync - Date range: {} → {}",
+        start_date, end_date
+    );
+
+    match get_oura_daily_activity_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_activity_data) => {
+            println!(
+                "🏃 Daily Activity Sync - Retrieved {} daily activity records",
+                daily_activity_data.len()
+            );
+
+            match save_daily_activity_data_to_mongo(&state.mongo_client, &daily_activity_data).await
+            {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_activity",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "🏃 Daily Activity Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "🏃 Daily Activity Sync - Saved {} daily activity records to MongoDB",
+                        daily_activity_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily activity records from {} to {}", daily_activity_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_activity_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
+    }
+}
+
+pub async fn handle_oura_daily_cardiovascular_age_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status =
+        get_oura_sync_status(&state.mongo_client, user_id, "daily_cardiovascular_age").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!(
+                "❤️ Daily Cardiovascular Age Sync - Error getting sync status: {}",
+                e
+            );
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    // Try to get OAuth access token, fallback to personal token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!(
+                "❤️ Daily Cardiovascular Age Sync - Using OAuth token: {}",
+                &token[..10]
+            );
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            personal_token
+        }
+        Err(e) => {
+            println!(
+                "❤️ Daily Cardiovascular Age Sync - Token error: {}, using personal token",
+                e
+            );
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    println!(
+        "❤️ Daily Cardiovascular Age Sync - Date range: {} → {}",
+        start_date, end_date
+    );
+
+    match get_oura_daily_cardiovascular_age_data_from_api(&start_date, &end_date, &access_token)
+        .await
+    {
+        Ok(daily_cardiovascular_age_data) => {
+            println!(
+                "❤️ Daily Cardiovascular Age Sync - Retrieved {} daily cardiovascular age records",
+                daily_cardiovascular_age_data.len()
+            );
+
+            match save_daily_cardiovascular_age_data_to_mongo(
+                &state.mongo_client,
+                &daily_cardiovascular_age_data,
+            )
+            .await
+            {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_cardiovascular_age",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "❤️ Daily Cardiovascular Age Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "❤️ Daily Cardiovascular Age Sync - Saved {} daily cardiovascular age records to MongoDB",
+                        daily_cardiovascular_age_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily cardiovascular age records from {} to {}", daily_cardiovascular_age_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_cardiovascular_age_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkoutData {
@@ -396,293 +1649,59 @@ pub struct WorkoutData {
     pub intensity: Option<String>,
 }
 
-// pub async fn fetch_oura_workout_data(
-//     start_date: &str,
-//     end_date: &str,
-// ) -> Result<Vec<WorkoutData>, String> {
-//     let token = env::var("OURA_TOKEN").map_err(|_| "Missing OURA_TOKEN".to_string())?;
-//     let base_url = env::var("OURA_API_URL").map_err(|_| "Missing OURA_API_URL".to_string())?;
-//     let base_url = base_url.trim_end_matches('/').to_string();
-//     let url = format!(
-//         "{}/usercollection/workout?start_date={}&end_date={}",
-//         base_url, start_date, end_date
-//     );
-
-//     let client = Client::new();
-//     let res = client
-//         .get(&url)
-//         .bearer_auth(token)
-//         .send()
-//         .await
-//         .map_err(|e| e.to_string())?;
-
-//     if !res.status().is_success() {
-//         let status = res.status();
-//         let err_text = res
-//             .text()
-//             .await
-//             .unwrap_or_else(|_| "Failed to read error body".to_string());
-//         return Err(format!("Oura API error: {} - {}", status, err_text));
-//     }
-
-//     #[derive(Deserialize)]
-//     struct OuraWorkoutResponse {
-//         data: Vec<OuraWorkoutRecord>,
-//     }
-
-//     #[derive(Deserialize)]
-//     struct OuraWorkoutRecord {
-//         id: String,
-//         day: String,
-//         start_datetime: String,
-//         end_datetime: String,
-//         activity: Option<String>,
-//         calories: Option<f32>,
-//         distance: Option<f32>,
-//         intensity: Option<String>,
-//         // add other fields based on docs
-//     }
-
-//     let response: OuraWorkoutResponse = res.json().await.map_err(|e| e.to_string())?;
-//     let results = response
-//         .data
-//         .into_iter()
-//         .map(|rec| WorkoutData {
-//             id: rec.id,
-//             date: rec.day,
-//             start: rec.start_datetime,
-//             end: rec.end_datetime,
-//             activity: rec.activity,
-//             calories: rec.calories,
-//             distance: rec.distance,
-//             intensity: rec.intensity,
-//         })
-//         .collect();
-
-//     Ok(results)
-// }
-
-// pub async fn write_workout_to_file(workouts: &[WorkoutData]) -> Result<(), String> {
-//     let path = Path::new("vitals/workout.json");
-//     let mut existing: Vec<WorkoutData> = if path.exists() {
-//         let content = fs::read_to_string(path)
-//             .await
-//             .map_err(|e| format!("Read error: {}", e))?;
-//         serde_json::from_str(&content).unwrap_or_default()
-//     } else {
-//         Vec::new()
-//     };
-
-//     let mut map: HashMap<String, WorkoutData> =
-//         existing.into_iter().map(|w| (w.id.clone(), w)).collect();
-
-//     for w in workouts {
-//         map.insert(w.id.clone(), w.clone());
-//     }
-
-//     let merged: Vec<WorkoutData> = map.into_values().collect();
-//     let json =
-//         serde_json::to_string_pretty(&merged).map_err(|e| format!("Serialize error: {}", e))?;
-
-//     fs::create_dir_all("vitals")
-//         .await
-//         .map_err(|e| format!("mkdir error: {}", e))?;
-//     fs::write(path, json)
-//         .await
-//         .map_err(|e| format!("Write error: {}", e))?;
-//     Ok(())
-// }
-
-// pub async fn fetch_oura_heart_rate_data(
-//     start: &str,
-//     end: &str,
-// ) -> Result<Vec<HeartRateData>, String> {
-//     let token = env::var("OURA_TOKEN").map_err(|_| "Missing OURA_TOKEN".to_string())?;
-//     let base_url = env::var("OURA_API_URL").map_err(|_| "Missing OURA_API_URL".to_string())?;
-//     let base_url = base_url.trim_end_matches('/').to_string();
-//     let url = format!(
-//         "{}/usercollection/heartrate?start={}&end={}",
-//         base_url, start, end
-//     );
-
-//     let res = Client::new()
-//         .get(&url)
-//         .bearer_auth(token)
-//         .send()
-//         .await
-//         .map_err(|e| e.to_string())?;
-
-//     if !res.status().is_success() {
-//         return Err(format!("Oura API error: {}", res.status()));
-//     }
-
-//     #[derive(Deserialize)]
-//     struct OuraHeartRateResponse {
-//         data: Vec<HeartRateData>,
-//     }
-
-//     let response: OuraHeartRateResponse = res.json().await.map_err(|e| e.to_string())?;
-//     Ok(response.data)
-// }
-
-// pub async fn fetch_oura_vo2_data(start: &str, end: &str) -> Result<Vec<VO2Data>, String> {
-//     let token = env::var("OURA_TOKEN").map_err(|_| "Missing OURA_TOKEN".to_string())?;
-//     let base_url = env::var("OURA_API_URL").map_err(|_| "Missing OURA_API_URL".to_string())?;
-//     let base_url = base_url.trim_end_matches('/').to_string();
-//     let url = format!(
-//         "{}/usercollection/vO2_max?start_date={}&end_date={}",
-//         base_url, start, end
-//     );
-
-//     let res = Client::new()
-//         .get(&url)
-//         .bearer_auth(token)
-//         .send()
-//         .await
-//         .map_err(|e| e.to_string())?;
-
-//     if !res.status().is_success() {
-//         return Err(format!("Oura API error: {}", res.status()));
-//     }
-
-//     #[derive(Deserialize)]
-//     struct VO2Response {
-//         data: Vec<VO2Data>,
-//     }
-
-//     let response: VO2Response = res.json().await.map_err(|e| e.to_string())?;
-//     Ok(response.data)
-// }
-
-// pub async fn fetch_oura_stress_data(start: &str, end: &str) -> Result<Vec<StressData>, String> {
-//     let token = env::var("OURA_TOKEN").map_err(|_| "Missing OURA_TOKEN".to_string())?;
-//     let base_url = env::var("OURA_API_URL").map_err(|_| "Missing OURA_API_URL".to_string())?;
-//     let base_url = base_url.trim_end_matches('/').to_string();
-//     let url = format!(
-//         "{}/usercollection/daily_stress?start_date={}&end_date={}",
-//         base_url, start, end
-//     );
-
-//     let res = Client::new()
-//         .get(&url)
-//         .bearer_auth(token)
-//         .send()
-//         .await
-//         .map_err(|e| e.to_string())?;
-
-//     if !res.status().is_success() {
-//         let status = res.status();
-//         let err_text = res
-//             .text()
-//             .await
-//             .unwrap_or_else(|_| "Failed to read error body".to_string());
-//         return Err(format!("Oura API error: {} - {}", status, err_text));
-//     }
-
-//     #[derive(Deserialize)]
-//     struct StressResponse {
-//         data: Vec<StressData>,
-//     }
-
-//     let response: StressResponse = res.json().await.map_err(|e| e.to_string())?;
-//     Ok(response.data)
-// }
-
-// pub async fn write_heart_rate_to_file(data: &[HeartRateData]) -> Result<(), String> {
-//     let path = Path::new("vitals/heartrate.json");
-//     let json = serde_json::to_string_pretty(data).map_err(|e| format!("Serialize error: {}", e))?;
-//     fs::create_dir_all("vitals")
-//         .await
-//         .map_err(|e| format!("mkdir error: {}", e))?;
-//     fs::write(path, json)
-//         .await
-//         .map_err(|e| format!("Write error: {}", e))?;
-//     Ok(())
-// }
-
-// pub async fn write_vo2_to_file(data: &[VO2Data]) -> Result<(), String> {
-//     let path = Path::new("vitals/vo2.json");
-//     let json = serde_json::to_string_pretty(data).map_err(|e| format!("Serialize error: {}", e))?;
-//     fs::create_dir_all("vitals")
-//         .await
-//         .map_err(|e| format!("mkdir error: {}", e))?;
-//     fs::write(path, json)
-//         .await
-//         .map_err(|e| format!("Write error: {}", e))?;
-//     Ok(())
-// }
-
-// pub async fn write_stress_to_file(data: &[StressData]) -> Result<(), String> {
-//     let path = Path::new("vitals/stress.json");
-
-//     // Load existing data if file exists
-//     let mut existing_data: Vec<StressData> = if path.exists() {
-//         let content = fs::read_to_string(path)
-//             .await
-//             .map_err(|e| format!("Failed to read file: {}", e))?;
-//         serde_json::from_str(&content).unwrap_or_default()
-//     } else {
-//         Vec::new()
-//     };
-
-//     // Index by day
-//     let mut map: HashMap<String, StressData> = existing_data
-//         .into_iter()
-//         .map(|entry| (entry.day.clone(), entry))
-//         .collect();
-
-//     // Insert/overwrite with new data
-//     for entry in data {
-//         map.insert(entry.day.clone(), entry.clone());
-//     }
-
-//     // Save merged results
-//     let merged: Vec<StressData> = map.into_values().collect();
-//     let json = serde_json::to_string_pretty(&merged)
-//         .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
-
-//     fs::create_dir_all("vitals")
-//         .await
-//         .map_err(|e| format!("Failed to create vitals directory: {}", e))?;
-//     fs::write(path, json)
-//         .await
-//         .map_err(|e| format!("Failed to write file: {}", e))?;
-
-//     Ok(())
-// }
-
 pub async fn handle_oura_heartrate_sync(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let today = chrono::Utc::now().date_naive();
-    let default_start = (today - chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let default_end = today.format("%Y-%m-%d").to_string();
+    let user_id = "default_user";
 
-    let start_date = params
-        .get("start")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_start);
-    let end_date = params
-        .get("end")
-        .map(|s| s.as_str())
-        .unwrap_or(&default_end);
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "heartrate").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("💓 Heart Rate Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
 
     // Try to get OAuth access token, fallback to personal token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, "default_user").await
-    {
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
         Ok(Some(token)) => {
             println!("💓 Heart Rate Sync - Using OAuth token: {}", &token[..10]);
             token
         }
         Ok(None) => {
             let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
-            println!(
-                "💓 Heart Rate Sync - Using personal token: {}",
-                &personal_token[..10]
-            );
             personal_token
         }
         Err(e) => {
@@ -693,23 +1712,57 @@ pub async fn handle_oura_heartrate_sync(
             env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
         }
     };
+
     println!(
         "💓 Heart Rate Sync - Date range: {} → {}",
         start_date, end_date
     );
 
-    match get_oura_heartrate_data_from_api(start_date, end_date, &access_token).await {
+    match get_oura_heartrate_data_from_api(&start_date, &end_date, &access_token).await {
         Ok(heartrate_data) => {
             println!(
                 "💓 Heart Rate Sync - Retrieved {} data points",
                 heartrate_data.len()
             );
-            Json(serde_json::json!({
-                "status": "success",
-                "message": format!("Retrieved {} heart rate data points", heartrate_data.len()),
-                "data": heartrate_data
-            }))
-            .into_response()
+
+            // Save to MongoDB
+            match save_heartrate_data_to_mongo(&state.mongo_client, &heartrate_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "heartrate",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "💓 Heart Rate Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "💓 Heart Rate Sync - Saved {} data points to MongoDB",
+                        heartrate_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} heart rate data points from {} to {}", heartrate_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": heartrate_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => {
+                    println!("💓 Heart Rate Sync - MongoDB save error: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+                }
+            }
         }
         Err(err) => {
             println!("💓 Heart Rate Sync - Error: {}", err);
@@ -752,6 +1805,45 @@ pub async fn get_oura_heartrate_data_from_api(
 
     let response: OuraHeartRateResponse = res.json().await.map_err(|e| e.to_string())?;
     Ok(response.data)
+}
+
+pub async fn save_heartrate_data_to_mongo(
+    mongo_client: &mongodb::Client,
+    heartrate_data: &[HeartRateData],
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<HeartRateData>("oura_heartrate");
+
+    let mut inserted_count = 0;
+    let mut skipped_count = 0;
+
+    for entry in heartrate_data {
+        // Check if this timestamp already exists
+        let filter = doc! { "timestamp": &entry.timestamp };
+        let existing = collection
+            .find_one(filter.clone(), None)
+            .await
+            .map_err(|e| format!("MongoDB find error: {}", e))?;
+
+        if existing.is_some() {
+            skipped_count += 1;
+            continue; // Skip if already exists
+        }
+
+        // Insert new entry
+        collection
+            .insert_one(entry, None)
+            .await
+            .map_err(|e| format!("MongoDB insert error: {}", e))?;
+
+        inserted_count += 1;
+    }
+
+    println!(
+        "💾 Heart rate data: {} new entries inserted, {} duplicates skipped",
+        inserted_count, skipped_count
+    );
+    Ok(())
 }
 
 pub async fn save_oura_tokens_to_mongo(
@@ -880,4 +1972,565 @@ pub async fn get_valid_oura_access_token(
         Some(tokens) => Ok(Some(tokens.access_token)),
         None => Ok(None),
     }
+}
+
+pub async fn get_oura_sync_status(
+    mongo_client: &mongodb::Client,
+    user_id: &str,
+    data_type: &str,
+) -> Result<Option<OuraSyncStatus>, String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<OuraSyncStatus>("oura_sync_status");
+
+    let filter = doc! {
+        "user_id": user_id,
+        "data_type": data_type
+    };
+
+    match collection.find_one(filter, None).await {
+        Ok(status) => Ok(status),
+        Err(e) => Err(format!("MongoDB error: {}", e)),
+    }
+}
+
+pub async fn update_oura_sync_status(
+    mongo_client: &mongodb::Client,
+    user_id: &str,
+    data_type: &str,
+    last_sync_date: &str,
+) -> Result<(), String> {
+    let db = mongo_client.database("wyat");
+    let collection = db.collection::<OuraSyncStatus>("oura_sync_status");
+
+    let now = Utc::now();
+    let sync_status = OuraSyncStatus {
+        id: None,
+        user_id: user_id.to_string(),
+        data_type: data_type.to_string(),
+        last_sync_at: now,
+        last_sync_date: last_sync_date.to_string(),
+        created_at: now,
+        updated_at: now,
+    };
+
+    let filter = doc! {
+        "user_id": user_id,
+        "data_type": data_type
+    };
+    let options = ReplaceOptions::builder().upsert(true).build();
+
+    collection
+        .replace_one(filter, sync_status, options)
+        .await
+        .map_err(|e| format!("MongoDB error: {}", e))?;
+
+    println!(
+        "💾 Updated sync status for {}: {}",
+        data_type, last_sync_date
+    );
+    Ok(())
+}
+
+pub async fn handle_oura_daily_readiness_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status =
+        get_oura_sync_status(&state.mongo_client, user_id, "daily_readiness").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
+        }
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!("⚡ Daily Readiness Sync - Error getting sync status: {}", e);
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    // Try to get OAuth access token, fallback to personal token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!(
+                "⚡ Daily Readiness Sync - Using OAuth token: {}",
+                &token[..10]
+            );
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            personal_token
+        }
+        Err(e) => {
+            println!(
+                "⚡ Daily Readiness Sync - Token error: {}, using personal token",
+                e
+            );
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    println!(
+        "⚡ Daily Readiness Sync - Date range: {} → {}",
+        start_date, end_date
+    );
+
+    match get_oura_daily_readiness_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_readiness_data) => {
+            println!(
+                "⚡ Daily Readiness Sync - Retrieved {} daily readiness records",
+                daily_readiness_data.len()
+            );
+
+            match save_daily_readiness_data_to_mongo(&state.mongo_client, &daily_readiness_data)
+                .await
+            {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_readiness",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "⚡ Daily Readiness Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "⚡ Daily Readiness Sync - Saved {} daily readiness records to MongoDB",
+                        daily_readiness_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily readiness records from {} to {}", daily_readiness_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_readiness_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
+    }
+}
+
+pub async fn handle_oura_daily_resilience_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status =
+        get_oura_sync_status(&state.mongo_client, user_id, "daily_resilience").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+            next_day.format("%Y-%m-%d").to_string()
+        }
+        _ => {
+            // Default to yesterday if no previous sync
+            let yesterday = today - chrono::Duration::days(1);
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    println!(
+        "🔄 Syncing daily resilience data from {} to {}",
+        start_date, end_date
+    );
+
+    // Get valid access token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "No valid Oura access token found. Please authenticate first."
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": format!("Failed to get access token: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch data from Oura API
+    let daily_resilience_data = match get_oura_daily_resilience_data_from_api(
+        &start_date,
+        &end_date,
+        &access_token,
+    )
+    .await
+    {
+        Ok(data) => data,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": format!("Failed to fetch daily resilience data: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    if daily_resilience_data.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "status": "success",
+                "message": format!("No daily resilience data found for {} to {}", start_date, end_date),
+                "sync_range": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                },
+                "data": []
+            })),
+        )
+            .into_response();
+    }
+
+    // Save to MongoDB
+    if let Err(e) =
+        save_daily_resilience_data_to_mongo(&state.mongo_client, &daily_resilience_data).await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to save daily resilience data: {}", e)
+            })),
+        )
+            .into_response();
+    }
+
+    // Update sync status
+    if let Err(e) =
+        update_oura_sync_status(&state.mongo_client, user_id, "daily_resilience", &end_date).await
+    {
+        println!("⚠️  Warning: Failed to update sync status: {}", e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": format!("Synced {} daily resilience records from {} to {}", daily_resilience_data.len(), start_date, end_date),
+            "sync_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "data": daily_resilience_data
+        })),
+    )
+        .into_response()
+}
+
+pub async fn handle_oura_daily_spo2_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "daily_spo2").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+            next_day.format("%Y-%m-%d").to_string()
+        }
+        _ => {
+            // Default to yesterday if no previous sync
+            let yesterday = today - chrono::Duration::days(1);
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    println!(
+        "🔄 Syncing daily SpO2 data from {} to {}",
+        start_date, end_date
+    );
+
+    // Get valid access token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "No valid Oura access token found. Please authenticate first."
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": format!("Failed to get access token: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch data from Oura API
+    let daily_spo2_data =
+        match get_oura_daily_spo2_data_from_api(&start_date, &end_date, &access_token).await {
+            Ok(data) => data,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "error",
+                        "message": format!("Failed to fetch daily SpO2 data: {}", e)
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+    if daily_spo2_data.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "status": "success",
+                "message": format!("No daily SpO2 data found for {} to {}", start_date, end_date),
+                "sync_range": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                },
+                "data": []
+            })),
+        )
+            .into_response();
+    }
+
+    // Save to MongoDB
+    if let Err(e) = save_daily_spo2_data_to_mongo(&state.mongo_client, &daily_spo2_data).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to save daily SpO2 data: {}", e)
+            })),
+        )
+            .into_response();
+    }
+
+    // Update sync status
+    if let Err(e) =
+        update_oura_sync_status(&state.mongo_client, user_id, "daily_spo2", &end_date).await
+    {
+        println!("⚠️  Warning: Failed to update sync status: {}", e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": format!("Synced {} daily SpO2 records from {} to {}", daily_spo2_data.len(), start_date, end_date),
+            "sync_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "data": daily_spo2_data
+        })),
+    )
+        .into_response()
+}
+
+pub async fn handle_oura_vo2_max_sync(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let user_id = "default_user";
+
+    // Get last sync date from database, or default to yesterday
+    let last_sync_status = get_oura_sync_status(&state.mongo_client, user_id, "vo2_max").await;
+    let today = chrono::Utc::now().date_naive();
+
+    let start_date = match last_sync_status {
+        Ok(Some(status)) => {
+            // Use the day after last sync as start date
+            let last_date = chrono::NaiveDate::parse_from_str(&status.last_sync_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| today - chrono::Duration::days(1));
+
+            // Calculate the next day after last sync
+            let next_day = last_date + chrono::Duration::days(1);
+            next_day.format("%Y-%m-%d").to_string()
+        }
+        _ => {
+            // Default to yesterday if no previous sync
+            let yesterday = today - chrono::Duration::days(1);
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    };
+
+    let end_date = today.format("%Y-%m-%d").to_string();
+
+    println!(
+        "🔄 Syncing VO2 max data from {} to {}",
+        start_date, end_date
+    );
+
+    // Get valid access token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "status": "error",
+                    "message": "No valid Oura access token found. Please authenticate first."
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "status": "error",
+                    "message": format!("Failed to get access token: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Fetch data from Oura API
+    let vo2_max_data =
+        match get_oura_vo2_max_data_from_api(&start_date, &end_date, &access_token).await {
+            Ok(data) => data,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "status": "error",
+                        "message": format!("Failed to fetch VO2 max data: {}", e)
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+    if vo2_max_data.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "status": "success",
+                "message": format!("No VO2 max data found for {} to {}", start_date, end_date),
+                "sync_range": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                },
+                "data": []
+            })),
+        )
+            .into_response();
+    }
+
+    // Save to MongoDB
+    if let Err(e) = save_vo2_max_data_to_mongo(&state.mongo_client, &vo2_max_data).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to save VO2 max data: {}", e)
+            })),
+        )
+            .into_response();
+    }
+
+    // Update sync status
+    if let Err(e) =
+        update_oura_sync_status(&state.mongo_client, user_id, "vo2_max", &end_date).await
+    {
+        println!("⚠️  Warning: Failed to update sync status: {}", e);
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "success",
+            "message": format!("Synced {} VO2 max records from {} to {}", vo2_max_data.len(), start_date, end_date),
+            "sync_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "data": vo2_max_data
+        })),
+    )
+        .into_response()
 }

@@ -21,8 +21,11 @@ use std::net::SocketAddr;
 
 mod services;
 use services::oura::{
-    generate_oura_auth_url, get_oura_sleep_data_from_api, handle_oura_callback,
-    handle_oura_heartrate_sync, handle_oura_sleep_sync,
+    generate_oura_auth_url, handle_oura_callback, handle_oura_daily_activity_sync,
+    handle_oura_daily_cardiovascular_age_sync, handle_oura_daily_readiness_sync,
+    handle_oura_daily_resilience_sync, handle_oura_daily_sleep_sync, handle_oura_daily_spo2_sync,
+    handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_sleep_sync,
+    handle_oura_vo2_max_sync,
 };
 
 use axum::Json as AxumJson;
@@ -149,6 +152,29 @@ async fn main() {
         .route("/journal/mongo/:id", patch(edit_journal_entry_mongo))
         .route("/journal/mongo/:id", delete(delete_journal_entry_mongo))
         .route("/oura/sleep/sync", get(handle_oura_sleep_sync))
+        .route("/oura/daily-sleep/sync", get(handle_oura_daily_sleep_sync))
+        .route(
+            "/oura/daily-activity/sync",
+            get(handle_oura_daily_activity_sync),
+        )
+        .route(
+            "/oura/daily-stress/sync",
+            get(handle_oura_daily_stress_sync),
+        )
+        .route(
+            "/oura/daily-cardiovascular-age/sync",
+            get(handle_oura_daily_cardiovascular_age_sync),
+        )
+        .route(
+            "/oura/daily-readiness/sync",
+            get(handle_oura_daily_readiness_sync),
+        )
+        .route(
+            "/oura/daily-resilience/sync",
+            get(handle_oura_daily_resilience_sync),
+        )
+        .route("/oura/daily-spo2/sync", get(handle_oura_daily_spo2_sync))
+        .route("/oura/vo2-max/sync", get(handle_oura_vo2_max_sync))
         .route("/oura/heartrate/sync", get(handle_oura_heartrate_sync))
         .route("/oura/auth", get(generate_oura_auth_url))
         .route("/oura/callback", get(handle_oura_callback))
