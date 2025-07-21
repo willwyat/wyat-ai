@@ -780,9 +780,10 @@ pub struct DailyReadinessData {
     pub id: Option<String>,
     pub day: String,
     pub score: Option<i32>,
-    pub temperature_deviation: Option<f32>,
-    pub temperature_trend_deviation: Option<f32>,
+    pub temperature_deviation: Option<f64>,
+    pub temperature_trend_deviation: Option<f64>,
     pub timestamp: Option<String>,
+    #[serde(alias = "contribitors")]
     pub contributors: Option<DailyReadinessContributors>,
 }
 

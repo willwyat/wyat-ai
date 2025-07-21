@@ -28,7 +28,10 @@ use services::oura::{
     handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_sleep_sync,
     handle_oura_vo2_max_sync,
 };
-use vitals::get_daily_vitals;
+use vitals::{
+    get_daily_activity, get_daily_cardiovascular_age, get_daily_readiness, get_daily_resilience,
+    get_daily_spo2, get_daily_stress, get_vo2_max,
+};
 
 use axum::Json as AxumJson;
 use reqwest::Client;
@@ -182,7 +185,17 @@ async fn main() {
         .route("/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
-        .route("/vitals/daily", get(get_daily_vitals))
+        // .route("/vitals/daily", get(get_daily_vitals))
+        .route("/vitals/readiness", get(get_daily_readiness))
+        .route("/vitals/activity", get(get_daily_activity))
+        .route(
+            "/vitals/cardiovascular-age",
+            get(get_daily_cardiovascular_age),
+        )
+        .route("/vitals/resilience", get(get_daily_resilience))
+        .route("/vitals/spo2", get(get_daily_spo2))
+        .route("/vitals/stress", get(get_daily_stress))
+        .route("/vitals/vo2-max", get(get_vo2_max))
         .layer(cors)
         .with_state(state.clone());
 

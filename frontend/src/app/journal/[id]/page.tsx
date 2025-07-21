@@ -179,7 +179,7 @@ export default function JournalEntryPage({
           />
         </div>
       ) : (
-        <article className="leading-relaxed whitespace-pre-wrap">
+        <article className="leading-relaxed whitespace-pre-wrap font-serif">
           {latestVersion?.text || "No content available."}
         </article>
       )}
