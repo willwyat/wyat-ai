@@ -1,5 +1,5 @@
 use axum::{
-    Form, Json,
+    Json,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
 use std::env;
 
 use crate::AppState;
@@ -444,7 +443,6 @@ pub async fn save_daily_activity_data_to_mongo(
 
 pub async fn handle_oura_daily_activity_sync(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let user_id = "default_user";
 
@@ -647,7 +645,6 @@ pub async fn save_daily_cardiovascular_age_data_to_mongo(
 
 pub async fn handle_oura_daily_cardiovascular_age_sync(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let user_id = "default_user";
 
@@ -879,7 +876,6 @@ pub async fn save_daily_readiness_data_to_mongo(
 
 pub async fn handle_oura_daily_readiness_sync(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let user_id = "default_user";
 
@@ -1093,7 +1089,6 @@ pub async fn save_daily_resilience_data_to_mongo(
 
 pub async fn handle_oura_daily_resilience_sync(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let user_id = "default_user";
 
@@ -1324,10 +1319,7 @@ pub async fn save_daily_sleep_data_to_mongo(
     Ok(())
 }
 
-pub async fn handle_oura_daily_sleep_sync(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
+pub async fn handle_oura_daily_sleep_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let user_id = "default_user";
 
     // Get last sync date from database, or default to yesterday
@@ -1525,10 +1517,7 @@ pub async fn save_daily_spo2_data_to_mongo(
     Ok(())
 }
 
-pub async fn handle_oura_daily_spo2_sync(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
+pub async fn handle_oura_daily_spo2_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let user_id = "default_user";
 
     // Get last sync date from database, or default to yesterday
@@ -1741,7 +1730,6 @@ pub async fn save_daily_stress_data_to_mongo(
 
 pub async fn handle_oura_daily_stress_sync(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let user_id = "default_user";
 
@@ -1939,10 +1927,7 @@ pub async fn save_heartrate_data_to_mongo(
     Ok(())
 }
 
-pub async fn handle_oura_heartrate_sync(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
+pub async fn handle_oura_heartrate_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let user_id = "default_user";
 
     // Get last sync date from database, or default to yesterday
@@ -2185,10 +2170,7 @@ pub async fn save_sleep_data_to_mongo(
     Ok(())
 }
 
-pub async fn handle_oura_sleep_sync(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
+pub async fn handle_oura_sleep_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let user_id = "default_user";
 
     // Get last sync date from database, or default to yesterday
@@ -2377,10 +2359,7 @@ pub async fn save_vo2_max_data_to_mongo(
     Ok(())
 }
 
-pub async fn handle_oura_vo2_max_sync(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
+pub async fn handle_oura_vo2_max_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let user_id = "default_user";
 
     // Get last sync date from database, or default to yesterday
