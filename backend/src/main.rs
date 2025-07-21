@@ -1,6 +1,7 @@
 mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
+mod vitals;
 use journal::{
     AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
     get_journal_entries_mongo, get_journal_entry_by_id_mongo,
@@ -27,6 +28,7 @@ use services::oura::{
     handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_sleep_sync,
     handle_oura_vo2_max_sync,
 };
+use vitals::get_daily_vitals;
 
 use axum::Json as AxumJson;
 use reqwest::Client;
@@ -180,6 +182,7 @@ async fn main() {
         .route("/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
+        .route("/vitals/daily", get(get_daily_vitals))
         .layer(cors)
         .with_state(state.clone());
 
