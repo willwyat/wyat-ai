@@ -20,9 +20,23 @@ export default function JournalPage() {
   const [newDate, setNewDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+  const [passcode, setPasscode] = useState("");
+  const [passcodeValid, setPasscodeValid] = useState(false);
+  const [passcodeError, setPasscodeError] = useState("");
   const router = useRouter();
 
   useEffect(() => {
+    // Check localStorage for passcode
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("journal_passcode");
+      if (stored === "wyat2024") {
+        setPasscodeValid(true);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!passcodeValid) return;
     fetch(`${API_URL}/journal/mongo/all`, {
       headers: {
         "x-wyat-api-key": WYAT_API_KEY,
@@ -37,7 +51,20 @@ export default function JournalPage() {
         setEntries(sortedEntries);
         setLoading(false);
       });
-  }, []);
+  }, [passcodeValid]);
+
+  const handlePasscodeSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (passcode === "wyat2024") {
+      setPasscodeValid(true);
+      setPasscodeError("");
+      if (typeof window !== "undefined") {
+        localStorage.setItem("journal_passcode", "wyat2024");
+      }
+    } else {
+      setPasscodeError("Incorrect passcode");
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -78,6 +105,36 @@ export default function JournalPage() {
     setEntries(sortedEntries);
     setLoading(false);
   };
+
+  if (!passcodeValid) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <form
+          onSubmit={handlePasscodeSubmit}
+          className="bg-zinc-100 dark:bg-zinc-800 rounded px-8 py-6 flex flex-col gap-4 shadow-md"
+        >
+          <h2 className="text-2xl font-bold mb-2">Enter Passcode</h2>
+          <input
+            type="password"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Passcode"
+            autoFocus
+          />
+          {passcodeError && (
+            <p className="text-red-500 text-sm">{passcodeError}</p>
+          )}
+          <button
+            type="submit"
+            className="cursor-pointer text-white dark:text-black bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 font-bold text-sm px-4 py-2 rounded"
+          >
+            Unlock
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   if (loading) return <p>Loading...</p>;
 

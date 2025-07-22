@@ -25,8 +25,8 @@ use services::oura::{
     generate_oura_auth_url, handle_oura_callback, handle_oura_daily_activity_sync,
     handle_oura_daily_cardiovascular_age_sync, handle_oura_daily_readiness_sync,
     handle_oura_daily_resilience_sync, handle_oura_daily_sleep_sync, handle_oura_daily_spo2_sync,
-    handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_sleep_sync,
-    handle_oura_vo2_max_sync,
+    handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_historical_sync,
+    handle_oura_sleep_sync, handle_oura_vo2_max_sync,
 };
 use vitals::{
     get_daily_activity, get_daily_cardiovascular_age, get_daily_readiness, get_daily_resilience,
@@ -181,6 +181,7 @@ async fn main() {
         .route("/oura/daily-spo2/sync", get(handle_oura_daily_spo2_sync))
         .route("/oura/vo2-max/sync", get(handle_oura_vo2_max_sync))
         .route("/oura/heartrate/sync", get(handle_oura_heartrate_sync))
+        .route("/oura/historical-sync", get(handle_oura_historical_sync))
         .route("/oura/auth", get(generate_oura_auth_url))
         .route("/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))

@@ -194,9 +194,9 @@ pub async fn get_oura_tokens_from_mongo(
 
 pub async fn generate_oura_auth_url() -> impl IntoResponse {
     let client_id = env::var("OURA_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
-    let frontend_url =
-        env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
-    let redirect_uri = format!("{}/api/oura/callback", frontend_url.trim_end_matches('/'));
+    let backend_url =
+        env::var("BACKEND_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+    let redirect_uri = format!("{}/oura/callback", backend_url.trim_end_matches('/'));
     let scope = "email personal daily heartrate workout session";
 
     println!("🔐 Oura OAuth - Client ID: {}", client_id);
@@ -218,9 +218,9 @@ pub async fn handle_oura_callback(
 ) -> impl IntoResponse {
     let client_id = env::var("OURA_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
     let client_secret = env::var("OURA_CLIENT_SECRET").unwrap_or_else(|_| "missing".to_string());
-    let frontend_url =
-        env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
-    let redirect_uri = format!("{}/api/oura/callback", frontend_url.trim_end_matches('/'));
+    let backend_url =
+        env::var("BACKEND_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+    let redirect_uri = format!("{}/oura/callback", backend_url.trim_end_matches('/'));
 
     println!("🔄 Oura Callback - Received code: {}", &query.code[..10]);
     println!("🔄 Oura Callback - Client ID: {}", client_id);
@@ -276,40 +276,31 @@ pub async fn handle_oura_callback(
                                 println!("✅ Oura tokens stored successfully");
                                 Redirect::to(&format!(
                                     "{}/oura-success",
-                                    frontend_url.trim_end_matches('/')
+                                    backend_url.trim_end_matches('/')
                                 ))
                             }
                             Err(e) => {
                                 println!("❌ Failed to store tokens: {}", e);
                                 Redirect::to(&format!(
                                     "{}/oura-error",
-                                    frontend_url.trim_end_matches('/')
+                                    backend_url.trim_end_matches('/')
                                 ))
                             }
                         }
                     }
                     Err(e) => {
                         println!("Failed to parse token response: {}", e);
-                        Redirect::to(&format!(
-                            "{}/oura-error",
-                            frontend_url.trim_end_matches('/')
-                        ))
+                        Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
                     }
                 }
             } else {
                 println!("Token exchange failed with status: {}", resp.status());
-                Redirect::to(&format!(
-                    "{}/oura-error",
-                    frontend_url.trim_end_matches('/')
-                ))
+                Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
             }
         }
         Err(e) => {
             println!("Failed to exchange code for token: {}", e);
-            Redirect::to(&format!(
-                "{}/oura-error",
-                frontend_url.trim_end_matches('/')
-            ))
+            Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
         }
     }
 }
@@ -370,7 +361,8 @@ pub async fn get_oura_daily_activity_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailyActivityData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_activity?start_date={}&end_date={}",
@@ -575,7 +567,8 @@ pub async fn get_oura_daily_cardiovascular_age_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailyCardiovascularAgeData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_cardiovascular_age?start_date={}&end_date={}",
@@ -804,7 +797,8 @@ pub async fn get_oura_daily_readiness_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailyReadinessData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_readiness?start_date={}&end_date={}",
@@ -1019,7 +1013,8 @@ pub async fn get_oura_daily_resilience_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailyResilienceData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_resilience?start_date={}&end_date={}",
@@ -1249,7 +1244,8 @@ pub async fn get_oura_daily_sleep_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailySleepData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_sleep?start_date={}&end_date={}",
@@ -1449,7 +1445,8 @@ pub async fn get_oura_daily_spo2_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailySpO2Data>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_spo2?start_date={}&end_date={}",
@@ -1658,7 +1655,8 @@ pub async fn get_oura_daily_stress_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<DailyStressData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/daily_stress?start_date={}&end_date={}",
@@ -1858,7 +1856,8 @@ pub async fn get_oura_heartrate_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<HeartRateData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
     let url = format!(
         "{}/usercollection/heartrate?start_date={}&end_date={}",
         base_url, start_date, end_date
@@ -2071,7 +2070,8 @@ pub async fn get_oura_sleep_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<SleepData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/sleep?start_date={}&end_date={}",
@@ -2291,7 +2291,8 @@ pub async fn get_oura_vo2_max_data_from_api(
     end_date: &str,
     access_token: &str,
 ) -> Result<Vec<VO2MaxData>, String> {
-    let base_url = "https://api.ouraring.com/v2";
+    let base_url =
+        env::var("OURA_API_URL").unwrap_or_else(|_| "https://api.ouraring.com/v2".to_string());
 
     let url = format!(
         "{}/usercollection/vo2_max?start_date={}&end_date={}",
@@ -2554,4 +2555,292 @@ pub async fn update_oura_sync_status(
         data_type, last_sync_date
     );
     Ok(())
+}
+
+// ===========================================
+// * * * * One-off Historical Data Sync * * * *
+// ===========================================
+// Sync historical data from May 31 to July 19, 2024
+
+pub async fn handle_oura_historical_sync(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let user_id = "default_user";
+    let start_date = "2025-05-31";
+    let end_date = "2025-07-19";
+
+    println!(
+        "🔄 Starting historical Oura data sync from {} to {}",
+        start_date, end_date
+    );
+
+    // Get valid access token
+    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
+        Ok(Some(token)) => {
+            println!("🔑 Using OAuth token: {}", &token[..10]);
+            token
+        }
+        Ok(None) => {
+            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+            println!("🔑 Using personal token: {}", &personal_token[..10]);
+            personal_token
+        }
+        Err(e) => {
+            println!("❌ Token error: {}, using personal token", e);
+            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
+        }
+    };
+
+    let mut results = Vec::new();
+
+    // Sync Daily Stress
+    println!("😰 Syncing daily stress data...");
+    match get_oura_daily_stress_data_from_api(start_date, end_date, &access_token).await {
+        Ok(stress_data) => {
+            match save_daily_stress_data_to_mongo(&state.mongo_client, &stress_data).await {
+                Ok(_) => {
+                    println!("✅ Saved {} daily stress records", stress_data.len());
+                    results.push(json!({
+                        "data_type": "daily_stress",
+                        "status": "success",
+                        "count": stress_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save stress data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_stress",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch stress data: {}", e);
+            results.push(json!({
+                "data_type": "daily_stress",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily SpO2
+    println!("🫁 Syncing daily SpO2 data...");
+    match get_oura_daily_spo2_data_from_api(start_date, end_date, &access_token).await {
+        Ok(spo2_data) => {
+            match save_daily_spo2_data_to_mongo(&state.mongo_client, &spo2_data).await {
+                Ok(_) => {
+                    println!("✅ Saved {} daily SpO2 records", spo2_data.len());
+                    results.push(json!({
+                        "data_type": "daily_spo2",
+                        "status": "success",
+                        "count": spo2_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save SpO2 data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_spo2",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch SpO2 data: {}", e);
+            results.push(json!({
+                "data_type": "daily_spo2",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily Activity
+    println!("🏃 Syncing daily activity data...");
+    match get_oura_daily_activity_data_from_api(start_date, end_date, &access_token).await {
+        Ok(activity_data) => {
+            match save_daily_activity_data_to_mongo(&state.mongo_client, &activity_data).await {
+                Ok(_) => {
+                    println!("✅ Saved {} daily activity records", activity_data.len());
+                    results.push(json!({
+                        "data_type": "daily_activity",
+                        "status": "success",
+                        "count": activity_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save activity data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_activity",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch activity data: {}", e);
+            results.push(json!({
+                "data_type": "daily_activity",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily Cardiovascular Age
+    println!("❤️ Syncing daily cardiovascular age data...");
+    match get_oura_daily_cardiovascular_age_data_from_api(start_date, end_date, &access_token).await
+    {
+        Ok(cv_age_data) => {
+            match save_daily_cardiovascular_age_data_to_mongo(&state.mongo_client, &cv_age_data)
+                .await
+            {
+                Ok(_) => {
+                    println!(
+                        "✅ Saved {} daily cardiovascular age records",
+                        cv_age_data.len()
+                    );
+                    results.push(json!({
+                        "data_type": "daily_cardiovascular_age",
+                        "status": "success",
+                        "count": cv_age_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save cardiovascular age data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_cardiovascular_age",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch cardiovascular age data: {}", e);
+            results.push(json!({
+                "data_type": "daily_cardiovascular_age",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily Readiness
+    println!("⚡ Syncing daily readiness data...");
+    match get_oura_daily_readiness_data_from_api(start_date, end_date, &access_token).await {
+        Ok(readiness_data) => {
+            match save_daily_readiness_data_to_mongo(&state.mongo_client, &readiness_data).await {
+                Ok(_) => {
+                    println!("✅ Saved {} daily readiness records", readiness_data.len());
+                    results.push(json!({
+                        "data_type": "daily_readiness",
+                        "status": "success",
+                        "count": readiness_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save readiness data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_readiness",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch readiness data: {}", e);
+            results.push(json!({
+                "data_type": "daily_readiness",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily Resilience
+    println!("🔄 Syncing daily resilience data...");
+    match get_oura_daily_resilience_data_from_api(start_date, end_date, &access_token).await {
+        Ok(resilience_data) => {
+            match save_daily_resilience_data_to_mongo(&state.mongo_client, &resilience_data).await {
+                Ok(_) => {
+                    println!(
+                        "✅ Saved {} daily resilience records",
+                        resilience_data.len()
+                    );
+                    results.push(json!({
+                        "data_type": "daily_resilience",
+                        "status": "success",
+                        "count": resilience_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save resilience data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_resilience",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch resilience data: {}", e);
+            results.push(json!({
+                "data_type": "daily_resilience",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    // Sync Daily Sleep
+    println!("😴 Syncing daily sleep data...");
+    match get_oura_daily_sleep_data_from_api(start_date, end_date, &access_token).await {
+        Ok(sleep_data) => {
+            match save_daily_sleep_data_to_mongo(&state.mongo_client, &sleep_data).await {
+                Ok(_) => {
+                    println!("✅ Saved {} daily sleep records", sleep_data.len());
+                    results.push(json!({
+                        "data_type": "daily_sleep",
+                        "status": "success",
+                        "count": sleep_data.len()
+                    }));
+                }
+                Err(e) => {
+                    println!("❌ Failed to save sleep data: {}", e);
+                    results.push(json!({
+                        "data_type": "daily_sleep",
+                        "status": "error",
+                        "error": e
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to fetch sleep data: {}", e);
+            results.push(json!({
+                "data_type": "daily_sleep",
+                "status": "error",
+                "error": e
+            }));
+        }
+    }
+
+    println!("🎉 Historical sync completed!");
+
+    Json(json!({
+        "status": "completed",
+        "message": format!("Historical sync from {} to {}", start_date, end_date),
+        "sync_range": {
+            "start_date": start_date,
+            "end_date": end_date
+        },
+        "results": results
+    }))
+    .into_response()
 }
