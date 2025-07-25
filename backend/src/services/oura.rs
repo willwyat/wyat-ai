@@ -196,8 +196,8 @@ pub async fn generate_oura_auth_url() -> impl IntoResponse {
     let client_id = env::var("OURA_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
     let backend_url =
         env::var("BACKEND_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-    let redirect_uri = format!("{}/oura/callback", backend_url.trim_end_matches('/'));
-    let scope = "email personal daily heartrate workout session";
+    let redirect_uri = format!("{}/api/oura/callback", backend_url.trim_end_matches('/'));
+    let scope = "email personal daily heartrate workout session spo2Daily tag User";
 
     println!("🔐 Oura OAuth - Client ID: {}", client_id);
     println!("🔐 Oura OAuth - Redirect URI: {}", redirect_uri);
@@ -205,7 +205,9 @@ pub async fn generate_oura_auth_url() -> impl IntoResponse {
 
     let auth_url = format!(
         "https://cloud.ouraring.com/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}",
-        client_id, redirect_uri, scope
+        client_id,
+        urlencoding::encode(&redirect_uri),
+        scope
     );
 
     println!("🔐 Oura OAuth - Generated URL: {}", auth_url);
@@ -220,26 +222,38 @@ pub async fn handle_oura_callback(
     let client_secret = env::var("OURA_CLIENT_SECRET").unwrap_or_else(|_| "missing".to_string());
     let backend_url =
         env::var("BACKEND_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
-    let redirect_uri = format!("{}/oura/callback", backend_url.trim_end_matches('/'));
+    let redirect_uri = format!("{}/api/oura/callback", backend_url.trim_end_matches('/'));
 
     println!("🔄 Oura Callback - Received code: {}", &query.code[..10]);
     println!("🔄 Oura Callback - Client ID: {}", client_id);
     println!("🔄 Oura Callback - Client Secret: {}", &client_secret[..10]);
     println!("🔄 Oura Callback - Redirect URI: {}", redirect_uri);
 
-    let token_request = OuraTokenRequest {
-        grant_type: "authorization_code".to_string(),
-        code: query.code,
-        client_id,
-        client_secret,
-        redirect_uri: redirect_uri.to_string(),
-    };
+    // The redirect_uri in the token exchange must exactly match what was sent in the authorization request
+    // Since the authorization request uses URL-encoded redirect_uri, we need to use the same here
+    let encoded_redirect_uri = urlencoding::encode(&redirect_uri);
 
     let client = Client::new();
     println!("🔄 Oura Callback - Making token request to Oura API...");
+
+    // Create form data for OAuth token request
+    // Note: redirect_uri must exactly match what was sent in the authorization request
+    let form_data = format!(
+        "grant_type=authorization_code&code={}&client_id={}&client_secret={}&redirect_uri={}",
+        query.code, client_id, client_secret, encoded_redirect_uri
+    );
+
+    println!(
+        "🔄 Oura Callback - Form data: grant_type=authorization_code, code={}, client_id={}, redirect_uri={}",
+        &query.code[..10],
+        &client_id[..10],
+        encoded_redirect_uri
+    );
+
     let response = client
         .post("https://api.ouraring.com/oauth/token")
-        .json(&token_request)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(form_data)
         .send()
         .await;
 
@@ -274,33 +288,60 @@ pub async fn handle_oura_callback(
                         match save_oura_tokens_to_mongo(&state.mongo_client, &tokens).await {
                             Ok(_) => {
                                 println!("✅ Oura tokens stored successfully");
-                                Redirect::to(&format!(
-                                    "{}/oura-success",
-                                    backend_url.trim_end_matches('/')
-                                ))
+                                // Redirect to frontend success page instead of callback endpoint
+                                let frontend_url = env::var("FRONTEND_ORIGIN")
+                                    .unwrap_or_else(|_| "http://localhost:3000".to_string());
+                                let redirect_url = format!(
+                                    "{}/api/oura/callback",
+                                    frontend_url.trim_end_matches('/')
+                                );
+                                println!("🔄 Redirecting to frontend: {}", redirect_url);
+                                Redirect::to(&redirect_url)
                             }
                             Err(e) => {
                                 println!("❌ Failed to store tokens: {}", e);
+                                let frontend_url = env::var("FRONTEND_ORIGIN")
+                                    .unwrap_or_else(|_| "http://localhost:3000".to_string());
                                 Redirect::to(&format!(
-                                    "{}/oura-error",
-                                    backend_url.trim_end_matches('/')
+                                    "{}/api/oura/callback?error=true",
+                                    frontend_url.trim_end_matches('/')
                                 ))
                             }
                         }
                     }
                     Err(e) => {
                         println!("Failed to parse token response: {}", e);
-                        Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
+                        let frontend_url = env::var("FRONTEND_ORIGIN")
+                            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+                        Redirect::to(&format!(
+                            "{}/api/oura/callback?error=true",
+                            frontend_url.trim_end_matches('/')
+                        ))
                     }
                 }
             } else {
                 println!("Token exchange failed with status: {}", resp.status());
-                Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
+                // Log the error response body
+                match resp.text().await {
+                    Ok(error_text) => println!("Token exchange error response: {}", error_text),
+                    Err(e) => println!("Failed to read error response: {}", e),
+                }
+                let frontend_url = env::var("FRONTEND_ORIGIN")
+                    .unwrap_or_else(|_| "http://localhost:3000".to_string());
+                Redirect::to(&format!(
+                    "{}/api/oura/callback?error=true",
+                    frontend_url.trim_end_matches('/')
+                ))
             }
         }
         Err(e) => {
             println!("Failed to exchange code for token: {}", e);
-            Redirect::to(&format!("{}/oura-error", backend_url.trim_end_matches('/')))
+            let frontend_url =
+                env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
+            Redirect::to(&format!(
+                "{}/api/oura/callback?error=true",
+                frontend_url.trim_end_matches('/')
+            ))
         }
     }
 }
@@ -351,7 +392,7 @@ pub struct DailyActivityContributors {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DailyActivityMet {
-    pub interval: Option<i32>,
+    pub interval: Option<f32>,
     pub items: Option<Vec<f32>>,
     pub timestamp: Option<String>,
 }
@@ -478,27 +519,12 @@ pub async fn handle_oura_daily_activity_sync(
 
     let end_date = today.format("%Y-%m-%d").to_string();
 
-    // Try to get OAuth access token, fallback to personal token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
-        Ok(Some(token)) => {
-            println!(
-                "🏃 Daily Activity Sync - Using OAuth token: {}",
-                &token[..10]
-            );
-            token
-        }
-        Ok(None) => {
-            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
-            personal_token
-        }
-        Err(e) => {
-            println!(
-                "🏃 Daily Activity Sync - Token error: {}, using personal token",
-                e
-            );
-            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
-        }
-    };
+    // Use personal token directly for daily activity endpoint (OAuth token doesn't have access)
+    let access_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+    println!(
+        "🏃 Daily Activity Sync - Using personal token: {}",
+        &access_token[..10]
+    );
 
     println!(
         "🏃 Daily Activity Sync - Date range: {} → {}",
@@ -684,27 +710,12 @@ pub async fn handle_oura_daily_cardiovascular_age_sync(
 
     let end_date = today.format("%Y-%m-%d").to_string();
 
-    // Try to get OAuth access token, fallback to personal token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
-        Ok(Some(token)) => {
-            println!(
-                "❤️ Daily Cardiovascular Age Sync - Using OAuth token: {}",
-                &token[..10]
-            );
-            token
-        }
-        Ok(None) => {
-            let personal_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
-            personal_token
-        }
-        Err(e) => {
-            println!(
-                "❤️ Daily Cardiovascular Age Sync - Token error: {}, using personal token",
-                e
-            );
-            env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string())
-        }
-    };
+    // Use personal token directly for daily cardiovascular age endpoint (OAuth token doesn't have access)
+    let access_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+    println!(
+        "❤️ Daily Cardiovascular Age Sync - Using personal token: {}",
+        &access_token[..10]
+    );
 
     println!(
         "❤️ Daily Cardiovascular Age Sync - Date range: {} → {}",
@@ -1101,12 +1112,31 @@ pub async fn handle_oura_daily_resilience_sync(
 
             // Calculate the next day after last sync
             let next_day = last_date + chrono::Duration::days(1);
-            next_day.format("%Y-%m-%d").to_string()
+
+            // Ensure start date is not after today
+            if next_day > today {
+                // If next day is in the future, use yesterday
+                (today - chrono::Duration::days(1))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            } else {
+                next_day.format("%Y-%m-%d").to_string()
+            }
         }
-        _ => {
-            // Default to yesterday if no previous sync
-            let yesterday = today - chrono::Duration::days(1);
-            yesterday.format("%Y-%m-%d").to_string()
+        Ok(None) => {
+            // First time sync - default to yesterday
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        }
+        Err(e) => {
+            println!(
+                "🔄 Daily Resilience Sync - Error getting sync status: {}",
+                e
+            );
+            (today - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
         }
     };
 
@@ -1117,102 +1147,59 @@ pub async fn handle_oura_daily_resilience_sync(
         start_date, end_date
     );
 
-    // Get valid access token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "status": "error",
-                    "message": "No valid Oura access token found. Please authenticate first."
-                })),
-            )
-                .into_response();
+    // Use personal token directly for daily resilience endpoint (OAuth token doesn't have access)
+    let access_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+    println!(
+        "🔄 Daily Resilience Sync - Using personal token: {}",
+        &access_token[..10]
+    );
+
+    match get_oura_daily_resilience_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_resilience_data) => {
+            println!(
+                "🔄 Daily Resilience Sync - Retrieved {} daily resilience records",
+                daily_resilience_data.len()
+            );
+
+            match save_daily_resilience_data_to_mongo(&state.mongo_client, &daily_resilience_data)
+                .await
+            {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_resilience",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "🔄 Daily Resilience Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "🔄 Daily Resilience Sync - Saved {} daily resilience records to MongoDB",
+                        daily_resilience_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily resilience records from {} to {}", daily_resilience_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_resilience_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+            }
         }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": format!("Failed to get access token: {}", e)
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // Fetch data from Oura API
-    let daily_resilience_data = match get_oura_daily_resilience_data_from_api(
-        &start_date,
-        &end_date,
-        &access_token,
-    )
-    .await
-    {
-        Ok(data) => data,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": format!("Failed to fetch daily resilience data: {}", e)
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    if daily_resilience_data.is_empty() {
-        return (
-            StatusCode::OK,
-            Json(json!({
-                "status": "success",
-                "message": format!("No daily resilience data found for {} to {}", start_date, end_date),
-                "sync_range": {
-                    "start_date": start_date,
-                    "end_date": end_date
-                },
-                "data": []
-            })),
-        )
-            .into_response();
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
     }
-
-    // Save to MongoDB
-    if let Err(e) =
-        save_daily_resilience_data_to_mongo(&state.mongo_client, &daily_resilience_data).await
-    {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to save daily resilience data: {}", e)
-            })),
-        )
-            .into_response();
-    }
-
-    // Update sync status
-    if let Err(e) =
-        update_oura_sync_status(&state.mongo_client, user_id, "daily_resilience", &end_date).await
-    {
-        println!("⚠️  Warning: Failed to update sync status: {}", e);
-    }
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "message": format!("Synced {} daily resilience records from {} to {}", daily_resilience_data.len(), start_date, end_date),
-            "sync_range": {
-                "start_date": start_date,
-                "end_date": end_date
-            },
-            "data": daily_resilience_data
-        })),
-    )
-        .into_response()
 }
 
 // ===========================
@@ -1542,99 +1529,61 @@ pub async fn handle_oura_daily_spo2_sync(State(state): State<Arc<AppState>>) -> 
     let end_date = today.format("%Y-%m-%d").to_string();
 
     println!(
-        "🔄 Syncing daily SpO2 data from {} to {}",
+        "🫁 Daily SpO2 Sync - Date range: {} → {}",
         start_date, end_date
     );
 
-    // Get valid access token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "status": "error",
-                    "message": "No valid Oura access token found. Please authenticate first."
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": format!("Failed to get access token: {}", e)
-                })),
-            )
-                .into_response();
-        }
-    };
+    // Use personal token directly for SpO2 endpoint (OAuth token doesn't have access)
+    let access_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+    println!(
+        "🫁 Daily SpO2 Sync - Using personal token: {}",
+        &access_token[..10]
+    );
 
-    // Fetch data from Oura API
-    let daily_spo2_data =
-        match get_oura_daily_spo2_data_from_api(&start_date, &end_date, &access_token).await {
-            Ok(data) => data,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "error",
-                        "message": format!("Failed to fetch daily SpO2 data: {}", e)
-                    })),
-                )
-                    .into_response();
+    match get_oura_daily_spo2_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(daily_spo2_data) => {
+            println!(
+                "🫁 Daily SpO2 Sync - Retrieved {} daily SpO2 records",
+                daily_spo2_data.len()
+            );
+
+            match save_daily_spo2_data_to_mongo(&state.mongo_client, &daily_spo2_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) = update_oura_sync_status(
+                        &state.mongo_client,
+                        user_id,
+                        "daily_spo2",
+                        &end_date,
+                    )
+                    .await
+                    {
+                        println!(
+                            "🫁 Daily SpO2 Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "🫁 Daily SpO2 Sync - Saved {} daily SpO2 records to MongoDB",
+                        daily_spo2_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} daily SpO2 records from {} to {}", daily_spo2_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": daily_spo2_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
             }
-        };
-
-    if daily_spo2_data.is_empty() {
-        return (
-            StatusCode::OK,
-            Json(json!({
-                "status": "success",
-                "message": format!("No daily SpO2 data found for {} to {}", start_date, end_date),
-                "sync_range": {
-                    "start_date": start_date,
-                    "end_date": end_date
-                },
-                "data": []
-            })),
-        )
-            .into_response();
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
     }
-
-    // Save to MongoDB
-    if let Err(e) = save_daily_spo2_data_to_mongo(&state.mongo_client, &daily_spo2_data).await {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to save daily SpO2 data: {}", e)
-            })),
-        )
-            .into_response();
-    }
-
-    // Update sync status
-    if let Err(e) =
-        update_oura_sync_status(&state.mongo_client, user_id, "daily_spo2", &end_date).await
-    {
-        println!("⚠️  Warning: Failed to update sync status: {}", e);
-    }
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "message": format!("Synced {} daily SpO2 records from {} to {}", daily_spo2_data.len(), start_date, end_date),
-            "sync_range": {
-                "start_date": start_date,
-                "end_date": end_date
-            },
-            "data": daily_spo2_data
-        })),
-    )
-        .into_response()
 }
 
 // ============================
@@ -2388,99 +2337,57 @@ pub async fn handle_oura_vo2_max_sync(State(state): State<Arc<AppState>>) -> imp
     let end_date = today.format("%Y-%m-%d").to_string();
 
     println!(
-        "🔄 Syncing VO2 max data from {} to {}",
+        "🫁 VO2 Max Sync - Date range: {} → {}",
         start_date, end_date
     );
 
-    // Get valid access token
-    let access_token = match get_valid_oura_access_token(&state.mongo_client, user_id).await {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "status": "error",
-                    "message": "No valid Oura access token found. Please authenticate first."
-                })),
-            )
-                .into_response();
-        }
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "status": "error",
-                    "message": format!("Failed to get access token: {}", e)
-                })),
-            )
-                .into_response();
-        }
-    };
+    // Use personal token directly for VO2 max endpoint (OAuth token doesn't have access)
+    let access_token = env::var("OURA_TOKEN").unwrap_or_else(|_| "missing".to_string());
+    println!(
+        "🫁 VO2 Max Sync - Using personal token: {}",
+        &access_token[..10]
+    );
 
-    // Fetch data from Oura API
-    let vo2_max_data =
-        match get_oura_vo2_max_data_from_api(&start_date, &end_date, &access_token).await {
-            Ok(data) => data,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "status": "error",
-                        "message": format!("Failed to fetch VO2 max data: {}", e)
-                    })),
-                )
-                    .into_response();
+    match get_oura_vo2_max_data_from_api(&start_date, &end_date, &access_token).await {
+        Ok(vo2_max_data) => {
+            println!(
+                "🫁 VO2 Max Sync - Retrieved {} VO2 max records",
+                vo2_max_data.len()
+            );
+
+            match save_vo2_max_data_to_mongo(&state.mongo_client, &vo2_max_data).await {
+                Ok(_) => {
+                    // Update sync status
+                    if let Err(e) =
+                        update_oura_sync_status(&state.mongo_client, user_id, "vo2_max", &end_date)
+                            .await
+                    {
+                        println!(
+                            "🫁 VO2 Max Sync - Warning: Failed to update sync status: {}",
+                            e
+                        );
+                    }
+
+                    println!(
+                        "🫁 VO2 Max Sync - Saved {} VO2 max records to MongoDB",
+                        vo2_max_data.len()
+                    );
+                    Json(serde_json::json!({
+                        "status": "success",
+                        "message": format!("Synced {} VO2 max records from {} to {}", vo2_max_data.len(), start_date, end_date),
+                        "sync_range": {
+                            "start_date": start_date,
+                            "end_date": end_date
+                        },
+                        "data": vo2_max_data
+                    }))
+                    .into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
             }
-        };
-
-    if vo2_max_data.is_empty() {
-        return (
-            StatusCode::OK,
-            Json(json!({
-                "status": "success",
-                "message": format!("No VO2 max data found for {} to {}", start_date, end_date),
-                "sync_range": {
-                    "start_date": start_date,
-                    "end_date": end_date
-                },
-                "data": []
-            })),
-        )
-            .into_response();
+        }
+        Err(err) => (StatusCode::BAD_GATEWAY, err).into_response(),
     }
-
-    // Save to MongoDB
-    if let Err(e) = save_vo2_max_data_to_mongo(&state.mongo_client, &vo2_max_data).await {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to save VO2 max data: {}", e)
-            })),
-        )
-            .into_response();
-    }
-
-    // Update sync status
-    if let Err(e) =
-        update_oura_sync_status(&state.mongo_client, user_id, "vo2_max", &end_date).await
-    {
-        println!("⚠️  Warning: Failed to update sync status: {}", e);
-    }
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "message": format!("Synced {} VO2 max records from {} to {}", vo2_max_data.len(), start_date, end_date),
-            "sync_range": {
-                "start_date": start_date,
-                "end_date": end_date
-            },
-            "data": vo2_max_data
-        })),
-    )
-        .into_response()
 }
 
 // ===================================

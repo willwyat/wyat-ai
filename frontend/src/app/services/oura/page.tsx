@@ -180,7 +180,7 @@ export default function OuraServicesPage() {
   };
 
   const handleReconnect = () => {
-    window.location.href = `${API_URL}/oura/auth`;
+    window.location.href = `${API_URL}/api/oura/auth`;
   };
 
   if (loading) {
