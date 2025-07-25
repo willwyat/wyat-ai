@@ -34,7 +34,16 @@ export default function RootLayout({
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
-        <link rel="apple-touch-icon" href="/globe.svg" />
+        <link rel="apple-touch-icon" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="144x144" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="114x114" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="76x76" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="72x72" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="60x60" href="/webapp-icon.png" />
+        <link rel="apple-touch-icon" sizes="57x57" href="/webapp-icon.png" />
         <meta name="theme-color" content="#000000" />
       </head>
       <body

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function OuraCallbackPage() {
+function OuraCallbackContent() {
   const [countdown, setCountdown] = useState(5);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -109,5 +109,33 @@ export default function OuraCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center">
+      <div className="text-center space-y-6">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-zinc-200 dark:border-zinc-700 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+            Loading...
+          </h1>
+          <p className="text-zinc-600 dark:text-zinc-400">
+            Processing Oura connection
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function OuraCallbackPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <OuraCallbackContent />
+    </Suspense>
   );
 }

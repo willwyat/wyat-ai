@@ -110,12 +110,31 @@ pub async fn get_journal_entries_mongo(
 
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
-    let mut cursor = collection
-        .find(None, None)
-        .await
-        .unwrap_or_else(|_| panic!("Find failed"));
+
+    let mut cursor = match collection.find(None, None).await {
+        Ok(cursor) => cursor,
+        Err(e) => {
+            println!("MongoDB find error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+                .into_response();
+        }
+    };
+
     let mut entries = Vec::new();
-    while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+    while let Some(doc) = match cursor.try_next().await {
+        Ok(doc) => doc,
+        Err(e) => {
+            println!("MongoDB cursor error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+                .into_response();
+        }
+    } {
         entries.push(doc);
     }
     Json(entries).into_response()
