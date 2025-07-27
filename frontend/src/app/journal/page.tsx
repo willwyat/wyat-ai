@@ -14,12 +14,14 @@ type JournalEntry = {
 
 export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [allEntries, setAllEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState("");
   const [newText, setNewText] = useState("");
   const [newDate, setNewDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+  const [searchQuery, setSearchQuery] = useState("");
   const [passcode, setPasscode] = useState("");
   const [passcodeValid, setPasscodeValid] = useState(false);
   const [passcodeError, setPasscodeError] = useState("");
@@ -48,10 +50,47 @@ export default function JournalPage() {
         const sortedEntries = data.sort(
           (a: JournalEntry, b: JournalEntry) => b.date_unix - a.date_unix
         );
+        setAllEntries(sortedEntries);
         setEntries(sortedEntries);
         setLoading(false);
       });
   }, [passcodeValid]);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+
+    if (!query.trim()) {
+      // If search is empty, show all entries
+      setEntries(allEntries);
+      return;
+    }
+
+    try {
+      // Use the search/ids endpoint to get matching IDs
+      const response = await fetch(
+        `${API_URL}/journal/mongo/search/ids?q=${encodeURIComponent(query)}`,
+        {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        }
+      );
+
+      const matchingIds = await response.json();
+
+      // Filter all entries to only show those with matching IDs
+      const filteredEntries = allEntries.filter((entry) => {
+        const id = typeof entry._id === "object" ? entry._id.$oid : entry._id;
+        return matchingIds.includes(id);
+      });
+
+      setEntries(filteredEntries);
+    } catch (error) {
+      console.error("Search error:", error);
+      // Fallback to showing all entries if search fails
+      setEntries(allEntries);
+    }
+  };
 
   const handlePasscodeSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -102,6 +141,7 @@ export default function JournalPage() {
     const sortedEntries = data.sort(
       (a: JournalEntry, b: JournalEntry) => b.date_unix - a.date_unix
     );
+    setAllEntries(sortedEntries);
     setEntries(sortedEntries);
     setLoading(false);
   };
@@ -175,10 +215,35 @@ export default function JournalPage() {
               </button>
             </form>
           </div>
+
+          {/* Search Section */}
+          <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
+            <h2 className="text-xl font-bold mb-4">Search Entries</h2>
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Search by tags or keywords (e.g., history, ceremonial, family)..."
+              />
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Search through journal entries by tags and keywords. Leave empty
+                to show all entries.
+              </p>
+            </div>
+          </div>
+
           <div>
-            <h2 className="text-xl font-bold mb-4">Journal Entries</h2>
+            <h2 className="text-xl font-bold mb-4">
+              Journal Entries {searchQuery && `(${entries.length} found)`}
+            </h2>
             {entries.length === 0 ? (
-              <p>No journal entries found.</p>
+              <p>
+                {searchQuery
+                  ? `No journal entries found matching "${searchQuery}".`
+                  : "No journal entries found."}
+              </p>
             ) : (
               <div className="flex flex-col">
                 {entries.map((entry, i) => {

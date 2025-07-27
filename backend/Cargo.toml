@@ -18,3 +18,4 @@ mongodb = { version = "2.8", features = ["tokio-runtime"] }
 futures = "0.3"
 urlencoding = "2.1"
 async-openai = "0.15"
+regex = "1.10"

@@ -171,6 +171,7 @@ dependencies = [
  "hyper",
  "mongodb",
  "plaid",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
