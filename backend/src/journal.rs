@@ -1,4 +1,5 @@
 // backend/src/journal.rs
+use crate::services::openai::generate_tags_and_keywords;
 use axum::{
     Json,
     extract::{Path, State},
@@ -13,6 +14,7 @@ use mongodb::{
     bson::{doc, to_bson},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -34,6 +36,10 @@ pub struct JournalEntry {
     pub date_unix: i64,
     pub versions: Vec<JournalVersion>,
     pub preview_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -85,6 +91,8 @@ pub async fn create_journal_entry_mongo(
         date_unix,
         versions: vec![version],
         preview_text,
+        tags: None,
+        keywords: None,
     };
     match collection.insert_one(new_entry, None).await {
         Ok(_) => Json(serde_json::json!({"status": "success", "message": "Saved to MongoDB"}))
@@ -260,4 +268,54 @@ pub async fn delete_journal_entry_mongo(
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+pub async fn patch_all_journal_entries_metadata(
+    State(state): State<Arc<AppState>>,
+    _: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let db = state.mongo_client.database("wyat");
+    let collection: Collection<JournalEntry> = db.collection("journal");
+
+    let cursor = collection.find(None, None).await.unwrap();
+    let entries: Vec<_> = cursor.try_collect().await.unwrap();
+
+    for entry in entries {
+        let latest_text = entry.versions.last().unwrap().text.clone();
+        println!("Processing entry: {}", entry.title);
+
+        let Ok((tags, keywords)) = generate_tags_and_keywords(&latest_text).await else {
+            println!(
+                "Failed to generate tags/keywords for entry: {}",
+                entry.title
+            );
+            continue; // Skip entries that fail
+        };
+
+        println!("Generated tags: {:?}", tags);
+        println!("Generated keywords: {:?}", keywords);
+
+        let Some(entry_id) = entry.id else {
+            println!("Entry has no ID: {}", entry.title);
+            continue; // Skip entries without ID
+        };
+
+        let filter = doc! { "_id": entry_id };
+        let update = doc! {
+            "$set": {
+                "tags": tags,
+                "keywords": keywords
+            }
+        };
+
+        match collection.update_one(filter, update, None).await {
+            Ok(result) => println!(
+                "Updated entry {}: {} documents modified",
+                entry.title, result.modified_count
+            ),
+            Err(e) => println!("Failed to update entry {}: {}", entry.title, e),
+        }
+    }
+
+    Json(json!({ "status": "patched" })).into_response()
 }
