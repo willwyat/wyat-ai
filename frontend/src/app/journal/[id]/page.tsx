@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { use } from "react";
 import { API_URL, WYAT_API_KEY } from "@/lib/config";
@@ -26,6 +26,7 @@ export default function JournalEntryPage({
   const [originalText, setOriginalText] = useState("");
   const [saving, setSaving] = useState(false);
   const router = useRouter();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Vitals store
   const {
@@ -120,6 +121,14 @@ export default function JournalEntryPage({
 
   const handleEdit = () => {
     setIsEditing(true);
+    // Trigger auto-resize after entering edit mode
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height =
+          textareaRef.current.scrollHeight + "px";
+      }
+    }, 0);
   };
 
   const handleDiscard = () => {
@@ -156,6 +165,29 @@ export default function JournalEntryPage({
   };
 
   const hasChanges = editText !== originalText;
+
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    if (textareaRef.current) {
+      // Store current scroll position and cursor position
+      const scrollTop = window.scrollY;
+      const textareaScrollTop = textareaRef.current.scrollTop;
+      const selectionStart = textareaRef.current.selectionStart;
+      const selectionEnd = textareaRef.current.selectionEnd;
+
+      // Reset and set height
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height =
+        textareaRef.current.scrollHeight + "px";
+
+      // Restore scroll positions
+      window.scrollTo(0, scrollTop);
+      textareaRef.current.scrollTop = textareaScrollTop;
+
+      // Restore cursor position
+      textareaRef.current.setSelectionRange(selectionStart, selectionEnd);
+    }
+  }, [editText]);
 
   // Helper function to get previous day's date
   const getPreviousDay = (date: Date): string => {
@@ -267,12 +299,14 @@ export default function JournalEntryPage({
       </div>
 
       {isEditing ? (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col px-5 py-4">
           <textarea
+            ref={textareaRef}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
-            className="w-full flex-1 border-none resize-none outline-none p-0 leading-relaxed"
+            className="w-full min-h-[200px] border-none resize-none outline-none p-0 leading-relaxed font-serif"
             placeholder="Write your journal entry..."
+            style={{ height: "auto" }}
           />
         </div>
       ) : (
