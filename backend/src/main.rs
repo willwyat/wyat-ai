@@ -5,6 +5,7 @@ mod vitals;
 use journal::{
     AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
     get_journal_entries_mongo, get_journal_entry_by_id_mongo, patch_all_journal_entries_metadata,
+    search_journal_entries,
 };
 use tower_http::cors::CorsLayer;
 
@@ -156,6 +157,7 @@ async fn main() {
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))
         .route("/journal/mongo/:id", patch(edit_journal_entry_mongo))
         .route("/journal/mongo/:id", delete(delete_journal_entry_mongo))
+        .route("/journal/mongo/search", get(search_journal_entries))
         .route(
             "/journal/mongo/patch-all",
             get(patch_all_journal_entries_metadata),

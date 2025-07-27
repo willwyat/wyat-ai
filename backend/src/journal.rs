@@ -2,7 +2,7 @@
 use crate::services::openai::generate_tags_and_keywords;
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -15,6 +15,7 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -318,4 +319,57 @@ pub async fn patch_all_journal_entries_metadata(
     }
 
     Json(json!({ "status": "patched" })).into_response()
+}
+
+pub async fn search_journal_entries(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
+
+    let db = state.mongo_client.database("wyat");
+    let collection: Collection<JournalEntry> = db.collection("journal");
+
+    // Accept search terms like: ?q=history,ceremonial,mystery
+    let search_terms = params.get("q").map(|s| {
+        s.split(',')
+            .map(|term| term.trim().to_lowercase())
+            .collect::<Vec<_>>()
+    });
+
+    let filter = if let Some(terms) = search_terms {
+        doc! {
+            "$or": [
+                { "tags": { "$in": &terms } },
+                { "keywords": { "$in": &terms } }
+            ]
+        }
+    } else {
+        doc! {} // return all if no query
+    };
+
+    let mut cursor = match collection.find(filter, None).await {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let mut entries = Vec::new();
+    while let Some(doc) = match cursor.try_next().await {
+        Ok(doc) => doc,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    } {
+        entries.push(doc);
+    }
+
+    Json(entries).into_response()
 }

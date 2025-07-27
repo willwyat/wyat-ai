@@ -11,6 +11,8 @@ interface JournalEntry {
   title: string;
   date_unix: number;
   versions: { text: string; timestamp: string }[];
+  tags?: string[];
+  keywords?: string[];
 }
 
 export default function JournalEntryPage({
@@ -357,6 +359,51 @@ export default function JournalEntryPage({
           </div>
         )}
       </div>
+      {/* Tags and Keywords Display */}
+      {((entry?.tags && entry.tags.length > 0) ||
+        (entry?.keywords && entry.keywords.length > 0)) && (
+        <div className="px-5 py-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg mt-4">
+          <div className="space-y-4">
+            {/* Tags */}
+            {entry?.tags && entry.tags.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Tags
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {entry.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs rounded-full font-medium"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Keywords */}
+            {entry?.keywords && entry.keywords.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Keywords
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {entry.keywords.map((keyword, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs rounded-full font-medium"
+                    >
+                      {keyword}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
