@@ -66,7 +66,7 @@ export default function JournalPage() {
     }
 
     try {
-      // Use the search/ids endpoint to get matching IDs
+      // Use the search/ids endpoint to get matching results with highlights
       const response = await fetch(
         `${API_URL}/journal/mongo/search/ids?q=${encodeURIComponent(query)}`,
         {
@@ -76,12 +76,12 @@ export default function JournalPage() {
         }
       );
 
-      const matchingIds = await response.json();
+      const searchResults = await response.json();
 
       // Filter all entries to only show those with matching IDs
       const filteredEntries = allEntries.filter((entry) => {
         const id = typeof entry._id === "object" ? entry._id.$oid : entry._id;
-        return matchingIds.includes(id);
+        return searchResults.some((result: any) => result._id === id);
       });
 
       setEntries(filteredEntries);

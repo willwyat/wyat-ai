@@ -378,6 +378,16 @@ pub struct JournalEntryId {
     pub id: ObjectId,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub title: String,
+    pub preview_text: String,
+    pub highlight: String,
+    pub date_unix: i64,
+}
+
 pub async fn edit_journal_entry_tags(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
@@ -536,7 +546,7 @@ pub async fn search_journal_entries_return_ids(
             .collect::<Vec<_>>()
     });
 
-    let filter = if let Some(terms) = search_terms {
+    let filter = if let Some(terms) = &search_terms {
         // Build regex patterns for each term
         let mut or_conditions = Vec::new();
 
@@ -563,16 +573,55 @@ pub async fn search_journal_entries_return_ids(
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
 
-    let mut ids = Vec::new();
-    while let Some(doc) = match cursor.try_next().await {
+    let mut results = Vec::new();
+    while let Some(entry) = match cursor.try_next().await {
         Ok(doc) => doc,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     } {
-        // Extract just the ID from the document
-        if let Some(id) = doc.id {
-            ids.push(id.to_string());
+        // Extract the latest version text for snippet generation
+        let entry_text = if let Some(latest_version) = entry.versions.last() {
+            &latest_version.text
+        } else {
+            // Fallback to preview_text if no versions exist
+            &entry.preview_text
+        };
+
+        // Generate highlight snippet if search terms are provided
+        let mut highlight = String::new();
+        if let Some(terms) = &search_terms {
+            // For each term, find a matching excerpt (if any)
+            for term in terms {
+                if let Some(pos) = entry_text.to_lowercase().find(&term.to_lowercase()) {
+                    // Find the start of the sentence (look for previous period)
+                    let start = entry_text[..pos].rfind('.').map(|i| i + 1).unwrap_or(0);
+
+                    // Find the end of the sentence (look for next period)
+                    let end = entry_text[pos..]
+                        .find('.')
+                        .map(|i| pos + i + 1)
+                        .unwrap_or(entry_text.len());
+
+                    // Extract the snippet and clean it up
+                    let snippet = entry_text[start..end].trim();
+                    if !snippet.is_empty() {
+                        highlight = snippet.to_string();
+                        break; // Stop at first match
+                    }
+                }
+            }
+        }
+
+        // Create the search result
+        if let Some(id) = entry.id {
+            results.push(SearchResult {
+                id: id.to_string(),
+                title: entry.title,
+                preview_text: entry.preview_text,
+                highlight,
+                date_unix: entry.date_unix,
+            });
         }
     }
 
-    Json(ids).into_response()
+    Json(results).into_response()
 }

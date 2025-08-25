@@ -1,12 +1,16 @@
 mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
+mod meta;
 mod vitals;
 use journal::{
     AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
     edit_journal_entry_tags, get_journal_entries_mongo, get_journal_entry_by_id_mongo,
     patch_journal_entry_tags_and_keywords, search_journal_entries,
     search_journal_entries_return_ids,
+};
+use meta::{
+    get_keywording_best_practices, get_person_registry, get_place_registry, get_tag_taxonomy,
 };
 use tower_http::cors::CorsLayer;
 
@@ -198,6 +202,13 @@ async fn main() {
         .route("/api/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
+        .route("/meta/tag-taxonomy", get(get_tag_taxonomy))
+        .route("/meta/person-registry", get(get_person_registry))
+        .route("/meta/place-registry", get(get_place_registry))
+        .route(
+            "/meta/keywording-best-practices",
+            get(get_keywording_best_practices),
+        )
         // .route("/vitals/daily", get(get_daily_vitals))
         .route("/vitals/readiness", get(get_daily_readiness))
         .route("/vitals/activity", get(get_daily_activity))
