@@ -10,7 +10,9 @@ use journal::{
     search_journal_entries_return_ids,
 };
 use meta::{
-    get_keywording_best_practices, get_person_registry, get_place_registry, get_tag_taxonomy,
+    add_person, add_place, delete_person, delete_place, get_keywording_best_practices,
+    get_person_registry, get_place_registry, get_tag_taxonomy, update_keywording_best_practices,
+    update_person, update_place, update_tag_taxonomy,
 };
 use tower_http::cors::CorsLayer;
 
@@ -209,6 +211,19 @@ async fn main() {
             "/meta/keywording-best-practices",
             get(get_keywording_best_practices),
         )
+        .route(
+            "/meta/keywording-best-practices",
+            patch(update_keywording_best_practices),
+        )
+        .route("/meta/tag-taxonomy", patch(update_tag_taxonomy))
+        // Person registry CRUD operations
+        .route("/meta/persons", post(add_person))
+        .route("/meta/persons", patch(update_person))
+        .route("/meta/persons/:tag", delete(delete_person))
+        // Place registry CRUD operations
+        .route("/meta/places", post(add_place))
+        .route("/meta/places", patch(update_place))
+        .route("/meta/places/:tag", delete(delete_place))
         // .route("/vitals/daily", get(get_daily_vitals))
         .route("/vitals/readiness", get(get_daily_readiness))
         .route("/vitals/activity", get(get_daily_activity))

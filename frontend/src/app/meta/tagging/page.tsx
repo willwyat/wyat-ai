@@ -18,6 +18,10 @@ export default function TaggingPage() {
   const [data, setData] = useState<TagTaxonomy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [editVersion, setEditVersion] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/meta/tag-taxonomy`, {
@@ -33,6 +37,8 @@ export default function TaggingPage() {
       })
       .then((data) => {
         setData(data);
+        setEditContent(data.content);
+        setEditVersion(data.version);
         setLoading(false);
       })
       .catch((err) => {
@@ -40,6 +46,56 @@ export default function TaggingPage() {
         setLoading(false);
       });
   }, []);
+
+  const handleSave = async () => {
+    if (!data) return;
+
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/meta/tag-taxonomy`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wyat-api-key": WYAT_API_KEY,
+        },
+        body: JSON.stringify({
+          content: editContent,
+          version: editVersion,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Update local state
+      setData({
+        ...data,
+        content: editContent,
+        version: editVersion,
+        updatedAt: new Date().toISOString(),
+      });
+
+      setIsEditing(false);
+      alert("Updated successfully!");
+    } catch (err) {
+      alert(
+        `Error updating: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditContent(data?.content || "");
+    setEditVersion(data?.version || "");
+    setIsEditing(false);
+  };
 
   if (loading) {
     return (
@@ -68,22 +124,75 @@ export default function TaggingPage() {
   return (
     <div className="min-h-screen">
       <div className="p-6 flex flex-col gap-8 max-w-screen-xl mx-auto">
-        <div className="flex items-center gap-4">
-          <h1 className="text-4xl font-bold">{data.title}</h1>
-          <span className="text-sm bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded">
-            v{data.version}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-4xl font-bold">{data.title}</h1>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editVersion}
+                onChange={(e) => setEditVersion(e.target.value)}
+                className="text-sm bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded border border-green-300 dark:border-green-700"
+                placeholder="Version"
+              />
+            ) : (
+              <span className="text-sm bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded">
+                v{data.version}
+              </span>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded font-medium"
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-medium"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium"
+              >
+                Edit
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
-          <div className="prose dark:prose-invert max-w-none">
-            <div
-              className="whitespace-pre-wrap"
-              dangerouslySetInnerHTML={{
-                __html: data.content.replace(/\n/g, "<br/>"),
-              }}
-            />
-          </div>
+          {isEditing ? (
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Content:
+              </label>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full h-96 p-3 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono text-sm"
+                placeholder="Enter content here..."
+              />
+            </div>
+          ) : (
+            <div className="prose dark:prose-invert max-w-none">
+              <div
+                className="whitespace-pre-wrap font-mono text-sm"
+                dangerouslySetInnerHTML={{
+                  __html: data.content.replace(/\n/g, "<br/>"),
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <div className="text-sm text-zinc-600 dark:text-zinc-400">
