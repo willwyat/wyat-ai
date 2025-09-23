@@ -197,21 +197,28 @@ export default function JournalPage() {
   // Render normal screen if passcode is valid
   return (
     <div className="min-h-screen">
-      <div className="p-6 flex flex-col gap-8 max-w-screen-xl mx-auto">
+      <div className="flex flex-col gap-8 md:ml-20">
         <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex flex-col gap-3 w-full md:w-sm">
-            <h1 className="text-3xl font-bold">Journal</h1>
-            {/* Search Section */}
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Search by tags or keywords (e.g., history, ceremonial, family)..."
-            />
+          {/* SIDEBAR */}
+          <div className="flex flex-col gap-6 w-full md:w-md border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-20 md:h-full">
+            {/* Search Bar */}
+            <div className="px-8">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Search by tags or keywords ..."
+              />
+            </div>
             {/* Date Picker */}
             <DayPicker
+              animate={true}
+              className="rdp-root"
               mode="single"
+              showOutsideDays
+              fixedWeeks
+              navLayout="around"
               selected={new Date()}
               onSelect={(date) =>
                 setSelectedDate(
@@ -228,13 +235,49 @@ export default function JournalPage() {
                 hasEntry: "has-entry",
               }}
             />
+            <div className="flex flex-col px-8 overflow-y-auto">
+              {entries.map((entry, i) => {
+                const latestText =
+                  entry.versions?.[entry.versions.length - 1]?.text ?? "";
+                const id =
+                  typeof entry._id === "object" ? entry._id.$oid : entry._id;
+
+                // Use preview_text if available, otherwise fall back to latest text
+                const displayText = entry.preview_text || latestText;
+
+                return (
+                  <div
+                    key={i}
+                    onClick={() => router.push(`/journal/${id}`)}
+                    className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ease-in-out duration-200 cursor-pointer"
+                  >
+                    <div className="min-w-30">
+                      <h3 className="font-semibold">
+                        {new Date(entry.date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}{" "}
+                        (
+                        {new Date(entry.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                        })}
+                        )
+                      </h3>
+                    </div>
+                    <p className="text-zinc-600 dark:text-zinc-400 line-clamp-1">
+                      {displayText.slice(0, 200)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
             {/* Add New Entry Button */}
-            <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
+            {/* <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
               <div className="flex items-center justify-between">
                 {/* <div>
                   <h2 className="text-xl font-bold mb-2">Create New Entry</h2>
                   <p className="text-gray-600">Write a new journal entry</p>
-                </div> */}
+                </div> 
                 <button
                   onClick={() => router.push("/journal/new")}
                   className="cursor-pointer text-white dark:text-black bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 font-bold text-sm px-4 py-2 rounded"
@@ -242,58 +285,59 @@ export default function JournalPage() {
                   New Entry
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
 
-          {/* Journal Entries */}
-          <div>
-            {/* <h2 className="text-xl font-bold mb-4">
-              Journal Entries {searchQuery && `(${entries.length} found)`}
-            </h2> */}
-            {entries.length === 0 ? (
-              <p>
-                {searchQuery
-                  ? `No journal entries found matching "${searchQuery}".`
-                  : "No journal entries found."}
-              </p>
-            ) : (
-              <div className="flex flex-col">
-                {entries.map((entry, i) => {
-                  const latestText =
-                    entry.versions?.[entry.versions.length - 1]?.text ?? "";
-                  const id =
-                    typeof entry._id === "object" ? entry._id.$oid : entry._id;
+          {/* CONTENT */}
+          <div className="md:ml-112 w-full">
+            <div className="m-auto max-w-6xl">
+              {entries.length === 0 ? (
+                <p>
+                  {searchQuery
+                    ? `No journal entries found matching "${searchQuery}".`
+                    : "No journal entries found."}
+                </p>
+              ) : (
+                <div className="flex flex-col">
+                  {entries.map((entry, i) => {
+                    const latestText =
+                      entry.versions?.[entry.versions.length - 1]?.text ?? "";
+                    const id =
+                      typeof entry._id === "object"
+                        ? entry._id.$oid
+                        : entry._id;
 
-                  // Use preview_text if available, otherwise fall back to latest text
-                  const displayText = entry.preview_text || latestText;
+                    // Use preview_text if available, otherwise fall back to latest text
+                    const displayText = entry.preview_text || latestText;
 
-                  return (
-                    <div
-                      key={i}
-                      onClick={() => router.push(`/journal/${id}`)}
-                      className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ease-in-out duration-300 cursor-pointer"
-                    >
-                      <div className="min-w-30">
-                        <h3 className="font-semibold">
-                          {new Date(entry.date).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}{" "}
-                          (
-                          {new Date(entry.date).toLocaleDateString("en-US", {
-                            weekday: "short",
-                          })}
-                          )
-                        </h3>
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => router.push(`/journal/${id}`)}
+                        className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ease-in-out duration-200 cursor-pointer"
+                      >
+                        <div className="min-w-30">
+                          <h3 className="font-semibold">
+                            {new Date(entry.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}{" "}
+                            (
+                            {new Date(entry.date).toLocaleDateString("en-US", {
+                              weekday: "short",
+                            })}
+                            )
+                          </h3>
+                        </div>
+                        <p className="text-zinc-700 dark:text-zinc-300 line-clamp-1">
+                          {displayText.slice(0, 200)}
+                        </p>
                       </div>
-                      <p className="text-zinc-700 dark:text-zinc-300 line-clamp-1">
-                        {displayText.slice(0, 200)}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

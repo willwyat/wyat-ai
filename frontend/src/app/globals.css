@@ -31,8 +31,26 @@ body {
 
 /* Date picker customization */
 .rdp-root {
-  --rdp-day_button-width: 2.5rem;
-  --rdp-day_button-height: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  .rdp-day {
+    --rdp-day-width: 48px;
+    --rdp-day-height: 48px;
+    --rdp-day_button-height: 46px;
+    --rdp-day_button-width: 46px;
+  }
+}
+
+@media (min-width: 768px) {
+  .rdp-root {
+    .rdp-day {
+      --rdp-day-width: 50px;
+      --rdp-day-height: 50px;
+      --rdp-day_button-height: 48px;
+      --rdp-day_button-width: 48px;
+    }
+  }
 }
 
 /* Date picker dots for journal entries */
@@ -52,7 +70,7 @@ body {
   border-radius: 50%;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
-/* 
+
 .dark .rdp-day.has-entry::after {
   background-color: #60a5fa;
-} */
+}
