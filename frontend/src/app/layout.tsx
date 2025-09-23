@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, IBM_Plex_Serif } from "next/font/google";
 import "./globals.css";
+import { NavProvider } from "@/contexts/NavContext";
+import Navigation from "@/components/Navigation";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -49,7 +51,10 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${ibmPlexSerif.variable} font-sans antialiased`}
       >
-        {children}
+        <NavProvider>
+          <Navigation />
+          {children}
+        </NavProvider>
       </body>
     </html>
   );
