@@ -306,14 +306,14 @@ export default function JournalEntryPage({
             ref={textareaRef}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
-            className="w-full min-h-[200px] border-none resize-none outline-none p-0 leading-relaxed font-serif"
+            className="w-full min-h-[200px] border-none resize-none outline-none p-0 leading-relaxed font-serif text-lg xl:text-base"
             placeholder="Write your journal entry..."
             style={{ height: "auto" }}
           />
         </div>
       ) : (
         <div className="px-5 py-4">
-          <article className="leading-relaxed whitespace-pre-wrap font-serif">
+          <article className="leading-relaxed whitespace-pre-wrap font-serif text-lg xl:text-base ">
             {latestVersion?.text || "No content available."}
           </article>
         </div>

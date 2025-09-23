@@ -255,7 +255,7 @@ export default function JournalPage() {
                     <div
                       key={i}
                       onClick={() => router.push(`/journal/${id}`)}
-                      className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ease-in-out duration-300 cursor-pointer"
+                      className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ease-in-out duration-300 cursor-pointer font-serif"
                     >
                       <div className="min-w-30">
                         <h3 className="font-semibold">

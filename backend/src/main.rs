@@ -3,6 +3,7 @@ use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 mod meta;
 mod vitals;
+mod workout;
 use journal::{
     AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
     edit_journal_entry_tags, get_journal_entries_mongo, get_journal_entry_by_id_mongo,
@@ -40,6 +41,7 @@ use vitals::{
     get_daily_activity, get_daily_cardiovascular_age, get_daily_readiness, get_daily_resilience,
     get_daily_spo2, get_daily_stress, get_vo2_max,
 };
+use workout::init_indexes;
 
 use axum::Json as AxumJson;
 use reqwest::Client;
@@ -142,6 +144,14 @@ async fn main() {
 
     println!("✅ Connected to MongoDB Atlas");
 
+    // Initialize workout indexes
+    let db = mongo_client.database("wyat");
+    if let Err(e) = init_indexes(&db).await {
+        eprintln!("⚠️  Failed to initialize workout indexes: {:?}", e);
+    } else {
+        println!("✅ Workout indexes initialized");
+    }
+
     let state = Arc::new(AppState { mongo_client });
 
     let origin =
@@ -235,6 +245,34 @@ async fn main() {
         .route("/vitals/spo2", get(get_daily_spo2))
         .route("/vitals/stress", get(get_daily_stress))
         .route("/vitals/vo2-max", get(get_vo2_max))
+        .route(
+            "/workout/exercise-types",
+            post(workout::create_exercise_type_mongo),
+        )
+        .route(
+            "/workout/exercise-types/:id",
+            patch(workout::update_exercise_type_mongo),
+        )
+        .route(
+            "/workout/exercise-entries",
+            post(workout::create_exercise_entry_mongo),
+        )
+        .route(
+            "/workout/exercise-entries/:id",
+            patch(workout::update_exercise_entry_mongo),
+        )
+        .route(
+            "/workout/exercise-types",
+            get(workout::get_all_exercise_types_mongo),
+        )
+        .route(
+            "/workout/exercise-entries",
+            get(workout::get_all_exercise_entries_mongo),
+        )
+        .route(
+            "/workout/exercise-types/find-by-muscle",
+            post(workout::find_exercise_type_by_muscle),
+        )
         .layer(cors)
         .with_state(state.clone());
 
