@@ -34,8 +34,13 @@ pub struct JournalVersion {
 pub struct JournalEntry {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
-    pub title: String,
-    pub date_unix: i64,
+    #[deprecated(note = "Use date field instead")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[deprecated(note = "Use date field instead")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_unix: Option<i64>,
+    pub date: String,
     pub versions: Vec<JournalVersion>,
     pub preview_text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,21 +49,18 @@ pub struct JournalEntry {
     pub keywords: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NewJournalEntry {
-    pub title: String,
-    pub text: String,
-    pub date_unix: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EditJournalEntry {
-    pub text: String,
-}
-
 #[derive(Serialize)]
 pub struct JournalResponse {
     pub message: String,
+}
+
+// ================================ //
+// * * * CREATE JOURNAL ENTRY * * * //
+// ================================ //
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewJournalEntry {
+    pub text: String,
+    pub date: Option<String>,
 }
 
 pub async fn create_journal_entry_mongo(
@@ -85,12 +87,13 @@ pub async fn create_journal_entry_mongo(
     };
 
     let preview_text = payload.text.chars().take(100).collect::<String>();
-    let date_unix = payload.date_unix;
+    let date = payload.date.expect("Date is required");
 
     let new_entry = JournalEntry {
         id: None,
-        title: payload.title.clone(),
-        date_unix,
+        title: None,     // Deprecated field
+        date_unix: None, // Deprecated field
+        date,
         versions: vec![version],
         preview_text,
         tags: None,
@@ -102,6 +105,111 @@ pub async fn create_journal_entry_mongo(
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
+
+// ============================== //
+// * * * EDIT JOURNAL ENTRY * * * //
+// ============================== //
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EditJournalEntry {
+    pub text: String,
+}
+
+pub async fn edit_journal_entry_mongo(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<EditJournalEntry>,
+) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
+    let db = state.mongo_client.database("wyat");
+    let collection: Collection<JournalEntry> = db.collection("journal");
+
+    let object_id = match mongodb::bson::oid::ObjectId::parse_str(&id) {
+        Ok(oid) => oid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ID format").into_response(),
+    };
+
+    let filter = doc! { "_id": object_id };
+    let new_version = JournalVersion {
+        text: payload.text.clone(),
+        timestamp: Utc::now(),
+    };
+    let preview_text = payload.text.chars().take(100).collect::<String>();
+    let update = doc! {
+        "$push": { "versions": to_bson(&new_version).unwrap() },
+        "$set": { "preview_text": preview_text }
+    };
+
+    match collection.update_one(filter, update, None).await {
+        Ok(update_result) => {
+            if update_result.matched_count == 1 {
+                Json(JournalResponse {
+                    message: format!("Journal entry {} updated in MongoDB.", id),
+                })
+                .into_response()
+            } else {
+                (StatusCode::NOT_FOUND, "Entry not found").into_response()
+            }
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// =============================== //
+// * * * DELETE JOURNAL ENTRY * * * //
+// =============================== //
+pub async fn delete_journal_entry_mongo(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        )
+            .into_response();
+    }
+    let db = state.mongo_client.database("wyat");
+    let collection: Collection<JournalEntry> = db.collection("journal");
+
+    let object_id = match mongodb::bson::oid::ObjectId::parse_str(&id) {
+        Ok(oid) => oid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ID format").into_response(),
+    };
+
+    let filter = doc! { "_id": object_id };
+
+    match collection.delete_one(filter, None).await {
+        Ok(delete_result) => {
+            if delete_result.deleted_count == 1 {
+                Json(JournalResponse {
+                    message: format!("Journal entry {} deleted from MongoDB.", id),
+                })
+                .into_response()
+            } else {
+                (StatusCode::NOT_FOUND, "Entry not found").into_response()
+            }
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// =============================== //
+// * * * GET JOURNAL ENTRIES * * * //
+// =============================== //
 
 pub async fn get_journal_entries_mongo(
     State(state): State<Arc<AppState>>,
@@ -182,58 +290,8 @@ pub async fn get_journal_entry_by_id_mongo(
     }
 }
 
-pub async fn edit_journal_entry_mongo(
-    Path(id): Path<String>,
-    State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
-    Json(payload): Json<EditJournalEntry>,
-) -> impl IntoResponse {
-    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
-    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
-
-    if provided_key != Some(expected_key.as_str()) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            "Unauthorized: missing or invalid API key",
-        )
-            .into_response();
-    }
-    let db = state.mongo_client.database("wyat");
-    let collection: Collection<JournalEntry> = db.collection("journal");
-
-    let object_id = match mongodb::bson::oid::ObjectId::parse_str(&id) {
-        Ok(oid) => oid,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ID format").into_response(),
-    };
-
-    let filter = doc! { "_id": object_id };
-    let new_version = JournalVersion {
-        text: payload.text.clone(),
-        timestamp: Utc::now(),
-    };
-    let preview_text = payload.text.chars().take(100).collect::<String>();
-    let update = doc! {
-        "$push": { "versions": to_bson(&new_version).unwrap() },
-        "$set": { "preview_text": preview_text }
-    };
-
-    match collection.update_one(filter, update, None).await {
-        Ok(update_result) => {
-            if update_result.matched_count == 1 {
-                Json(JournalResponse {
-                    message: format!("Journal entry {} updated in MongoDB.", id),
-                })
-                .into_response()
-            } else {
-                (StatusCode::NOT_FOUND, "Entry not found").into_response()
-            }
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
-    }
-}
-
-pub async fn delete_journal_entry_mongo(
-    Path(id): Path<String>,
+pub async fn get_journal_entry_by_date_mongo(
+    Path(date): Path<String>,
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
@@ -247,34 +305,46 @@ pub async fn delete_journal_entry_mongo(
         )
             .into_response();
     }
+
     let db = state.mongo_client.database("wyat");
     let collection: Collection<JournalEntry> = db.collection("journal");
 
-    let object_id = match mongodb::bson::oid::ObjectId::parse_str(&id) {
-        Ok(oid) => oid,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid ID format").into_response(),
+    // Query for entries with the specified date (YYYY-MM-DD format)
+    let filter = doc! { "date": &date };
+
+    let mut cursor = match collection.find(filter, None).await {
+        Ok(cursor) => cursor,
+        Err(e) => {
+            println!("MongoDB find error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+                .into_response();
+        }
     };
 
-    let filter = doc! { "_id": object_id };
-
-    match collection.delete_one(filter, None).await {
-        Ok(delete_result) => {
-            if delete_result.deleted_count == 1 {
-                Json(JournalResponse {
-                    message: format!("Journal entry {} deleted from MongoDB.", id),
-                })
-                .into_response()
-            } else {
-                (StatusCode::NOT_FOUND, "Entry not found").into_response()
-            }
+    let mut entries = Vec::new();
+    while let Some(doc) = match cursor.try_next().await {
+        Ok(doc) => doc,
+        Err(e) => {
+            println!("MongoDB cursor error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+                .into_response();
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    } {
+        entries.push(doc);
     }
+
+    Json(entries).into_response()
 }
 
-// ===============================
-// * * * * Tags & Keywords * * * *
-// ===============================
+// =========================== //
+// * * * TAGS & KEYWORDS * * * //
+// =========================== //
 pub async fn patch_journal_entry_tags_and_keywords(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
@@ -308,13 +378,10 @@ pub async fn patch_journal_entry_tags_and_keywords(
     };
 
     let latest_text = entry.versions.last().unwrap().text.clone();
-    println!("Processing entry: {}", entry.title);
+    println!("Processing entry: {}", entry.date);
 
     let Ok((tags, keywords)) = generate_tags_and_keywords(&latest_text).await else {
-        println!(
-            "Failed to generate tags/keywords for entry: {}",
-            entry.title
-        );
+        println!("Failed to generate tags/keywords for entry: {}", entry.date);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to generate tags and keywords",
@@ -344,11 +411,11 @@ pub async fn patch_journal_entry_tags_and_keywords(
         Ok(result) => {
             println!(
                 "Updated entry {}: {} documents modified",
-                entry.title, result.modified_count
+                entry.date, result.modified_count
             );
             Json(json!({
                 "status": "success",
-                "message": format!("Added tags and keywords to entry: {}", entry.title),
+                "message": format!("Added tags and keywords to entry: {}", entry.date),
                 "generated_tags": tags_clone,
                 "generated_keywords": keywords_clone,
                 "modified_count": result.modified_count
@@ -356,7 +423,7 @@ pub async fn patch_journal_entry_tags_and_keywords(
             .into_response()
         }
         Err(e) => {
-            println!("Failed to update entry {}: {}", entry.title, e);
+            println!("Failed to update entry {}: {}", entry.date, e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Database update error: {}", e),
@@ -376,16 +443,6 @@ pub struct EditTagsPayload {
 pub struct JournalEntryId {
     #[serde(rename = "_id")]
     pub id: ObjectId,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SearchResult {
-    #[serde(rename = "_id")]
-    pub id: String,
-    pub title: String,
-    pub preview_text: String,
-    pub highlight: String,
-    pub date_unix: i64,
 }
 
 pub async fn edit_journal_entry_tags(
@@ -451,9 +508,21 @@ pub async fn edit_journal_entry_tags(
     }
 }
 
-// ========================================
-// * * * * Search Simple & Semantic * * * *
-// ========================================
+// ==================================== //
+// * * * SEARCH SIMPLE & SEMANTIC * * * //
+// ==================================== //
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    #[serde(rename = "_id")]
+    pub id: String,
+    #[deprecated(note = "Title field is deprecated")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub preview_text: String,
+    pub highlight: String,
+    pub date: String,
+}
+
 pub async fn search_journal_entries(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -615,10 +684,10 @@ pub async fn search_journal_entries_return_ids(
         if let Some(id) = entry.id {
             results.push(SearchResult {
                 id: id.to_string(),
-                title: entry.title,
+                title: None, // Deprecated field
                 preview_text: entry.preview_text,
                 highlight,
-                date_unix: entry.date_unix,
+                date: entry.date,
             });
         }
     }

@@ -200,7 +200,7 @@ function DesktopSideMenu() {
       {/* Side menu */}
       <div
         className={`fixed top-0 left-0 h-full bg-white shadow-lg border-r border-gray-200 z-30 transition-all duration-300 hidden lg:block ${
-          sidebarOpen ? "w-64" : "w-16"
+          sidebarOpen ? "w-64" : "w-20"
         }`}
       >
         <div className="h-full pt-16">
@@ -238,7 +238,7 @@ function DesktopSideMenu() {
                 </ul>
               </>
             ) : (
-              <ul className="space-y-4">
+              <ul className="space-y-4 w-12">
                 {coreFeatures.map((feature, index) => {
                   const IconComponent = getIconComponent(feature.icon);
                   return (
@@ -246,7 +246,7 @@ function DesktopSideMenu() {
                       <Link
                         href={feature.href}
                         onClick={() => navigateTo(feature.href)}
-                        className={`block p-3 rounded-lg transition-colors ${
+                        className={`block h-12 w-12 flex items-center justify-center rounded-lg transition-colors ${
                           currentPage === feature.href
                             ? "bg-blue-100 text-blue-600"
                             : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"

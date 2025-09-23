@@ -8,9 +8,11 @@ import { useVitalsStore, DailyVitals } from "@/stores";
 
 interface JournalEntry {
   _id: string;
-  title: string;
-  date_unix: number;
+  title?: string; // Deprecated field
+  date_unix?: number; // Deprecated field
+  date: string; // Primary date field
   versions: { text: string; timestamp: string }[];
+  preview_text: string;
   tags?: string[];
   keywords?: string[];
 }
@@ -44,7 +46,7 @@ export default function JournalEntryPage({
   // Fetch vitals data when entry is loaded
   useEffect(() => {
     if (entry) {
-      const entryDate = new Date(entry.date_unix * 1000);
+      const entryDate = new Date(entry.date);
       const entryDateStr = entryDate.toISOString().split("T")[0];
       const previousDay = getPreviousDay(entryDate);
 
@@ -200,7 +202,7 @@ export default function JournalEntryPage({
 
   // Get vitals data
   const currentVitals = vitals[0];
-  const entryDate = entry ? new Date(entry.date_unix * 1000) : null;
+  const entryDate = entry ? new Date(entry.date) : null;
   const entryDateStr = entryDate ? entryDate.toISOString().split("T")[0] : "";
   const previousDay = entryDate ? getPreviousDay(entryDate) : null;
 
@@ -222,13 +224,13 @@ export default function JournalEntryPage({
 
   const latestVersion = entry.versions?.[entry.versions.length - 1];
   const dateDisplay =
-    new Date(entry.date_unix * 1000).toLocaleDateString("en-US", {
+    new Date(entry.date).toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
       year: "numeric",
     }) +
     " (" +
-    new Date(entry.date_unix * 1000).toLocaleDateString("en-US", {
+    new Date(entry.date).toLocaleDateString("en-US", {
       weekday: "short",
     }) +
     ")";

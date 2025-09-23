@@ -28,3 +28,31 @@ body {
 .font-serif {
   font-family: var(--font-ibm-plex-serif), serif;
 }
+
+/* Date picker customization */
+.rdp-root {
+  --rdp-day_button-width: 2.5rem;
+  --rdp-day_button-height: 2.5rem;
+}
+
+/* Date picker dots for journal entries */
+.rdp-day.has-entry {
+  position: relative;
+}
+
+.rdp-day.has-entry::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  background-color: #3b82f6;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+/* 
+.dark .rdp-day.has-entry::after {
+  background-color: #60a5fa;
+} */
