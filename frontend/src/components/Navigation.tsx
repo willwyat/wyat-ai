@@ -59,7 +59,7 @@ function MobileFloatingButtons() {
 
   return (
     <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 md:hidden">
-      <div className="flex bg-white rounded-full shadow-lg border border-gray-200 p-2">
+      <div className="flex bg-white/50 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 p-2 gap-1">
         {coreFeatures.map((feature, index) => {
           const IconComponent = getIconComponent(feature.icon);
           return (
@@ -67,13 +67,13 @@ function MobileFloatingButtons() {
               key={index}
               href={feature.href}
               onClick={() => navigateTo(feature.href)}
-              className={`flex flex-col items-center px-6 py-2 rounded-full transition-colors ${
+              className={`flex flex-col items-center w-24 py-2 rounded-full transition-colors ${
                 currentPage === feature.href
-                  ? "bg-blue-100 text-blue-600"
-                  : "text-gray-600 hover:text-blue-600 hover:bg-gray-50"
+                  ? "bg-zinc-400/10 backdrop-blur-sm text-blue-600"
+                  : "text-gray-600 hover:text-blue-600 hover:bg-zinc-400/20"
               }`}
             >
-              <IconComponent className="w-5 h-5 mb-1" />
+              <IconComponent className="w-5 h-5 mb-0.5" />
               <div className="text-xs font-medium">{feature.label}</div>
             </Link>
           );
@@ -93,7 +93,7 @@ function TabletSideMenu() {
       {/* Toggle button */}
       <button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-40 bg-white rounded-lg shadow-md p-3 border border-gray-200 lg:hidden md:block hidden"
+        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 border border-gray-200 lg:hidden md:block hidden"
       >
         <div className="w-6 h-6 flex flex-col justify-center space-y-1">
           <div
@@ -116,7 +116,7 @@ function TabletSideMenu() {
 
       {/* Side menu */}
       <div
-        className={`fixed top-0 left-0 h-full bg-white shadow-lg border-r border-gray-200 z-30 transition-transform duration-300 lg:hidden md:block hidden ${
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-900 shadow-lg border-r border-gray-200 z-30 transition-transform duration-300 lg:hidden md:block hidden ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -176,21 +176,21 @@ function DesktopSideMenu() {
       {/* Toggle button */}
       <button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-40 bg-white rounded-lg shadow-md p-3 border border-gray-200 hidden lg:block"
+        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 border border-gray-200 dark:border-gray-800 hidden lg:block"
       >
         <div className="w-6 h-6 flex flex-col justify-center space-y-1">
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-transform ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-transform ${
               sidebarOpen ? "rotate-45 translate-y-1.5" : ""
             }`}
           ></div>
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-opacity ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-opacity ${
               sidebarOpen ? "opacity-0" : ""
             }`}
           ></div>
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-transform ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-transform ${
               sidebarOpen ? "-rotate-45 -translate-y-1.5" : ""
             }`}
           ></div>
@@ -199,7 +199,7 @@ function DesktopSideMenu() {
 
       {/* Side menu */}
       <div
-        className={`fixed top-0 left-0 h-full bg-white shadow-lg border-r border-gray-200 z-30 transition-all duration-300 hidden lg:block ${
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-950 shadow-lg border-r border-gray-200 dark:border-gray-800 z-30 transition-all duration-300 hidden lg:block ${
           sidebarOpen ? "w-64" : "w-20"
         }`}
       >
@@ -207,7 +207,7 @@ function DesktopSideMenu() {
           <nav className="p-4">
             {sidebarOpen ? (
               <>
-                <h2 className="text-lg font-semibold text-gray-800 mb-4 font-serif">
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 font-serif">
                   Core Features
                 </h2>
                 <ul className="space-y-2">
@@ -220,8 +220,8 @@ function DesktopSideMenu() {
                           onClick={() => navigateTo(feature.href)}
                           className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
                             currentPage === feature.href
-                              ? "bg-blue-100 text-blue-600"
-                              : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                              ? "bg-blue-100 dark:bg-blue-900 text-blue-600"
+                              : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 dark:hover:bg-gray-900 hover:bg-gray-50"
                           }`}
                         >
                           <IconComponent className="w-5 h-5 mr-3" />
@@ -248,8 +248,8 @@ function DesktopSideMenu() {
                         onClick={() => navigateTo(feature.href)}
                         className={`block h-12 w-12 flex items-center justify-center rounded-lg transition-colors ${
                           currentPage === feature.href
-                            ? "bg-blue-100 text-blue-600"
-                            : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                            ? "bg-blue-100 dark:bg-gray-900 text-blue-600 dark:text-blue-400"
+                            : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 dark:hover:bg-gray-900 hover:bg-gray-50"
                         }`}
                         title={feature.label}
                       >

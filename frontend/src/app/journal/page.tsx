@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { API_URL, WYAT_API_KEY } from "@/lib/config";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
+import { parse } from "date-fns";
 
 type JournalEntry = {
   title?: string; // Deprecated field
@@ -31,41 +32,41 @@ export default function JournalPage() {
   // =================== //
   // * * * SEARCH. * * * //
   // =================== //
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
+  // const handleSearch = async (query: string) => {
+  //   setSearchQuery(query);
 
-    if (!query.trim()) {
-      // If search is empty, show all entries
-      setEntries(allEntries);
-      return;
-    }
+  //   if (!query.trim()) {
+  //     // If search is empty, show all entries
+  //     setEntries(allEntries);
+  //     return;
+  //   }
 
-    try {
-      // Use the search/ids endpoint to get matching results with highlights
-      const response = await fetch(
-        `${API_URL}/journal/mongo/search/ids?q=${encodeURIComponent(query)}`,
-        {
-          headers: {
-            "x-wyat-api-key": WYAT_API_KEY,
-          },
-        }
-      );
+  //   try {
+  //     // Use the search/ids endpoint to get matching results with highlights
+  //     const response = await fetch(
+  //       `${API_URL}/journal/mongo/search/ids?q=${encodeURIComponent(query)}`,
+  //       {
+  //         headers: {
+  //           "x-wyat-api-key": WYAT_API_KEY,
+  //         },
+  //       }
+  //     );
 
-      const searchResults = await response.json();
+  //     const searchResults = await response.json();
 
-      // Filter all entries to only show those with matching IDs
-      const filteredEntries = allEntries.filter((entry) => {
-        const id = typeof entry._id === "object" ? entry._id.$oid : entry._id;
-        return searchResults.some((result: any) => result._id === id);
-      });
+  //     // Filter all entries to only show those with matching IDs
+  //     const filteredEntries = allEntries.filter((entry) => {
+  //       const id = typeof entry._id === "object" ? entry._id.$oid : entry._id;
+  //       return searchResults.some((result: any) => result._id === id);
+  //     });
 
-      setEntries(filteredEntries);
-    } catch (error) {
-      console.error("Search error:", error);
-      // Fallback to showing all entries if search fails
-      setEntries(allEntries);
-    }
-  };
+  //     setEntries(filteredEntries);
+  //   } catch (error) {
+  //     console.error("Search error:", error);
+  //     // Fallback to showing all entries if search fails
+  //     setEntries(allEntries);
+  //   }
+  // };
 
   // ===================== //
   // * * * PASSCODE. * * * //
@@ -126,40 +127,74 @@ export default function JournalPage() {
     }
   };
 
+  // ======================= //
+  // * * * DATEPICKER. * * * //
+  // ======================= //
+  const [visibleMonth, setVisibleMonth] = useState<Date>(new Date());
+
+  function scrollToMonthEnd(month: Date) {
+    const yyyy = month.getFullYear();
+    const mm = String(month.getMonth() + 1).padStart(2, "0");
+
+    const entriesOfMonth = document.querySelectorAll(
+      `[data-entry-date^="${yyyy}-${mm}"]`
+    );
+    if (entriesOfMonth.length > 0) {
+      const last = entriesOfMonth[entriesOfMonth.length - 1] as HTMLElement;
+      last.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  // ======================= //
+  // * * * VIEW ENTRY. * * * //
+  // ======================= //
+
+  // Fetch entries for a specific date using the new API endpoint
+
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
 
-  // ======================= //
-  // * * * DATEPICKER. * * * //
-  // ======================= //
-
-  // Fetch entries for a specific date using the new API endpoint
-  const fetchEntriesForDate = async (date: string) => {
-    try {
-      const response = await fetch(`${API_URL}/journal/mongo/date/${date}`, {
-        headers: {
-          "x-wyat-api-key": WYAT_API_KEY,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch entries: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setEntries(data);
-    } catch (error) {
-      console.error("Error fetching entries for date:", error);
-      setEntries([]); // Set empty array on error
-    }
-  };
+  const [selectedDayEntries, setSelectedDayEntries] = useState<JournalEntry[]>(
+    []
+  );
 
   // Fetch entries if selected date is changed
   useEffect(() => {
-    fetchEntriesForDate(selectedDate);
-  }, [selectedDate]);
+    const fetchEntriesForDate = async (date: string) => {
+      try {
+        const response = await fetch(`${API_URL}/journal/mongo/date/${date}`, {
+          headers: {
+            "x-wyat-api-key": WYAT_API_KEY,
+          },
+        });
 
+        if (!response.ok) {
+          throw new Error(`Failed to fetch entries: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log("fetchEntriesForDate data", data);
+        setEntries(data);
+        setSelectedDayEntries(data);
+      } catch (error) {
+        console.error("Error fetching entries for date:", error);
+        setEntries([]); // Set empty array on error
+        setSelectedDayEntries([]);
+      }
+    };
+
+    if (datesWithEntries.has(selectedDate)) {
+      fetchEntriesForDate(selectedDate);
+    } else {
+      console.log("No entries for selected date:", selectedDate);
+      setSelectedDayEntries([]);
+    }
+  }, [selectedDate, datesWithEntries]);
+
+  // =================== //
+  // * * * RENDER. * * * //
+  // =================== //
   // Render loading if loading is true
   if (loading) return <p>Loading...</p>;
 
@@ -197,46 +232,53 @@ export default function JournalPage() {
   // Render normal screen if passcode is valid
   return (
     <div className="min-h-screen">
-      <div className="flex flex-col gap-8 md:ml-20">
-        <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col min-h-screen h-fullgap-8 md:ml-20">
+        <div className="flex flex-col md:flex-row gap-6 h-full bg-gray-50 dark:bg-gray-900">
           {/* SIDEBAR */}
-          <div className="flex flex-col gap-6 w-full md:w-md border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-20 md:h-full">
+          <div className="flex flex-col gap-6 w-full md:w-md border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
             {/* Search Bar */}
             <div className="px-8">
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
+                // onChange={(e) => handleSearch(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Search by tags or keywords ..."
               />
             </div>
+            {/* {selectedDate}
+            {visibleMonth.toISOString().split("T")[0]} */}
             {/* Date Picker */}
             <DayPicker
+              onMonthChange={(month) => {
+                setVisibleMonth(month);
+                scrollToMonthEnd(month);
+              }}
               animate={true}
               className="rdp-root"
               mode="single"
               showOutsideDays
               fixedWeeks
               navLayout="around"
-              selected={new Date()}
-              onSelect={(date) =>
-                setSelectedDate(
-                  date?.toISOString().split("T")[0] ??
-                    new Date().toISOString().split("T")[0]
-                )
-              }
+              selected={parse(selectedDate, "yyyy-MM-dd", new Date())}
+              onSelect={(date) => {
+                if (date) {
+                  const localDateStr = date.toISOString().split("T")[0];
+                  setSelectedDate(localDateStr);
+                }
+              }}
               modifiers={{
-                hasEntry: Array.from(datesWithEntries).map(
-                  (dateStr) => new Date(dateStr)
+                hasEntry: Array.from(datesWithEntries).map((dateStr) =>
+                  parse(dateStr, "yyyy-MM-dd", new Date())
                 ),
               }}
               modifiersClassNames={{
                 hasEntry: "has-entry",
               }}
             />
+            {/* ENTRIES LIST */}
             <div className="flex flex-col px-8 overflow-y-auto">
-              {entries.map((entry, i) => {
+              {allEntries.map((entry, i) => {
                 const latestText =
                   entry.versions?.[entry.versions.length - 1]?.text ?? "";
                 const id =
@@ -248,20 +290,29 @@ export default function JournalPage() {
                 return (
                   <div
                     key={i}
-                    onClick={() => router.push(`/journal/${id}`)}
+                    data-entry-date={entry.date}
+                    onClick={() => setSelectedDate(entry.date)}
                     className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ease-in-out duration-200 cursor-pointer"
                   >
                     <div className="min-w-30">
                       <h3 className="font-semibold">
-                        {new Date(entry.date).toLocaleDateString("en-US", {
+                        {parse(
+                          entry.date,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
-                        })}{" "}
-                        (
-                        {new Date(entry.date).toLocaleDateString("en-US", {
+                        })}
+                        {" ("}
+                        {parse(
+                          entry.date,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
                           weekday: "short",
                         })}
-                        )
+                        {")"}
                       </h3>
                     </div>
                     <p className="text-zinc-600 dark:text-zinc-400 line-clamp-1">
@@ -289,49 +340,56 @@ export default function JournalPage() {
           </div>
 
           {/* CONTENT */}
-          <div className="md:ml-112 w-full">
-            <div className="m-auto max-w-6xl">
-              {entries.length === 0 ? (
-                <p>
-                  {searchQuery
-                    ? `No journal entries found matching "${searchQuery}".`
-                    : "No journal entries found."}
+          <div className="md:ml-112 w-full h-full">
+            <div>
+              {/* {datesWithEntries}
+              {selectedDayEntries.length} */}
+              {selectedDayEntries.length === 0 ? (
+                <p className="text-gray-500 italic">
+                  No entries for this date.
                 </p>
               ) : (
                 <div className="flex flex-col">
-                  {entries.map((entry, i) => {
-                    const latestText =
+                  {selectedDayEntries.map((entry, i) => {
+                    const latestVersion =
                       entry.versions?.[entry.versions.length - 1]?.text ?? "";
                     const id =
                       typeof entry._id === "object"
                         ? entry._id.$oid
                         : entry._id;
-
-                    // Use preview_text if available, otherwise fall back to latest text
-                    const displayText = entry.preview_text || latestText;
+                    // const displayText = entry.preview_text || latestText;
 
                     return (
                       <div
                         key={i}
-                        onClick={() => router.push(`/journal/${id}`)}
-                        className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ease-in-out duration-200 cursor-pointer"
+                        data-entry-date={entry.date}
+                        // onClick={() => router.push(`/journal/${id}`)}
+                        className="px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
                       >
-                        <div className="min-w-30">
-                          <h3 className="font-semibold">
-                            {new Date(entry.date).toLocaleDateString("en-US", {
-                              month: "short",
+                        <div className="flex flex-col gap-1">
+                          <h1 className="text-3xl font-bold">
+                            {parse(
+                              entry.date,
+                              "yyyy-MM-dd",
+                              new Date()
+                            ).toLocaleDateString("en-US", {
+                              month: "long",
                               day: "numeric",
-                            })}{" "}
-                            (
-                            {new Date(entry.date).toLocaleDateString("en-US", {
-                              weekday: "short",
                             })}
-                            )
-                          </h3>
+                            {" ("}
+                            {parse(
+                              entry.date,
+                              "yyyy-MM-dd",
+                              new Date()
+                            ).toLocaleDateString("en-US", {
+                              weekday: "long",
+                            })}
+                            {")"}
+                          </h1>
                         </div>
-                        <p className="text-zinc-700 dark:text-zinc-300 line-clamp-1">
-                          {displayText.slice(0, 200)}
-                        </p>
+                        <article className="leading-relaxed whitespace-pre-wrap font-serif text-lg lg:text-base ">
+                          {latestVersion || "No content available."}
+                        </article>
                       </div>
                     );
                   })}
