@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { API_URL, WYAT_API_KEY } from "@/lib/config";
 
 export default function NewJournalEntryPage() {
-  const [newTitle, setNewTitle] = useState("");
   const [newText, setNewText] = useState("");
   const [newDate, setNewDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -15,7 +14,9 @@ export default function NewJournalEntryPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newText.trim()) return;
+    console.log("handleSubmit e", newText);
+    if (!newText.trim()) return;
+    console.log("handleSubmit newText", newText);
 
     setLoading(true);
 
@@ -29,14 +30,12 @@ export default function NewJournalEntryPage() {
           "x-wyat-api-key": WYAT_API_KEY,
         },
         body: JSON.stringify({
-          title: newTitle,
           text: newText,
           date: newDate,
         }),
       });
 
       // Reset form
-      setNewTitle("");
       setNewText("");
       setNewDate(new Date().toISOString().split("T")[0]);
 
@@ -61,24 +60,6 @@ export default function NewJournalEntryPage() {
 
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-6">
-            <div>
-              <label
-                htmlFor="title"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                Title
-              </label>
-              <input
-                id="title"
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-medium"
-                placeholder="Enter a title for your entry..."
-                required
-              />
-            </div>
-
             <div>
               <label
                 htmlFor="date"
@@ -118,8 +99,9 @@ export default function NewJournalEntryPage() {
               </button>
               <button
                 type="submit"
-                disabled={loading || !newTitle.trim() || !newText.trim()}
+                disabled={loading || !newText.trim()}
                 className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                onClick={handleSubmit}
               >
                 {loading ? "Creating..." : "Create Entry"}
               </button>

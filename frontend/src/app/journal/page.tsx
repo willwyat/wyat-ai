@@ -232,12 +232,12 @@ export default function JournalPage() {
   // Render normal screen if passcode is valid
   return (
     <div className="min-h-screen">
-      <div className="flex flex-col min-h-screen h-fullgap-8 md:ml-20">
-        <div className="flex flex-col md:flex-row gap-6 h-full bg-gray-50 dark:bg-gray-900">
+      <div className="flex flex-col min-h-screen h-fullgap-8 lg:ml-20">
+        <div className="flex flex-col md:flex-row gap-6 h-full bg-gray-50 dark:bg-gray-900 flex-grow">
           {/* SIDEBAR */}
-          <div className="flex flex-col gap-6 w-full md:w-md border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
+          <div className="flex flex-col gap-4 w-full md:w-xs lg:w-sm border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-0 lg:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
             {/* Search Bar */}
-            <div className="px-8">
+            <div className="px-4 lg:px-6">
               <input
                 type="text"
                 value={searchQuery}
@@ -277,7 +277,7 @@ export default function JournalPage() {
               }}
             />
             {/* ENTRIES LIST */}
-            <div className="flex flex-col px-8 overflow-y-auto">
+            <div className="text-sm flex flex-col py-2 px-4 lg:px-4 overflow-y-auto border-t border-gray-100 dark:border-gray-800">
               {allEntries.map((entry, i) => {
                 const latestText =
                   entry.versions?.[entry.versions.length - 1]?.text ?? "";
@@ -292,7 +292,11 @@ export default function JournalPage() {
                     key={i}
                     data-entry-date={entry.date}
                     onClick={() => setSelectedDate(entry.date)}
-                    className="flex flex-row px-1 py-2 border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ease-in-out duration-200 cursor-pointer"
+                    className={`rounded-sm flex flex-row px-4 py-2 border-b border-gray-100 dark:border-gray-800 transition-colors ease-in-out duration-200 cursor-pointer ${
+                      selectedDate === entry.date
+                        ? "bg-gray-700 dark:bg-gray-300 text-white dark:text-black"
+                        : "hover:bg-gray-300 active:bg-gray-400 dark:hover:bg-gray-800 dark:active:bg-gray-700"
+                    }`}
                   >
                     <div className="min-w-30">
                       <h3 className="font-semibold">
@@ -315,39 +319,51 @@ export default function JournalPage() {
                         {")"}
                       </h3>
                     </div>
-                    <p className="text-zinc-600 dark:text-zinc-400 line-clamp-1">
+                    <p
+                      className={`line-clamp-1 ${
+                        selectedDate === entry.date
+                          ? "text-white dark:text-black"
+                          : "text-zinc-600 dark:text-zinc-400"
+                      }`}
+                    >
                       {displayText.slice(0, 200)}
                     </p>
                   </div>
                 );
               })}
             </div>
-            {/* Add New Entry Button */}
-            {/* <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
-              <div className="flex items-center justify-between">
-                {/* <div>
-                  <h2 className="text-xl font-bold mb-2">Create New Entry</h2>
-                  <p className="text-gray-600">Write a new journal entry</p>
-                </div> 
-                <button
-                  onClick={() => router.push("/journal/new")}
-                  className="cursor-pointer text-white dark:text-black bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 font-bold text-sm px-4 py-2 rounded"
-                >
-                  New Entry
-                </button>
-              </div>
-            </div> */}
           </div>
 
           {/* CONTENT */}
-          <div className="md:ml-112 w-full h-full">
+          <div className="md:ml-80 lg:ml-96 w-full h-full">
             <div>
               {/* {datesWithEntries}
               {selectedDayEntries.length} */}
               {selectedDayEntries.length === 0 ? (
-                <p className="text-gray-500 italic">
-                  No entries for this date.
-                </p>
+                <div className="px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
+                  <h1 className="text-3xl font-bold">
+                    {parse(
+                      selectedDate,
+                      "yyyy-MM-dd",
+                      new Date()
+                    ).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                    })}
+                    {" ("}
+                    {parse(
+                      selectedDate,
+                      "yyyy-MM-dd",
+                      new Date()
+                    ).toLocaleDateString("en-US", {
+                      weekday: "long",
+                    })}
+                    {")"}
+                  </h1>
+                  <p className="text-gray-500 italic">
+                    No entries for this date.
+                  </p>
+                </div>
               ) : (
                 <div className="flex flex-col">
                   {selectedDayEntries.map((entry, i) => {
@@ -364,7 +380,7 @@ export default function JournalPage() {
                         key={i}
                         data-entry-date={entry.date}
                         // onClick={() => router.push(`/journal/${id}`)}
-                        className="px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
+                        className="px-9 lg:px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
                       >
                         <div className="flex flex-col gap-1">
                           <h1 className="text-3xl font-bold">
@@ -387,7 +403,7 @@ export default function JournalPage() {
                             {")"}
                           </h1>
                         </div>
-                        <article className="leading-relaxed whitespace-pre-wrap font-serif text-lg lg:text-base ">
+                        <article className="leading-relaxed whitespace-pre-wrap font-serif text-base ">
                           {latestVersion || "No content available."}
                         </article>
                       </div>
