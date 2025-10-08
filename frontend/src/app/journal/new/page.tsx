@@ -49,7 +49,7 @@ export default function NewJournalEntryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 pb-20 md:pb-6 lg:pl-24">
+    <div className="min-h-screen bg-background text-foreground p-6 pb-20 md:pb-6">
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2 font-serif">

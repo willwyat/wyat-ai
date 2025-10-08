@@ -501,23 +501,22 @@ export default function PersonsPage() {
           </div>
         )}
 
-        <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
-          <h2 className="text-2xl font-bold mb-4">Person Registry</h2>
+        <div>
           <p className="text-zinc-600 dark:text-zinc-400 mb-6">
             Total persons: {data.persons.length}
           </p>
 
-          <div className="grid gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
             {data.persons.map((person, index) => (
               <div
                 key={index}
-                className="bg-white dark:bg-zinc-700 rounded-lg p-4 border border-zinc-200 dark:border-zinc-600"
+                className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
               >
                 {editingPerson === person.tag ? (
                   <div className="space-y-3">
                     <div className="grid md:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Name
                         </label>
                         <input
@@ -630,23 +629,23 @@ export default function PersonsPage() {
                   <>
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="text-lg font-semibold">{person.name}</h3>
-                      <span className="text-xs bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-2 py-1 rounded">
+                      <span className="text-xs bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-2 py-1 rounded">
                         {person.visibility}
                       </span>
                     </div>
 
                     <div className="mb-2">
-                      <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
                         Tag:
                       </span>
-                      <code className="ml-2 text-sm bg-zinc-200 dark:bg-zinc-600 px-2 py-1 rounded">
+                      <code className="ml-2 text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">
                         {person.tag}
                       </code>
                     </div>
 
                     {person.nicknames.length > 0 && (
                       <div>
-                        <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
                           Nicknames:
                         </span>
                         <div className="flex flex-wrap gap-2 mt-1">

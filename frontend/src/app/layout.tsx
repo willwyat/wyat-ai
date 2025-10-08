@@ -53,7 +53,7 @@ export default function RootLayout({
       >
         <NavProvider>
           <Navigation />
-          {children}
+          <div className="lg:pl-20">{children}</div>
         </NavProvider>
       </body>
     </html>

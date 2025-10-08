@@ -85,6 +85,11 @@ pub struct ExerciseEntry {
     pub intensity: Option<u8>, // 1-5
     pub notes: Option<String>,
 
+    // Timezone where the exercise was logged (IANA timezone, e.g., "America/New_York")
+    // If None, assume UTC for backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tz: Option<String>,
+
     // For gym exercises
     pub sets: Option<u16>,
     pub reps: Option<u16>,
@@ -103,11 +108,11 @@ pub struct ExerciseType {
     pub id: Option<ObjectId>,
     pub name: String,
     #[serde(default)]
-    pub aliases: Vec<String>,
+    pub aliases: Option<Vec<String>>,
     #[serde(default)]
     pub primary_muscles: Vec<Muscle>,
     #[serde(default)]
-    pub guidance: Vec<String>,
+    pub guidance: Option<Vec<String>>,
     pub default_load_basis: Option<LoadBasis>,
 }
 
@@ -116,11 +121,11 @@ pub struct ExerciseType {
 pub struct ExerciseTypeInput {
     pub name: String,
     #[serde(default)]
-    pub aliases: Vec<String>,
+    pub aliases: Option<Vec<String>>,
     #[serde(default)]
     pub primary_muscles: Vec<Muscle>,
     #[serde(default)]
-    pub guidance: Vec<String>,
+    pub guidance: Option<Vec<String>>,
     pub default_load_basis: Option<LoadBasis>,
 }
 
@@ -139,6 +144,10 @@ pub struct ExerciseEntryInput {
     pub date_unix: i64,
     pub intensity: Option<u8>,
     pub notes: Option<String>,
+    // Timezone where the exercise was logged (IANA timezone, e.g., "America/New_York")
+    // Defaults to "UTC" if not provided
+    #[serde(default)]
+    pub tz: Option<String>,
     pub sets: Option<u16>,
     pub reps: Option<u16>,
     pub weight_value: Option<f32>,
@@ -154,6 +163,7 @@ pub struct ExerciseEntryPatch {
     pub date_unix: Option<i64>,
     pub intensity: Option<u8>,
     pub notes: Option<String>,
+    pub tz: Option<String>,
     pub sets: Option<u16>,
     pub reps: Option<u16>,
     pub weight_value: Option<f32>,
@@ -490,6 +500,7 @@ pub async fn create_exercise_entry(
         date_unix: input.date_unix,
         intensity: input.intensity,
         notes: input.notes,
+        tz: input.tz.or(Some("UTC".to_string())), // Default to UTC if not provided
         sets: input.sets,
         reps: input.reps,
         weight_value: input.weight_value,
@@ -575,6 +586,10 @@ pub async fn update_exercise_entry(
 
     if let Some(notes) = patch.notes {
         update_doc.insert("notes", notes);
+    }
+
+    if let Some(tz) = patch.tz {
+        update_doc.insert("tz", tz);
     }
 
     if let Some(sets) = patch.sets {
@@ -944,6 +959,7 @@ pub async fn create_exercise_entry_mongo(
         date_unix: payload.date_unix,
         intensity: payload.intensity,
         notes: payload.notes,
+        tz: payload.tz.or(Some("UTC".to_string())), // Default to UTC if not provided
         sets: payload.sets,
         reps: payload.reps,
         weight_value: payload.weight_value,
@@ -1147,6 +1163,10 @@ pub async fn update_exercise_entry_mongo(
         update_doc.insert("notes", notes);
     }
 
+    if let Some(tz) = payload.tz {
+        update_doc.insert("tz", tz);
+    }
+
     if let Some(sets) = payload.sets {
         update_doc.insert("sets", sets as i32);
     }
@@ -1246,6 +1266,135 @@ pub async fn get_all_exercise_entries_mongo(
     }
 }
 
+/// Get all exercise entries for a specific day
+/// Path parameter: date_unix - Unix timestamp (any time on the target day)
+/// Query parameter: tz - Optional IANA timezone (e.g., "America/New_York", "Asia/Hong_Kong")
+/// Returns all entries whose timestamps fall within the local day range
+/// [local 00:00:00, next local 00:00:00) for the requested timezone (DST-safe).
+/// If no tz is provided, uses UTC.
+pub async fn get_exercise_entries_by_day(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(date_unix): Path<i64>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    use chrono::{DateTime, Utc, TimeZone};
+    use chrono_tz::Tz;
+    
+    let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
+    let provided_key = headers.get("x-wyat-api-key").and_then(|v| v.to_str().ok());
+
+    if provided_key != Some(expected_key.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: missing or invalid API key",
+        ).into_response();
+    }
+
+    // Validate the timestamp
+    if date_unix < 946684800 || date_unix > 9999999999 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "date_unix must be a 10-digit UTC seconds timestamp" })),
+        )
+            .into_response();
+    }
+
+    // Parse timezone (IANA timezone string, e.g., "America/New_York")
+    let tz_str = params.get("tz").map(|s| s.as_str()).unwrap_or("UTC");
+    
+    // Parse the timezone
+    let tz: Tz = match tz_str.parse() {
+        Ok(tz) => tz,
+        Err(_) => {
+            eprintln!("❌ Invalid timezone: {}", tz_str);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ 
+                    "error": format!("Invalid timezone: {}. Use IANA timezone names like 'America/New_York' or 'Asia/Hong_Kong'", tz_str)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Convert Unix timestamp to DateTime<Utc>
+    let utc_dt = match DateTime::from_timestamp(date_unix, 0) {
+        Some(dt) => dt,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Invalid timestamp" })),
+            )
+                .into_response();
+        }
+    };
+    // Convert to the target timezone
+    let local_dt = utc_dt.with_timezone(&tz);
+
+    // Determine the local calendar date
+    let local_date = local_dt.date_naive();
+
+    // Start of local day (handles DST ambiguous/nonexistent times)
+    let local_day_start = tz
+        .from_local_datetime(&local_date.and_hms_opt(0, 0, 0).unwrap())
+        .earliest()
+        .unwrap();
+
+    // Exclusive end: next day's local midnight, then convert to UTC
+    let local_day_end = local_day_start + chrono::Duration::days(1);
+
+    // Convert back to UTC for database query (exclusive upper bound)
+    let utc_day_start = local_day_start.with_timezone(&Utc).timestamp();
+    let utc_day_end = local_day_end.with_timezone(&Utc).timestamp();
+
+    // Debug logging
+    eprintln!("🌍 Timezone query debug:");
+    eprintln!("  Input timestamp: {} ({})", date_unix, utc_dt.format("%Y-%m-%d %H:%M:%S UTC"));
+    eprintln!("  Requested timezone: {}", tz_str);
+    eprintln!("  Local date: {}", local_dt.format("%Y-%m-%d %H:%M:%S %Z"));
+    eprintln!("  Local day start: {}", local_day_start.format("%Y-%m-%d %H:%M:%S %Z"));
+    eprintln!("  Local day end: {}", local_day_end.format("%Y-%m-%d %H:%M:%S %Z"));
+    eprintln!("  UTC range: {} to {} ({} to {})",
+        utc_day_start,
+        utc_day_end,
+        DateTime::from_timestamp(utc_day_start, 0).unwrap().format("%Y-%m-%d %H:%M:%S UTC"),
+        DateTime::from_timestamp(utc_day_end, 0).unwrap().format("%Y-%m-%d %H:%M:%S UTC")
+    );
+
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<ExerciseEntry>("exercise_entries");
+
+    // Query for entries within the day range (in UTC)
+    let filter = doc! {
+        "date_unix": {
+            "$gte": utc_day_start,
+            "$lt": utc_day_end
+        }
+    };
+
+    match collection.find(filter, None).await {
+        Ok(mut cursor) => {
+            let mut results = Vec::new();
+            while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+                results.push(doc);
+            }
+            eprintln!("  Found {} entries", results.len());
+            (StatusCode::OK, Json(results)).into_response()
+        }
+        Err(e) => {
+            eprintln!("❌ Database error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    }
+}
+
+
+
 // Test outline and example test cases
 #[cfg(test)]
 mod tests {
@@ -1270,6 +1419,7 @@ mod tests {
             date_unix: 1609459200, // 2021-01-01
             intensity: Some(3),
             notes: None,
+            tz: Some("UTC".to_string()),
             sets: Some(3),
             reps: Some(10),
             weight_value: Some(100.0),
@@ -1290,9 +1440,9 @@ mod tests {
         // Create exercise type with default load basis
         let exercise_type_input = ExerciseTypeInput {
             name: "Bench Press".to_string(),
-            aliases: vec![],
+            aliases: None,
             primary_muscles: vec![Muscle::Chest],
-            guidance: vec![],
+            guidance: None,
             default_load_basis: Some(LoadBasis::Total),
         };
 
@@ -1305,6 +1455,7 @@ mod tests {
             date_unix: 1609459200,
             intensity: Some(3),
             notes: None,
+            tz: Some("UTC".to_string()),
             sets: Some(3),
             reps: Some(10),
             weight_value: Some(100.0),
@@ -1327,9 +1478,9 @@ mod tests {
             &db,
             ExerciseTypeInput {
                 name: "Bench Press".to_string(),
-                aliases: vec![],
+                aliases: None,
                 primary_muscles: vec![],
-                guidance: vec![],
+                guidance: None,
                 default_load_basis: None,
             },
         )
@@ -1340,9 +1491,9 @@ mod tests {
             &db,
             ExerciseTypeInput {
                 name: "Squat".to_string(),
-                aliases: vec![],
+                aliases: None,
                 primary_muscles: vec![],
-                guidance: vec![],
+                guidance: None,
                 default_load_basis: None,
             },
         )
@@ -1355,6 +1506,7 @@ mod tests {
             date_unix: 1609459200,
             intensity: Some(3),
             notes: None,
+            tz: Some("UTC".to_string()),
             sets: Some(3),
             reps: Some(10),
             weight_value: Some(100.0),
@@ -1373,6 +1525,7 @@ mod tests {
             date_unix: None,
             intensity: None,
             notes: None,
+            tz: None,
             sets: None,
             reps: None,
             weight_value: None,
@@ -1396,9 +1549,9 @@ mod tests {
             &db,
             ExerciseTypeInput {
                 name: "Bench Press".to_string(),
-                aliases: vec![],
+                aliases: None,
                 primary_muscles: vec![],
-                guidance: vec![],
+                guidance: None,
                 default_load_basis: None,
             },
         )
@@ -1410,6 +1563,7 @@ mod tests {
             date_unix: 1609459200,
             intensity: Some(3),
             notes: None,
+            tz: Some("UTC".to_string()),
             sets: Some(3),
             reps: Some(10),
             weight_value: Some(100.0),
@@ -1431,9 +1585,9 @@ mod tests {
             &db,
             ExerciseTypeInput {
                 name: "Running".to_string(),
-                aliases: vec![],
+                aliases: None,
                 primary_muscles: vec![],
-                guidance: vec![],
+                guidance: None,
                 default_load_basis: None,
             },
         )
@@ -1445,6 +1599,7 @@ mod tests {
             date_unix: 1609459200,
             intensity: Some(4),
             notes: Some("Morning run".to_string()),
+            tz: Some("UTC".to_string()),
             sets: None,
             reps: None,
             weight_value: None,

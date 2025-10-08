@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--color-gray-100);
+  --foreground: var(--color-gray-900);
   --font-ibm-plex-serif: "IBM Plex Serif", serif;
 }
 
@@ -14,8 +14,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: var(--color-gray-900);
+    --foreground: var(--color-gray-100);
   }
 }
 
@@ -49,16 +49,19 @@ body {
 
 .rdp-day_button {
   --rdp-day_button-border-radius: 2px;
+  transition: background-color 0.1s ease-in-out;
+  &:hover {
+    background-color: var(--color-gray-300);
+  }
+  &:active {
+    background-color: var(--color-gray-400);
+  }
 }
 
 .rdp-selected .rdp-day_button {
-  --rdp-selected-border: 2px solid var(--color-gray-700);
+  --rdp-selected-border: transparent;
   background-color: var(--color-gray-700);
   color: var(--color-white);
-}
-
-.dark .rdp-selected .rdp-day_button {
-  --rdp-selected-border: 2px solid var(--color-gray-700);
 }
 
 @media (min-width: 768px) {
@@ -101,13 +104,25 @@ body {
   transform: translateX(-58%);
   width: 6px;
   height: 6px;
-  background-color: var(--color-gray-700);
+  background-color: var(--color-gray-400);
   border-radius: 1px;
+}
+
+@media (min-width: 768px) {
+  .rdp-day.has-entry::after {
+    width: 4px;
+    height: 4px;
+    bottom: 5px;
+    border-radius: 0.4px;
+  }
 }
 
 @media (min-width: 1024px) {
   .rdp-day.has-entry::after {
+    width: 5px;
+    height: 5px;
     bottom: 6px;
+    border-radius: 0.75px;
   }
 }
 
@@ -115,6 +130,25 @@ body {
   background-color: var(--color-white);
 }
 
-.dark .rdp-selected.has-entry::after {
-  background-color: var(--color-gray-950);
+@media (prefers-color-scheme: dark) {
+  .rdp-day.has-entry::after {
+    background-color: var(--color-gray-600);
+  }
+  .rdp-day_button {
+    &:hover {
+      color: var(--color-gray-50);
+      background-color: var(--color-gray-700);
+    }
+    &:active {
+      background-color: var(--color-gray-600);
+    }
+  }
+  .rdp-selected .rdp-day_button {
+    --rdp-selected-border: transparent;
+    background-color: var(--color-gray-300);
+    color: var(--color-gray-900);
+  }
+  .rdp-selected.has-entry::after {
+    background-color: var(--color-gray-800);
+  }
 }

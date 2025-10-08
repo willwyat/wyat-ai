@@ -17,6 +17,7 @@ import {
   ArchiveBoxIcon,
   ShieldCheckIcon,
   DocumentTextIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 
 // Helper function to get icon component
@@ -48,6 +49,8 @@ function getIconComponent(iconName: string) {
       return ShieldCheckIcon;
     case "document-text":
       return DocumentTextIcon;
+    case "currency-dollar":
+      return CurrencyDollarIcon;
     default:
       return HomeIcon;
   }
@@ -58,7 +61,7 @@ function MobileFloatingButtons() {
   const { coreFeatures, navigateTo, currentPage } = useNav();
 
   return (
-    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 md:hidden">
+    <div className="fixed bottom-3 left-1/2 transform -translate-x-1/2 z-50 md:hidden">
       <div className="flex bg-white/50 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 p-2 gap-1">
         {coreFeatures.map((feature, index) => {
           const IconComponent = getIconComponent(feature.icon);
@@ -93,7 +96,7 @@ function TabletSideMenu() {
       {/* Toggle button */}
       <button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 border border-gray-200 lg:hidden md:block hidden"
+        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 lg:hidden md:block hidden"
       >
         <div className="w-6 h-6 flex flex-col justify-center space-y-1">
           <div
@@ -122,9 +125,6 @@ function TabletSideMenu() {
       >
         <div className="w-64 h-full pt-16">
           <nav className="p-4">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4 font-serif">
-              Core Features
-            </h2>
             <ul className="space-y-2">
               {coreFeatures.map((feature, index) => {
                 const IconComponent = getIconComponent(feature.icon);
@@ -133,7 +133,7 @@ function TabletSideMenu() {
                     <Link
                       href={feature.href}
                       onClick={() => navigateTo(feature.href)}
-                      className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
+                      className={`flex items-center px-4 py-3 rounded-xs transition-colors ${
                         currentPage === feature.href
                           ? "bg-blue-100 text-blue-600"
                           : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
@@ -141,9 +141,8 @@ function TabletSideMenu() {
                     >
                       <IconComponent className="w-5 h-5 mr-3" />
                       <div>
-                        <div className="font-medium">{feature.label}</div>
-                        <div className="text-sm text-gray-500">
-                          {feature.description}
+                        <div className="text-sm font-medium">
+                          {feature.label}
                         </div>
                       </div>
                     </Link>
@@ -176,7 +175,7 @@ function DesktopSideMenu() {
       {/* Toggle button */}
       <button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-lg shadow-md p-3 border border-gray-200 dark:border-gray-800 hidden lg:block"
+        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 dark:border-gray-800 hidden lg:block"
       >
         <div className="w-6 h-6 flex flex-col justify-center space-y-1">
           <div
@@ -207,9 +206,6 @@ function DesktopSideMenu() {
           <nav className="p-4">
             {sidebarOpen ? (
               <>
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 font-serif">
-                  Core Features
-                </h2>
                 <ul className="space-y-2">
                   {coreFeatures.map((feature, index) => {
                     const IconComponent = getIconComponent(feature.icon);
@@ -220,16 +216,13 @@ function DesktopSideMenu() {
                           onClick={() => navigateTo(feature.href)}
                           className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
                             currentPage === feature.href
-                              ? "bg-blue-100 dark:bg-blue-900 text-blue-600"
+                              ? "bg-blue-100 dark:bg-gray-300 text-blue-600"
                               : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 dark:hover:bg-gray-900 hover:bg-gray-50"
                           }`}
                         >
-                          <IconComponent className="w-5 h-5 mr-3" />
-                          <div>
-                            <div className="font-medium">{feature.label}</div>
-                            <div className="text-sm text-gray-500">
-                              {feature.description}
-                            </div>
+                          <IconComponent className="w-6 h-6 mr-3" />
+                          <div className="font-medium text-sm">
+                            {feature.label}
                           </div>
                         </Link>
                       </li>
@@ -246,15 +239,18 @@ function DesktopSideMenu() {
                       <Link
                         href={feature.href}
                         onClick={() => navigateTo(feature.href)}
-                        className={`block h-12 w-12 flex items-center justify-center rounded-lg transition-colors ${
+                        className={`block h-12 w-12 flex items-center justify-center rounded-xs transition-colors ${
                           currentPage === feature.href
-                            ? "bg-blue-100 dark:bg-gray-900 text-blue-600 dark:text-blue-400"
+                            ? "bg-blue-100 dark:bg-gray-300 text-blue-600 dark:text-gray-800"
                             : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 dark:hover:bg-gray-900 hover:bg-gray-50"
                         }`}
                         title={feature.label}
                       >
-                        <div className="text-center">
+                        <div className="text-center flex flex-col gap-0.5">
                           <IconComponent className="w-6 h-6 mx-auto" />
+                          <div className="text-[10px] font-medium">
+                            {feature.label}
+                          </div>
                         </div>
                       </Link>
                     </li>

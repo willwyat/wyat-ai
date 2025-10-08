@@ -274,6 +274,10 @@ async fn main() {
             get(workout::get_all_exercise_entries_mongo),
         )
         .route(
+            "/workout/exercise-entries/day/:date_unix",
+            get(workout::get_exercise_entries_by_day),
+        )
+        .route(
             "/workout/exercise-types/find-by-muscle",
             post(workout::find_exercise_type_by_muscle),
         )

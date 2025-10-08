@@ -33,9 +33,9 @@ interface LoadBasis {
 interface ExerciseType {
   _id?: string;
   name: string;
-  aliases: string[];
+  aliases?: string[];
   primary_muscles: (keyof Muscle)[];
-  guidance: string[];
+  guidance?: string[];
   default_load_basis?: keyof LoadBasis;
 }
 
@@ -46,6 +46,7 @@ interface ExerciseEntry {
   date_unix: number;
   intensity?: number;
   notes?: string;
+  tz?: string;
   sets?: number;
   reps?: number;
   weight_value?: number;
@@ -57,9 +58,9 @@ interface ExerciseEntry {
 
 interface ExerciseTypeInput {
   name: string;
-  aliases: string[];
+  aliases?: string[];
   primary_muscles: (keyof Muscle)[];
-  guidance: string[];
+  guidance?: string[];
   default_load_basis?: keyof LoadBasis;
 }
 
@@ -148,8 +149,8 @@ export default function WorkoutPage() {
   // Form states
   const [exerciseTypeForm, setExerciseTypeForm] = useState<ExerciseTypeInput>({
     name: "",
-    aliases: [],
-    guidance: [],
+    aliases: undefined,
+    guidance: undefined,
     primary_muscles: [],
     default_load_basis: undefined,
   });
@@ -294,8 +295,8 @@ export default function WorkoutPage() {
       setExerciseTypes([...exerciseTypes, processedType]);
       setExerciseTypeForm({
         name: "",
-        aliases: [],
-        guidance: [],
+        aliases: undefined,
+        guidance: undefined,
         primary_muscles: [],
         default_load_basis: undefined,
       });
@@ -375,7 +376,14 @@ export default function WorkoutPage() {
   };
 
   const formatDate = (unix: number) => {
-    return new Date(unix * 1000).toLocaleDateString();
+    const date = new Date(unix * 1000);
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   const formatTime = (seconds: number) => {
@@ -389,6 +397,23 @@ export default function WorkoutPage() {
         .padStart(2, "0")}`;
     }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Helper to convert Unix timestamp to datetime-local format (in local timezone)
+  const unixToDatetimeLocal = (unixTimestamp: number): string => {
+    const date = new Date(unixTimestamp * 1000);
+    // Format: YYYY-MM-DDTHH:mm
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  // Helper to convert datetime-local format to Unix timestamp
+  const datetimeLocalToUnix = (datetimeLocal: string): number => {
+    return Math.floor(new Date(datetimeLocal).getTime() / 1000);
   };
 
   return (
@@ -518,16 +543,19 @@ export default function WorkoutPage() {
                 </label>
                 <input
                   type="text"
-                  value={exerciseTypeForm.aliases.join(", ")}
-                  onChange={(e) =>
+                  value={exerciseTypeForm.aliases?.join(", ") || ""}
+                  onChange={(e) => {
+                    const trimmedValue = e.target.value.trim();
                     setExerciseTypeForm({
                       ...exerciseTypeForm,
-                      aliases: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter((s) => s),
-                    })
-                  }
+                      aliases: trimmedValue
+                        ? e.target.value
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter((s) => s)
+                        : undefined,
+                    });
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., bench press, chest press"
                 />
@@ -538,15 +566,16 @@ export default function WorkoutPage() {
                   Guidance (one per line)
                 </label>
                 <textarea
-                  value={exerciseTypeForm.guidance.join("\n")}
-                  onChange={(e) =>
+                  value={exerciseTypeForm.guidance?.join("\n") || ""}
+                  onChange={(e) => {
+                    const trimmedValue = e.target.value.trim();
                     setExerciseTypeForm({
                       ...exerciseTypeForm,
-                      guidance: e.target.value
-                        .split("\n")
-                        .filter((s) => s.trim()),
-                    })
-                  }
+                      guidance: trimmedValue
+                        ? e.target.value.split("\n").filter((s) => s.trim())
+                        : undefined,
+                    });
+                  }}
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter guidance tips, one per line"
@@ -597,23 +626,24 @@ export default function WorkoutPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date & Time
+                  Date & Time * (in your local timezone)
                 </label>
                 <input
                   type="datetime-local"
-                  value={new Date(exerciseEntryForm.date_unix * 1000)
-                    .toISOString()
-                    .slice(0, 16)}
+                  value={unixToDatetimeLocal(exerciseEntryForm.date_unix)}
                   onChange={(e) =>
                     setExerciseEntryForm({
                       ...exerciseEntryForm,
-                      date_unix: Math.floor(
-                        new Date(e.target.value).getTime() / 1000
-                      ),
+                      date_unix: datetimeLocalToUnix(e.target.value),
                     })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Your timezone:{" "}
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -857,7 +887,7 @@ export default function WorkoutPage() {
                             .join(", ")}
                         </p>
                       )}
-                      {type.aliases.length > 0 && (
+                      {type.aliases && type.aliases.length > 0 && (
                         <p className="text-sm text-gray-600 mb-2">
                           <strong>Aliases:</strong> {type.aliases.join(", ")}
                         </p>
@@ -870,7 +900,7 @@ export default function WorkoutPage() {
                             : "Total"}
                         </p>
                       )}
-                      {type.guidance.length > 0 && (
+                      {type.guidance && type.guidance.length > 0 && (
                         <div className="mt-2">
                           <p className="text-sm font-medium text-gray-700 mb-1">
                             Guidance:
@@ -892,9 +922,22 @@ export default function WorkoutPage() {
 
             {/* Exercise Entries */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-semibold mb-6 font-serif">
+              <h2 className="text-2xl font-semibold mb-2 font-serif">
                 Exercise Logs ({exerciseEntries.length})
               </h2>
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+                <p>
+                  <span className="text-green-600 font-semibold">
+                    {exerciseEntries.filter((e) => e.tz).length} entries with
+                    timezone
+                  </span>
+                  {" | "}
+                  <span className="text-red-600 font-semibold">
+                    {exerciseEntries.filter((e) => !e.tz).length} entries
+                    without timezone
+                  </span>
+                </p>
+              </div>
               {exerciseEntries.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">
                   No exercise entries found. Log some exercises in the "Log
@@ -913,9 +956,20 @@ export default function WorkoutPage() {
                           <h3 className="text-lg font-semibold">
                             {entry.exercise_label}
                           </h3>
-                          <span className="text-sm text-gray-500">
-                            {formatDate(entry.date_unix)}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-sm text-gray-500 block">
+                              {formatDate(entry.date_unix)}
+                            </span>
+                            <span
+                              className={`text-xs ${
+                                entry.tz
+                                  ? "text-green-600"
+                                  : "text-red-600 font-semibold"
+                              }`}
+                            >
+                              {entry.tz ? `🌍 ${entry.tz}` : "⚠️ No timezone"}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 text-sm">

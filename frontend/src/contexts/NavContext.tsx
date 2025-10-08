@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, ReactNode } from "react";
 export interface NavigationItem {
   href: string;
   label: string;
-  description: string;
+  description?: string;
   icon: string;
 }
 
@@ -42,27 +42,28 @@ interface NavContextType {
 const coreFeatures: NavigationItem[] = [
   {
     href: "/",
-    label: "Home",
-    description: "Home",
+    label: "ホーム",
     icon: "home",
   },
   {
     href: "/journal",
-    label: "Journal",
-    description: "Write and manage journal entries",
+    label: "日記",
     icon: "book-open",
   },
   {
     href: "/workout",
-    label: "Workout",
-    description: "Track exercises and workouts",
+    label: "鍛え",
     icon: "fire",
   },
   {
     href: "/vitals",
-    label: "Vitals",
-    description: "View health and fitness metrics",
+    label: "体",
     icon: "heart",
+  },
+  {
+    href: "/capital",
+    label: "資本",
+    icon: "currency-dollar",
   },
 ];
 

@@ -6,6 +6,8 @@ import { API_URL, WYAT_API_KEY } from "@/lib/config";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import { parse } from "date-fns";
+import WorkoutDisplay from "@/components/WorkoutDisplay";
+import { ExerciseEntry } from "@/types/workout";
 
 type JournalEntry = {
   title?: string; // Deprecated field
@@ -32,6 +34,7 @@ export default function JournalPage() {
   // =================== //
   // * * * SEARCH. * * * //
   // =================== //
+  const [searchInput, setSearchInput] = useState("");
   // const handleSearch = async (query: string) => {
   //   setSearchQuery(query);
 
@@ -158,6 +161,9 @@ export default function JournalPage() {
   const [selectedDayEntries, setSelectedDayEntries] = useState<JournalEntry[]>(
     []
   );
+  const [selectedDayWorkouts, setSelectedDayWorkouts] = useState<
+    ExerciseEntry[]
+  >([]);
 
   // Fetch entries if selected date is changed
   useEffect(() => {
@@ -184,12 +190,48 @@ export default function JournalPage() {
       }
     };
 
+    const fetchWorkoutsForDate = async (date: string) => {
+      try {
+        // Convert YYYY-MM-DD to Unix timestamp (noon local time)
+        const dateObj = new Date(date + "T12:00:00");
+        const unixTimestamp = Math.floor(dateObj.getTime() / 1000);
+
+        // Get user's timezone
+        const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        const response = await fetch(
+          `${API_URL}/workout/exercise-entries/day/${unixTimestamp}?tz=${encodeURIComponent(
+            userTz
+          )}`,
+          {
+            headers: {
+              "x-wyat-api-key": WYAT_API_KEY,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch workouts: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log("fetchWorkoutsForDate data", data);
+        setSelectedDayWorkouts(data);
+      } catch (error) {
+        console.error("Error fetching workouts for date:", error);
+        setSelectedDayWorkouts([]);
+      }
+    };
+
     if (datesWithEntries.has(selectedDate)) {
       fetchEntriesForDate(selectedDate);
     } else {
       console.log("No entries for selected date:", selectedDate);
       setSelectedDayEntries([]);
     }
+
+    // Always fetch workouts for the selected date
+    fetchWorkoutsForDate(selectedDate);
   }, [selectedDate, datesWithEntries]);
 
   // =================== //
@@ -232,17 +274,18 @@ export default function JournalPage() {
   // Render normal screen if passcode is valid
   return (
     <div className="min-h-screen">
-      <div className="flex flex-col min-h-screen h-fullgap-8 lg:ml-20">
+      <div className="flex flex-col min-h-screen h-fullgap-8">
         <div className="flex flex-col md:flex-row gap-6 h-full bg-gray-50 dark:bg-gray-900 flex-grow">
           {/* SIDEBAR */}
-          <div className="flex flex-col gap-4 w-full md:w-xs lg:w-sm border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-0 lg:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
+          <div className="flex flex-col gap-2 w-full md:w-xs lg:w-sm border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-0 lg:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
             {/* Search Bar */}
-            <div className="px-4 lg:px-6">
+            <div className="px-4 lg:px-5 mb-2">
               <input
                 type="text"
-                value={searchQuery}
+                value={searchInput}
                 // onChange={(e) => handleSearch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm h-12"
                 placeholder="Search by tags or keywords ..."
               />
             </div>
@@ -276,70 +319,72 @@ export default function JournalPage() {
                 hasEntry: "has-entry",
               }}
             />
-            {/* ENTRIES LIST */}
-            <div className="text-sm flex flex-col py-2 px-4 lg:px-4 overflow-y-auto border-t border-gray-100 dark:border-gray-800">
-              {allEntries.map((entry, i) => {
-                const latestText =
-                  entry.versions?.[entry.versions.length - 1]?.text ?? "";
-                const id =
-                  typeof entry._id === "object" ? entry._id.$oid : entry._id;
+            <div className="relative flex flex-col flex-1 min-h-0">
+              {/* ENTRIES LIST */}
+              <div className="text-sm flex flex-col py-3 px-4 overflow-y-auto border-t border-gray-100 dark:border-gray-800 h-full">
+                {allEntries.map((entry, i) => {
+                  const latestText =
+                    entry.versions?.[entry.versions.length - 1]?.text ?? "";
+                  const id =
+                    typeof entry._id === "object" ? entry._id.$oid : entry._id;
 
-                // Use preview_text if available, otherwise fall back to latest text
-                const displayText = entry.preview_text || latestText;
+                  // Use preview_text if available, otherwise fall back to latest text
+                  const displayText = entry.preview_text || latestText;
 
-                return (
-                  <div
-                    key={i}
-                    data-entry-date={entry.date}
-                    onClick={() => setSelectedDate(entry.date)}
-                    className={`rounded-sm flex flex-row px-4 py-2 border-b border-gray-100 dark:border-gray-800 transition-colors ease-in-out duration-200 cursor-pointer ${
-                      selectedDate === entry.date
-                        ? "bg-gray-700 dark:bg-gray-300 text-white dark:text-black"
-                        : "hover:bg-gray-300 active:bg-gray-400 dark:hover:bg-gray-800 dark:active:bg-gray-700"
-                    }`}
-                  >
-                    <div className="min-w-30">
-                      <h3 className="font-semibold">
-                        {parse(
-                          entry.date,
-                          "yyyy-MM-dd",
-                          new Date()
-                        ).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                        {" ("}
-                        {parse(
-                          entry.date,
-                          "yyyy-MM-dd",
-                          new Date()
-                        ).toLocaleDateString("en-US", {
-                          weekday: "short",
-                        })}
-                        {")"}
-                      </h3>
-                    </div>
-                    <p
-                      className={`line-clamp-1 ${
+                  return (
+                    <div
+                      key={i}
+                      data-entry-date={entry.date}
+                      onClick={() => setSelectedDate(entry.date)}
+                      className={`rounded-xs flex flex-row px-3 py-2 border-b border-gray-100 dark:border-gray-800 transition-colors ease-in-out duration-200 cursor-pointer ${
                         selectedDate === entry.date
-                          ? "text-white dark:text-black"
-                          : "text-zinc-600 dark:text-zinc-400"
+                          ? "bg-gray-700 dark:bg-gray-300 text-white dark:text-black"
+                          : "hover:bg-gray-300 active:bg-gray-400 dark:hover:bg-gray-700 dark:active:bg-gray-600"
                       }`}
                     >
-                      {displayText.slice(0, 200)}
-                    </p>
-                  </div>
-                );
-              })}
+                      <div className="min-w-30">
+                        <h3 className="font-semibold">
+                          {parse(
+                            entry.date,
+                            "yyyy-MM-dd",
+                            new Date()
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          {" ("}
+                          {parse(
+                            entry.date,
+                            "yyyy-MM-dd",
+                            new Date()
+                          ).toLocaleDateString("en-US", {
+                            weekday: "short",
+                          })}
+                          {")"}
+                        </h3>
+                      </div>
+                      <p
+                        className={`line-clamp-1 ${
+                          selectedDate === entry.date
+                            ? "text-white dark:text-black"
+                            : "text-gray-600 dark:text-gray-400"
+                        }`}
+                      >
+                        {displayText.slice(0, 200)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* <div className="h-4 w-full absolute top-0 left-0 bg-gradient-to-b from-gray-50 to-transparent dark:from-gray-900 pointer-events-none" /> */}
             </div>
           </div>
 
           {/* CONTENT */}
           <div className="md:ml-80 lg:ml-96 w-full h-full">
             <div>
-              {/* {datesWithEntries}
-              {selectedDayEntries.length} */}
               {selectedDayEntries.length === 0 ? (
+                // JOURNAL ENTRIES NOT FOUND
                 <div className="px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
                   <h1 className="text-3xl font-bold">
                     {parse(
@@ -361,10 +406,18 @@ export default function JournalPage() {
                     {")"}
                   </h1>
                   <p className="text-gray-500 italic">
-                    No entries for this date.
+                    No journal entries for this date.
                   </p>
+
+                  {/* Show workouts even if no journal entries */}
+                  {selectedDayWorkouts.length > 0 && (
+                    <div className="mt-8">
+                      <WorkoutDisplay workouts={selectedDayWorkouts} />
+                    </div>
+                  )}
                 </div>
               ) : (
+                // JOURNAL ENTRIES FOUND
                 <div className="flex flex-col">
                   {selectedDayEntries.map((entry, i) => {
                     const latestVersion =
@@ -373,8 +426,6 @@ export default function JournalPage() {
                       typeof entry._id === "object"
                         ? entry._id.$oid
                         : entry._id;
-                    // const displayText = entry.preview_text || latestText;
-
                     return (
                       <div
                         key={i}
@@ -409,6 +460,13 @@ export default function JournalPage() {
                       </div>
                     );
                   })}
+
+                  {/* Show workouts after journal entries */}
+                  {selectedDayWorkouts.length > 0 && (
+                    <div className="px-9 lg:px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
+                      <WorkoutDisplay workouts={selectedDayWorkouts} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

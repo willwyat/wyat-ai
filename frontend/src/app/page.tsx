@@ -8,7 +8,7 @@ export default function Home() {
   const { navigationSections } = useNav();
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-6 pb-20 md:pb-6 lg:pl-24">
+    <div className="min-h-screen bg-background text-foreground p-6 pb-20 md:pb-6">
       <div className="max-w-6xl mx-auto">
         <header className="text-center mb-12">
           <h1 className="text-5xl font-bold mb-4 font-serif">Wyat AI</h1>
