@@ -16,6 +16,8 @@ use meta::{
     update_person, update_place, update_tag_taxonomy,
 };
 use tower_http::cors::CorsLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use axum::{
     Json, Router,
@@ -128,6 +130,56 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
     };
 
     AxumJson(json).into_response()
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        workout::create_exercise_type_mongo,
+        workout::update_exercise_type_mongo,
+        workout::get_all_exercise_types_mongo,
+        workout::create_exercise_entry_mongo,
+        workout::update_exercise_entry_mongo,
+        workout::get_all_exercise_entries_mongo,
+        workout::get_exercise_entries_by_day,
+        workout::find_exercise_type_by_muscle,
+    ),
+    components(
+        schemas(
+            workout::ExerciseEntry,
+            workout::ExerciseType,
+            workout::ExerciseTypeInput,
+            workout::ExerciseTypePatch,
+            workout::ExerciseEntryInput,
+            workout::ExerciseEntryPatch,
+            workout::WeightUnit,
+            workout::LoadBasis,
+            workout::Muscle,
+            workout::Region,
+        )
+    ),
+    modifiers(&SecurityAddon),
+    tags(
+        (name = "workout", description = "Workout tracking endpoints")
+    )
+)]
+struct ApiDoc;
+
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "ApiKey",
+                utoipa::openapi::security::SecurityScheme::ApiKey(
+                    utoipa::openapi::security::ApiKey::Header(
+                        utoipa::openapi::security::ApiKeyValue::new("x-wyat-api-key"),
+                    ),
+                ),
+            )
+        }
+    }
 }
 
 #[tokio::main]
@@ -281,8 +333,9 @@ async fn main() {
             "/workout/exercise-types/find-by-muscle",
             post(workout::find_exercise_type_by_muscle),
         )
-        .layer(cors)
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
+        .layer(cors);
 
     let port = std::env::var("PORT")
         .ok()

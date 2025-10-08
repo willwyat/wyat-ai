@@ -12,22 +12,23 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
 use futures::stream::TryStreamExt;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WeightUnit {
     Kg,
     Lb,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadBasis {
     PerSide,
     Total,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Muscle {
     Chest,
@@ -45,7 +46,7 @@ pub enum Muscle {
     Obliques,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Region {
     UpperBody,
@@ -75,10 +76,12 @@ impl Muscle {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseEntry {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
     pub id: Option<ObjectId>,
+    #[schema(value_type = Option<String>)]
     pub exercise_id: Option<ObjectId>,
     pub exercise_label: String,
     pub date_unix: i64,
@@ -102,9 +105,10 @@ pub struct ExerciseEntry {
     pub distance_meters: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseType {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
     pub id: Option<ObjectId>,
     pub name: String,
     #[serde(default)]
@@ -117,7 +121,7 @@ pub struct ExerciseType {
 }
 
 // Input types for creating/updating
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseTypeInput {
     pub name: String,
     #[serde(default)]
@@ -129,7 +133,7 @@ pub struct ExerciseTypeInput {
     pub default_load_basis: Option<LoadBasis>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseTypePatch {
     pub name: Option<String>,
     pub aliases: Option<Vec<String>>,
@@ -138,8 +142,9 @@ pub struct ExerciseTypePatch {
     pub default_load_basis: Option<LoadBasis>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseEntryInput {
+    #[schema(value_type = String)]
     pub exercise_id: ObjectId,
     pub date_unix: i64,
     pub intensity: Option<u8>,
@@ -157,8 +162,9 @@ pub struct ExerciseEntryInput {
     pub distance_meters: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseEntryPatch {
+    #[schema(value_type = Option<String>)]
     pub exercise_id: Option<ObjectId>,
     pub date_unix: Option<i64>,
     pub intensity: Option<u8>,
@@ -339,6 +345,19 @@ pub fn muscle_for_alias(term: &str) -> Option<&'static [Muscle]> {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/workout/exercise-types/find-by-muscle",
+    request_body = Vec<String>,
+    responses(
+        (status = 200, description = "List of exercise types matching the specified muscles", body = Vec<ExerciseType>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn find_exercise_type_by_muscle(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -657,6 +676,20 @@ async fn get_exercise_type_by_id(
         .ok_or(WorkoutError::ExerciseTypeNotFound)
 }
 
+#[utoipa::path(
+    post,
+    path = "/workout/exercise-types",
+    request_body = ExerciseTypeInput,
+    responses(
+        (status = 201, description = "Exercise type created successfully", body = ExerciseType),
+        (status = 400, description = "Bad request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn create_exercise_type_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -708,6 +741,24 @@ pub async fn create_exercise_type_mongo(
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/workout/exercise-types/{id}",
+    request_body = ExerciseTypePatch,
+    params(
+        ("id" = String, Path, description = "Exercise type ID")
+    ),
+    responses(
+        (status = 200, description = "Exercise type updated successfully", body = ExerciseType),
+        (status = 400, description = "Bad request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Exercise type not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn update_exercise_type_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -810,6 +861,18 @@ pub async fn update_exercise_type_mongo(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/workout/exercise-types",
+    responses(
+        (status = 200, description = "List of all exercise types", body = Vec<ExerciseType>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn get_all_exercise_types_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -843,6 +906,21 @@ pub async fn get_all_exercise_types_mongo(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/workout/exercise-entries",
+    request_body = ExerciseEntryInput,
+    responses(
+        (status = 201, description = "Exercise entry created successfully", body = ExerciseEntry),
+        (status = 400, description = "Bad request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Exercise type not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn create_exercise_entry_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -983,6 +1061,24 @@ pub async fn create_exercise_entry_mongo(
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/workout/exercise-entries/{id}",
+    request_body = ExerciseEntryPatch,
+    params(
+        ("id" = String, Path, description = "Exercise entry ID")
+    ),
+    responses(
+        (status = 200, description = "Exercise entry updated successfully", body = ExerciseEntry),
+        (status = 400, description = "Bad request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Exercise entry not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn update_exercise_entry_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -1233,6 +1329,18 @@ pub async fn update_exercise_entry_mongo(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/workout/exercise-entries",
+    responses(
+        (status = 200, description = "List of all exercise entries", body = Vec<ExerciseEntry>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn get_all_exercise_entries_mongo(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -1272,6 +1380,23 @@ pub async fn get_all_exercise_entries_mongo(
 /// Returns all entries whose timestamps fall within the local day range
 /// [local 00:00:00, next local 00:00:00) for the requested timezone (DST-safe).
 /// If no tz is provided, uses UTC.
+#[utoipa::path(
+    get,
+    path = "/workout/exercise-entries/day/{date_unix}",
+    params(
+        ("date_unix" = i64, Path, description = "Unix timestamp (any time on the target day)"),
+        ("tz" = Option<String>, Query, description = "Optional IANA timezone (e.g., 'America/New_York', 'Asia/Hong_Kong'). Defaults to UTC if not provided.")
+    ),
+    responses(
+        (status = 200, description = "List of exercise entries for the specified day", body = Vec<ExerciseEntry>),
+        (status = 400, description = "Bad request - invalid timestamp or timezone"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn get_exercise_entries_by_day(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,

@@ -21,3 +21,5 @@ urlencoding = "2.1"
 async-openai = "0.15"
 regex = "1.10"
 thiserror = "1.0"
+utoipa = { version = "4", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "4", features = ["axum"] }
