@@ -408,13 +408,6 @@ export default function JournalPage() {
                   <p className="text-gray-500 italic">
                     No journal entries for this date.
                   </p>
-
-                  {/* Show workouts even if no journal entries */}
-                  {selectedDayWorkouts.length > 0 && (
-                    <div className="mt-8">
-                      <WorkoutDisplay workouts={selectedDayWorkouts} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 // JOURNAL ENTRIES FOUND
@@ -460,15 +453,17 @@ export default function JournalPage() {
                       </div>
                     );
                   })}
-
-                  {/* Show workouts after journal entries */}
-                  {selectedDayWorkouts.length > 0 && (
-                    <div className="px-9 lg:px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
-                      <WorkoutDisplay workouts={selectedDayWorkouts} />
-                    </div>
-                  )}
                 </div>
               )}
+
+              {/* Show workouts - single location regardless of journal entry state */}
+              <div className="px-9 lg:px-5 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
+                <WorkoutDisplay workouts={selectedDayWorkouts} />
+              </div>
+
+              <div className="px-9 lg:px-5 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
+                <h2 className="text-2xl font-bold">支出</h2>
+              </div>
             </div>
           </div>
         </div>
