@@ -17,9 +17,9 @@ export default function WorkoutDisplay({
         {title} {workouts.length > 0 ? `(${workouts.length})` : ""}
       </h2>
       {workouts.length === 0 ? (
-        <div className="h-24 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
+        <div className="h-24 flex flex-col items-center justify-center">
           <p className="text-sm text-gray-400 dark:text-gray-500">
-            今日は休みの日
+            この日は休みの日
           </p>
         </div>
       ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { API_URL, WYAT_API_KEY } from "@/lib/config";
 import { DayPicker } from "react-day-picker";
@@ -165,6 +165,20 @@ export default function JournalPage() {
     ExerciseEntry[]
   >([]);
 
+  // Mobile modal states
+  const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
+  const [modalHeight, setModalHeight] = useState<"half" | "full">("full");
+  const [dragStartY, setDragStartY] = useState<number | null>(null);
+  const [currentY, setCurrentY] = useState(0);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Open modal on mobile when page loads
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setIsMobileModalOpen(true);
+    }
+  }, []);
+
   // Fetch entries if selected date is changed
   useEffect(() => {
     const fetchEntriesForDate = async (date: string) => {
@@ -234,6 +248,63 @@ export default function JournalPage() {
     fetchWorkoutsForDate(selectedDate);
   }, [selectedDate, datesWithEntries]);
 
+  // ======================== //
+  // * * * DRAG HANDLERS. * * * //
+  // ======================== //
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setDragStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (dragStartY === null) return;
+    const deltaY = e.touches[0].clientY - dragStartY;
+    if (deltaY > 0) {
+      // Only allow dragging down
+      setCurrentY(deltaY);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (dragStartY === null) return;
+
+    // If dragged down more than 100px, close the modal
+    if (currentY > 100) {
+      setIsMobileModalOpen(false);
+    } else if (currentY > 50 && modalHeight === "full") {
+      // If dragged 50-100px from full, switch to half
+      setModalHeight("half");
+    }
+
+    // Reset
+    setDragStartY(null);
+    setCurrentY(0);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setDragStartY(e.clientY);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (dragStartY === null) return;
+    const deltaY = e.clientY - dragStartY;
+    if (deltaY > 0) {
+      setCurrentY(deltaY);
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (dragStartY === null) return;
+
+    if (currentY > 100) {
+      setIsMobileModalOpen(false);
+    } else if (currentY > 50 && modalHeight === "full") {
+      setModalHeight("half");
+    }
+
+    setDragStartY(null);
+    setCurrentY(0);
+  };
+
   // =================== //
   // * * * RENDER. * * * //
   // =================== //
@@ -277,9 +348,9 @@ export default function JournalPage() {
       <div className="flex flex-col min-h-screen h-fullgap-8">
         <div className="flex flex-col md:flex-row gap-6 h-full bg-gray-50 dark:bg-gray-900 flex-grow">
           {/* SIDEBAR */}
-          <div className="flex flex-col gap-2 w-full md:w-xs lg:w-sm border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:fixed md:top-0 md:left-0 lg:left-20 md:h-full bg-gray-50 dark:bg-gray-900">
-            {/* Search Bar */}
-            <div className="px-4 lg:px-5 mb-2">
+          <div className="flex flex-col gap-2 w-full md:w-xs lg:w-sm border-r border-gray-200 dark:border-gray-800 shadow-md pt-5 md:pt-5 fixed top-0 left-0 md:left-0 lg:left-20 h-full bg-gray-50 dark:bg-gray-900 z-10">
+            {/* Search Bar - Hidden on mobile */}
+            <div className="px-4 lg:px-5 mb-2 hidden md:block">
               <input
                 type="text"
                 value={searchInput}
@@ -308,6 +379,9 @@ export default function JournalPage() {
                 if (date) {
                   const localDateStr = date.toISOString().split("T")[0];
                   setSelectedDate(localDateStr);
+                  // Open mobile modal when date is selected on mobile
+                  setIsMobileModalOpen(true);
+                  setModalHeight("full");
                 }
               }}
               modifiers={{
@@ -319,8 +393,8 @@ export default function JournalPage() {
                 hasEntry: "has-entry",
               }}
             />
-            <div className="relative flex flex-col flex-1 min-h-0">
-              {/* ENTRIES LIST */}
+            <div className="relative flex-col flex-1 min-h-0 hidden md:flex">
+              {/* ENTRIES LIST - Hidden on mobile, shown on desktop */}
               <div className="text-sm flex flex-col py-3 px-4 overflow-y-auto border-t border-gray-100 dark:border-gray-800 h-full">
                 {allEntries.map((entry, i) => {
                   const latestText =
@@ -380,12 +454,12 @@ export default function JournalPage() {
             </div>
           </div>
 
-          {/* CONTENT */}
-          <div className="md:ml-80 lg:ml-96 w-full h-full">
+          {/* DESKTOP CONTENT */}
+          <div className="hidden md:block md:ml-80 lg:ml-96 w-full h-full">
             <div>
               {selectedDayEntries.length === 0 ? (
                 // JOURNAL ENTRIES NOT FOUND
-                <div className="px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
+                <div className="px-6 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
                   <h1 className="text-3xl font-bold">
                     {parse(
                       selectedDate,
@@ -405,9 +479,11 @@ export default function JournalPage() {
                     })}
                     {")"}
                   </h1>
-                  <p className="text-gray-500 italic">
-                    No journal entries for this date.
-                  </p>
+                  <div className="h-24 flex flex-col items-center justify-center">
+                    <p className="text-sm text-gray-400 dark:text-gray-500">
+                      この日は日記なし
+                    </p>
+                  </div>
                 </div>
               ) : (
                 // JOURNAL ENTRIES FOUND
@@ -424,7 +500,7 @@ export default function JournalPage() {
                         key={i}
                         data-entry-date={entry.date}
                         // onClick={() => router.push(`/journal/${id}`)}
-                        className="px-9 lg:px-5 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
+                        className="px-6 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
                       >
                         <div className="flex flex-col gap-1">
                           <h1 className="text-3xl font-bold">
@@ -457,15 +533,162 @@ export default function JournalPage() {
               )}
 
               {/* Show workouts - single location regardless of journal entry state */}
-              <div className="px-9 lg:px-5 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
+              <div className="px-6 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
                 <WorkoutDisplay workouts={selectedDayWorkouts} />
               </div>
 
-              <div className="px-9 lg:px-5 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
+              <div className="px-6 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
                 <h2 className="text-2xl font-bold">支出</h2>
               </div>
             </div>
           </div>
+
+          {/* MOBILE MODAL */}
+          {isMobileModalOpen && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="md:hidden fixed inset-0 bg-black/50 z-[60]"
+                onClick={() => setIsMobileModalOpen(false)}
+              />
+
+              {/* Modal */}
+              <div
+                ref={modalRef}
+                className={`md:hidden fixed left-0 right-0 bg-white dark:bg-gray-900 z-[70] rounded-t-2xl shadow-2xl transition-all duration-300 ease-out ${
+                  modalHeight === "full"
+                    ? "top-16 bottom-20"
+                    : "top-1/2 bottom-20"
+                }`}
+                style={{
+                  transform: `translateY(${currentY}px)`,
+                }}
+              >
+                {/* Drag Handle */}
+                <div
+                  className="flex justify-center py-3 cursor-grab active:cursor-grabbing"
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onClick={() =>
+                    setModalHeight(modalHeight === "full" ? "half" : "full")
+                  }
+                >
+                  <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-600 rounded-full" />
+                </div>
+
+                {/* Close button */}
+                <button
+                  onClick={() => setIsMobileModalOpen(false)}
+                  className="absolute top-3 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+
+                {/* Modal Content */}
+                <div className="overflow-y-auto h-full">
+                  {selectedDayEntries.length === 0 ? (
+                    // JOURNAL ENTRIES NOT FOUND
+                    <div className="px-6 py-8 w-full flex flex-col gap-8">
+                      <h1 className="text-3xl font-bold">
+                        {parse(
+                          selectedDate,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                        })}
+                        {" ("}
+                        {parse(
+                          selectedDate,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
+                          weekday: "long",
+                        })}
+                        {")"}
+                      </h1>
+                      <div className="h-24 flex flex-col items-center justify-center">
+                        <p className="text-sm text-gray-400 dark:text-gray-500">
+                          この日は日記なし
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    // JOURNAL ENTRIES FOUND
+                    <div className="flex flex-col">
+                      {selectedDayEntries.map((entry, i) => {
+                        const latestVersion =
+                          entry.versions?.[entry.versions.length - 1]?.text ??
+                          "";
+                        const id =
+                          typeof entry._id === "object"
+                            ? entry._id.$oid
+                            : entry._id;
+                        return (
+                          <div
+                            key={i}
+                            data-entry-date={entry.date}
+                            className="px-6 py-8 w-full flex flex-col gap-8"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <h1 className="text-3xl font-bold">
+                                {parse(
+                                  entry.date,
+                                  "yyyy-MM-dd",
+                                  new Date()
+                                ).toLocaleDateString("en-US", {
+                                  month: "long",
+                                  day: "numeric",
+                                })}
+                                {" ("}
+                                {parse(
+                                  entry.date,
+                                  "yyyy-MM-dd",
+                                  new Date()
+                                ).toLocaleDateString("en-US", {
+                                  weekday: "long",
+                                })}
+                                {")"}
+                              </h1>
+                            </div>
+                            <article className="leading-relaxed whitespace-pre-wrap font-serif text-base ">
+                              {latestVersion || "No content available."}
+                            </article>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Show workouts */}
+                  <div className="px-6 py-4 w-full">
+                    <WorkoutDisplay workouts={selectedDayWorkouts} />
+                  </div>
+
+                  <div className="px-6 py-4 w-full">
+                    <h2 className="text-2xl font-bold">支出</h2>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
