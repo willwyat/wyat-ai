@@ -1,0 +1,5 @@
+
+# Node junk (accidental)
+node_modules/
+package-lock.json
+

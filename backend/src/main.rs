@@ -1,3 +1,4 @@
+mod capital;
 mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
@@ -221,6 +222,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "Hello from backend" }))
+        .route("/capital/envelopes", get(capital::get_all_envelopes))
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))
