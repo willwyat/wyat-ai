@@ -1,4 +1,5 @@
 // backend/src/journal.rs
+use crate::AppState;
 use crate::services::openai::generate_tags_and_keywords;
 use axum::{
     Json,
@@ -18,11 +19,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub mongo_client: MongoClient,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JournalVersion {

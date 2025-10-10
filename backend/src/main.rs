@@ -5,8 +5,14 @@ use dotenvy::dotenv;
 mod meta;
 mod vitals;
 mod workout;
+
+// AppState is now defined in the root module
+struct AppState {
+    mongo_client: mongodb::Client,
+}
+
 use journal::{
-    AppState, create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
+    create_journal_entry_mongo, delete_journal_entry_mongo, edit_journal_entry_mongo,
     edit_journal_entry_tags, get_journal_entries_mongo, get_journal_entry_by_date_mongo,
     get_journal_entry_by_id_mongo, patch_journal_entry_tags_and_keywords, search_journal_entries,
     search_journal_entries_return_ids,
@@ -223,6 +229,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { "Hello from backend" }))
         .route("/capital/envelopes", get(capital::get_all_envelopes))
+        .route("/capital/accounts", get(capital::get_all_accounts))
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))

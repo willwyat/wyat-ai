@@ -1,4 +1,4 @@
-use crate::journal::AppState;
+use crate::AppState;
 use axum::{
     Json,
     extract::{Path, State},
