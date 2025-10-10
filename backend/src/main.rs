@@ -29,7 +29,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use axum::{
     Json, Router,
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 use hyper;
 use mongodb::bson::doc;
@@ -230,6 +230,11 @@ async fn main() {
         .route("/", get(|| async { "Hello from backend" }))
         .route("/capital/envelopes", get(capital::get_all_envelopes))
         .route("/capital/accounts", get(capital::get_all_accounts))
+        .route("/capital/transactions", get(capital::get_transactions))
+        .route(
+            "/capital/transactions/reclassify",
+            put(capital::reclassify_transaction),
+        )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))

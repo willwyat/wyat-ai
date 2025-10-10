@@ -29,3 +29,5 @@ utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "4", features = ["axum"] }
 rust_decimal = { version = "1", features = ["serde"] }
 anyhow = "1"
+csv = "1"
+uuid = { version = "1", features = ["v4"] }

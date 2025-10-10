@@ -87,6 +87,12 @@ const defaultNavigationSections: NavigationSection[] = [
         description: "Connect financial accounts",
         icon: "credit-card",
       },
+      {
+        href: "/capital/transactions",
+        label: "Transactions",
+        description: "View and filter transaction history",
+        icon: "credit-card",
+      },
     ],
   },
   {

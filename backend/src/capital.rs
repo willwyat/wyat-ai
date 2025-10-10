@@ -16,7 +16,11 @@
 //!   serde = { version = "1", features = ["derive"] }
 //!   thiserror = "1"
 
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Query, State},
+};
+use mongodb::bson;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -337,6 +341,128 @@ impl Account {
     }
 }
 
+// ------------------------- Ledger -------------------------
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LegDirection {
+    Debit,
+    Credit,
+}
+
+/// Snapshot used to value a leg in a chosen reporting currency (e.g., USD or BTC).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct FxSnapshot {
+    pub to: Currency,  // currency to value in (e.g., USD or BTC)
+    pub rate: Decimal, // price per 1 unit of the leg's native unit in `to`
+}
+
+/// Amount carried by a leg: either fiat (Money) or a crypto asset quantity.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data")]
+pub enum LegAmount {
+    /// Fiat amount in a defined Currency (USD/HKD/BTC if you later model BTC as fiat-like)
+    Fiat(Money),
+    /// Crypto asset with symbol and quantity (e.g., { asset: "ETH", qty: 1.25 })
+    Crypto { asset: String, qty: Decimal },
+}
+
+impl LegAmount {
+    /// Return a valuation of this amount in `fx.to` using the provided snapshot.
+    /// - Fiat: if fiat.ccy == fx.to, returns the same amount; otherwise multiplies by fx.rate
+    /// - Crypto: requires fx to be provided (price of 1 unit in fx.to)
+    pub fn valued_in(&self, fx: Option<FxSnapshot>) -> Option<Money> {
+        match self {
+            LegAmount::Fiat(m) => match fx {
+                Some(snap) if m.ccy != snap.to => Some(Money::new(m.amount * snap.rate, snap.to)),
+                _ => Some(*m),
+            },
+            LegAmount::Crypto { qty, .. } => {
+                let snap = fx?; // need a price to value crypto
+                Some(Money::new(*qty * snap.rate, snap.to))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Leg {
+    pub account_id: String,          // e.g., "acct.chase_credit" or "acct.binance"
+    pub direction: LegDirection,     // Debit or Credit
+    pub amount: LegAmount,           // Fiat or Crypto amount
+    pub fx: Option<FxSnapshot>,      // Optional valuation snapshot
+    pub category_id: Option<String>, // Optional envelope/category link (e.g., "env_transport")
+    pub fee_of_leg_idx: Option<u32>, // If this is a fee tied to another leg (index within `legs`)
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Transaction {
+    pub id: String,             // stable UUID/String
+    pub ts: i64,                // when it happened (unix seconds)
+    pub posted_ts: Option<i64>, // when institution posted it
+    pub source: String,         // e.g., "chase_csv", "chase_pdf", "etherscan_csv", "manual"
+    pub payee: Option<String>,  // e.g., "Uber", "Binance Offramp"
+    pub memo: Option<String>,
+    pub status: Option<String>, // "pending" | "posted" | "void"
+    pub reconciled: bool,       // checked off against a statement line
+    pub external_refs: Vec<(String, String)>, // pairs of (kind, value) like ("tx_hash", "0x...")
+    pub legs: Vec<Leg>,
+}
+
+impl Transaction {
+    /// Check zero-sum integrity by valuing each leg in the requested reporting currency.
+    /// Returns (is_balanced, net_amount) — where net_amount should be 0 when balanced.
+    pub fn is_balanced_in(&self, report_ccy: Currency) -> (bool, Money) {
+        let mut net = Decimal::ZERO;
+        for leg in &self.legs {
+            // Try to value leg in report_ccy; if not possible, skip valuation (treat as 0)
+            let valued = match (&leg.amount, leg.fx) {
+                (LegAmount::Fiat(m), fx) => {
+                    if m.ccy == report_ccy {
+                        Some(*m)
+                    } else if let Some(snap) = fx {
+                        if snap.to == report_ccy {
+                            Some(Money::new(m.amount * snap.rate, report_ccy))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                (LegAmount::Crypto { .. }, fx) => fx.and_then(|snap| {
+                    if snap.to == report_ccy {
+                        leg.amount.valued_in(Some(snap))
+                    } else {
+                        None
+                    }
+                }),
+            };
+
+            if let Some(v) = valued {
+                let signed = match leg.direction {
+                    LegDirection::Debit => v.amount,
+                    LegDirection::Credit => -v.amount,
+                };
+                net += signed;
+            }
+        }
+        (net.is_zero(), Money::new(net, report_ccy))
+    }
+}
+
+/// Bank/credit statement header for reconciliation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Statement {
+    pub id: String,
+    pub account_id: String,
+    pub period_start: i64,
+    pub period_end: i64,
+    pub opening_balance: Money,
+    pub closing_balance: Money,
+    pub raw_ref: Option<String>, // e.g., filename or source range
+}
+
 // ------------------------- Funds -------------------------
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -416,5 +542,152 @@ pub async fn get_all_accounts(State(state): State<Arc<AppState>>) -> Json<Vec<Ac
             eprintln!("Error fetching accounts: {}", e);
             Json(Vec::new())
         }
+    }
+}
+
+// ------------------------- Query Parameters -------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionQuery {
+    pub account_id: Option<String>,
+    pub from: Option<i64>, // Unix timestamp
+    pub to: Option<i64>,   // Unix timestamp
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReclassifyTransactionRequest {
+    pub transaction_id: String,
+    pub leg_index: usize,
+    pub category_id: Option<String>, // envelope ID or category
+}
+
+/// GET /capital/transactions - Fetch transactions with optional filtering
+///
+/// Query parameters:
+/// - account_id: Filter by account ID (searches in legs.account_id)
+/// - from: Unix timestamp for start of time range (inclusive)
+/// - to: Unix timestamp for end of time range (inclusive)
+///
+/// Examples:
+/// - GET /capital/transactions
+/// - GET /capital/transactions?account_id=acct.chase_credit
+/// - GET /capital/transactions?from=1696000000&to=1698591999
+/// - GET /capital/transactions?account_id=acct.chase_credit&from=1696000000&to=1698591999
+pub async fn get_transactions(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<TransactionQuery>,
+) -> Json<Vec<Transaction>> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use futures::stream::TryStreamExt;
+    use mongodb::bson::doc;
+
+    // Build MongoDB query filter
+    let mut filter = doc! {};
+
+    // Filter by account_id if provided
+    if let Some(account_id) = &params.account_id {
+        filter.insert("legs.account_id", account_id);
+    }
+
+    // Filter by time range if provided
+    let mut time_filter = doc! {};
+    if let Some(from) = params.from {
+        time_filter.insert("$gte", from);
+    }
+    if let Some(to) = params.to {
+        time_filter.insert("$lte", to);
+    }
+
+    if !time_filter.is_empty() {
+        filter.insert("ts", time_filter);
+    }
+
+    match collection.find(Some(filter), None).await {
+        Ok(cursor) => match cursor.try_collect::<Vec<Transaction>>().await {
+            Ok(transactions) => Json(transactions),
+            Err(e) => {
+                eprintln!("Error collecting transactions: {}", e);
+                Json(Vec::new())
+            }
+        },
+        Err(e) => {
+            eprintln!("Error fetching transactions: {}", e);
+            Json(Vec::new())
+        }
+    }
+}
+
+/// PUT /capital/transactions/reclassify - Update transaction leg category
+///
+/// Body: ReclassifyTransactionRequest
+/// - transaction_id: ID of the transaction to update
+/// - leg_index: Index of the leg to update (usually 0)
+/// - category_id: New envelope/category ID (or null to clear)
+///
+/// Example:
+/// PUT /capital/transactions/reclassify
+/// {
+///   "transaction_id": "123e4567-e89b-12d3-a456-426614174000",
+///   "leg_index": 0,
+///   "category_id": "env_groceries"
+/// }
+pub async fn reclassify_transaction(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ReclassifyTransactionRequest>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    // First, find the transaction
+    let filter = doc! { "id": &request.transaction_id };
+
+    match collection.find_one(Some(filter.clone()), None).await {
+        Ok(Some(mut transaction)) => {
+            // Validate leg_index
+            if request.leg_index >= transaction.legs.len() {
+                return Err(format!(
+                    "Invalid leg_index: {} (transaction has {} legs)",
+                    request.leg_index,
+                    transaction.legs.len()
+                ));
+            }
+
+            // Clone category_id before moving it
+            let new_category_id = request.category_id.clone();
+
+            // Update the leg's category_id
+            transaction.legs[request.leg_index].category_id = request.category_id;
+
+            // Update the transaction in the database
+            let update = doc! {
+                "$set": {
+                    "legs": bson::to_bson(&transaction.legs)
+                        .map_err(|e| format!("Failed to serialize legs: {}", e))?
+                }
+            };
+
+            match collection.update_one(filter, update, None).await {
+                Ok(result) => {
+                    if result.modified_count == 1 {
+                        Ok(Json(serde_json::json!({
+                            "success": true,
+                            "message": "Transaction reclassified successfully",
+                            "transaction_id": request.transaction_id,
+                            "leg_index": request.leg_index,
+                            "category_id": new_category_id
+                        })))
+                    } else {
+                        Err("Transaction not found or not modified".to_string())
+                    }
+                }
+                Err(e) => Err(format!("Database update error: {}", e)),
+            }
+        }
+        Ok(None) => Err(format!("Transaction not found: {}", request.transaction_id)),
+        Err(e) => Err(format!("Database query error: {}", e)),
     }
 }
