@@ -109,7 +109,7 @@ export function EnvelopeCard({
         {envelope.funding && (
           <div className="flex justify-between">
             <span className="text-gray-500 dark:text-gray-400">
-              Monthly Funding:
+              Monthly Funding
             </span>
             <span className="text-gray-900 dark:text-white font-medium">
               {formatMoney(envelope.funding.amount)}
@@ -120,7 +120,7 @@ export function EnvelopeCard({
         {envelope.period_limit && (
           <div className="flex justify-between">
             <span className="text-gray-500 dark:text-gray-400">
-              Period Limit:
+              Period Limit
             </span>
             <span className="text-gray-900 dark:text-white font-medium">
               {formatMoney(envelope.period_limit)}
@@ -129,14 +129,14 @@ export function EnvelopeCard({
         )}
 
         <div className="flex justify-between">
-          <span className="text-gray-500 dark:text-gray-400">Rollover:</span>
+          <span className="text-gray-500 dark:text-gray-400">Rollover</span>
           <span className="text-gray-900 dark:text-white font-medium">
             {getRolloverText(envelope.rollover)}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span className="text-gray-500 dark:text-gray-400">Type:</span>
+          <span className="text-gray-500 dark:text-gray-400">Type</span>
           <span className="text-gray-900 dark:text-white font-medium">
             {envelope.kind}
           </span>
@@ -145,7 +145,7 @@ export function EnvelopeCard({
         {envelope.allow_negative && (
           <div className="flex justify-between">
             <span className="text-gray-500 dark:text-gray-400">
-              Min Balance:
+              Min Balance
             </span>
             <span className="text-gray-900 dark:text-white font-medium">
               {envelope.min_balance
@@ -158,7 +158,7 @@ export function EnvelopeCard({
         {envelope.last_period && (
           <div className="flex justify-between">
             <span className="text-gray-500 dark:text-gray-400">
-              Last Period:
+              Last Period
             </span>
             <span className="text-gray-900 dark:text-white font-medium">
               {envelope.last_period}
