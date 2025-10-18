@@ -18,9 +18,9 @@ use journal::{
     search_journal_entries_return_ids,
 };
 use meta::{
-    add_person, add_place, delete_person, delete_place, get_keywording_best_practices,
-    get_person_registry, get_place_registry, get_tag_taxonomy, update_keywording_best_practices,
-    update_person, update_place, update_tag_taxonomy,
+    add_person, add_place, delete_person, delete_place, get_capital_readme,
+    get_keywording_best_practices, get_person_registry, get_place_registry, get_tag_taxonomy,
+    update_keywording_best_practices, update_person, update_place, update_tag_taxonomy,
 };
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
@@ -218,7 +218,13 @@ async fn main() {
 
     let cors = CorsLayer::new()
         .allow_origin(origin.parse::<HeaderValue>().unwrap())
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_headers([
             HeaderName::from_static("content-type"),
             HeaderName::from_static("accept"),
@@ -234,6 +240,10 @@ async fn main() {
         .route(
             "/capital/transactions/reclassify",
             put(capital::reclassify_transaction),
+        )
+        .route(
+            "/capital/transactions/:transaction_id",
+            axum::routing::delete(capital::delete_transaction),
         )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
@@ -296,6 +306,7 @@ async fn main() {
             patch(update_keywording_best_practices),
         )
         .route("/meta/tag-taxonomy", patch(update_tag_taxonomy))
+        .route("/meta/capital-readme", get(get_capital_readme))
         // Person registry CRUD operations
         .route("/meta/persons", post(add_person))
         .route("/meta/persons", patch(update_person))

@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { API_URL } from "@/lib/config";
-import type { Envelope } from "@/app/capital/types";
+import type { Envelope, Account } from "@/app/capital/types";
+import TransactionRow from "../components/TransactionRow";
 
 interface TransactionQuery {
   account_id?: string;
@@ -37,20 +38,23 @@ interface Transaction {
   }>;
 }
 
-const PNL_ACCOUNT_ID = "__pnl__";
-
-function getPnlLegIndex(tx: Transaction): number {
-  const idx = tx.legs.findIndex((l) => l.account_id === PNL_ACCOUNT_ID);
-  return idx >= 0 ? idx : tx.legs.findIndex((l) => l.category_id != null);
-}
-
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionQuery>({});
   const [reclassifying, setReclassifying] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const [sortOrder, setSortOrder] = useState<"default" | "asc" | "desc">(
+    "default"
+  );
+
+  // Create a map of account IDs to account names
+  const accountMap = new Map(
+    accounts.map((account) => [account.id, account.name])
+  );
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -89,20 +93,52 @@ export default function TransactionsPage() {
     }
   };
 
+  const fetchAccounts = async () => {
+    try {
+      const response = await fetch(`${API_URL}/capital/accounts`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setAccounts(data);
+    } catch (err) {
+      console.error("Failed to fetch accounts:", err);
+    }
+  };
+
   useEffect(() => {
     fetchTransactions();
     fetchEnvelopes();
+    fetchAccounts();
   }, []);
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString();
+  const handleSortByDate = () => {
+    setSortOrder((prev) => {
+      switch (prev) {
+        case "default":
+          return "desc";
+        case "desc":
+          return "asc";
+        case "asc":
+          return "default";
+        default:
+          return "default";
+      }
+    });
   };
 
-  const formatAmount = (amount: string, ccy: string) => {
-    const num = parseFloat(amount);
-    const symbol =
-      ccy === "USD" ? "$" : ccy === "HKD" ? "HK$" : ccy === "BTC" ? "₿" : "";
-    return `${symbol}${num.toFixed(2)}`;
+  const getSortedTransactions = () => {
+    if (sortOrder === "default") {
+      return transactions;
+    }
+
+    return [...transactions].sort((a, b) => {
+      if (sortOrder === "asc") {
+        return a.ts - b.ts;
+      } else {
+        return b.ts - a.ts;
+      }
+    });
   };
 
   const handleFilterChange = (key: keyof TransactionQuery, value: string) => {
@@ -169,9 +205,46 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleDelete = async (transactionId: string, payee: string) => {
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the transaction "${payee}"?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setDeleting((prev) => new Set(prev).add(transactionId));
+
+    try {
+      const response = await fetch(
+        `${API_URL}/capital/transactions/${transactionId}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Remove the transaction from the local state
+      setTransactions((prev) => prev.filter((tx) => tx.id !== transactionId));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete transaction"
+      );
+    } finally {
+      setDeleting((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
             Transactions
@@ -255,116 +328,103 @@ export default function TransactionsPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Transactions ({transactions.length})
+                Transactions ({getSortedTransactions().length})
               </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Payee
+                    <th
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
+                      onClick={handleSortByDate}
+                      title={`Sort by date (current: ${sortOrder})`}
+                    >
+                      <div className="flex items-center gap-1">
+                        Date
+                        {sortOrder === "asc" && (
+                          <svg
+                            className="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 15l7-7 7 7"
+                            />
+                          </svg>
+                        )}
+                        {sortOrder === "desc" && (
+                          <svg
+                            className="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        )}
+                        {sortOrder === "default" && (
+                          <svg
+                            className="w-3 h-3 opacity-50"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                            />
+                          </svg>
+                        )}
+                      </div>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Account
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Direction
+                      Payee
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Direction
+                    </th> */}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
+                    </th> */}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Envelope
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Category
+                      Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {transactions.map((tx) => {
-                    const pnlLegIdx = getPnlLegIndex(tx);
-                    const currentCategory =
-                      pnlLegIdx >= 0
-                        ? tx.legs[pnlLegIdx]?.category_id ?? ""
-                        : "";
-
-                    return (
-                      <tr key={tx.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {formatDate(tx.ts)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {tx.payee || "N/A"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {tx.legs[0]?.account_id || "N/A"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              tx.legs[0]?.direction === "Credit"
-                                ? "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-300"
-                                : "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300"
-                            }`}
-                          >
-                            {tx.legs[0]?.direction || "N/A"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {tx.legs[0]?.amount?.kind === "Fiat" &&
-                          tx.legs[0]?.amount?.data
-                            ? formatAmount(
-                                tx.legs[0].amount.data.amount,
-                                tx.legs[0].amount.data.ccy
-                              )
-                            : "N/A"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              tx.status === "posted"
-                                ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300"
-                                : "bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-300"
-                            }`}
-                          >
-                            {tx.status || "N/A"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={currentCategory}
-                              onChange={(e) => {
-                                const newCategoryId = e.target.value || null;
-                                handleReclassify(
-                                  tx.id,
-                                  pnlLegIdx,
-                                  newCategoryId
-                                );
-                              }}
-                              disabled={reclassifying.has(tx.id)}
-                              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                            >
-                              <option value="">No Category</option>
-                              {envelopes.map((envelope) => (
-                                <option key={envelope.id} value={envelope.id}>
-                                  {envelope.name}
-                                </option>
-                              ))}
-                            </select>
-                            {reclassifying.has(tx.id) && (
-                              <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {getSortedTransactions().map((tx) => (
+                    <TransactionRow
+                      key={tx.id}
+                      transaction={tx}
+                      accountMap={accountMap}
+                      envelopes={envelopes}
+                      reclassifying={reclassifying}
+                      deleting={deleting}
+                      onReclassify={handleReclassify}
+                      onDelete={handleDelete}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>

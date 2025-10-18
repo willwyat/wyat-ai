@@ -31,3 +31,7 @@ rust_decimal = { version = "1", features = ["serde"] }
 anyhow = "1"
 csv = "1"
 uuid = { version = "1", features = ["v4"] }
+
+[[bin]]
+name = "seed_za_bank_csv"
+path = "src/bin/seed_za_bank_csv.rs"

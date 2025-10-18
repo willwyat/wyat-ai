@@ -36,6 +36,14 @@ export default function MetaPage() {
       color: "bg-orange-500 hover:bg-orange-600",
       icon: "🌍",
     },
+    {
+      title: "Capital README",
+      description:
+        "Documentation and specification for the Capital module - accounts, transactions, and financial data management",
+      href: "/meta/capital",
+      color: "bg-emerald-500 hover:bg-emerald-600",
+      icon: "💰",
+    },
   ];
 
   return (

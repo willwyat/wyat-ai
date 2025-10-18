@@ -50,6 +50,7 @@ pub struct MetaDocument {
     pub version: String,
     pub content: String,
     pub visibility: String,
+    pub modules: Option<Vec<String>>,
     pub createdAt: mongodb::bson::DateTime,
     pub updatedAt: mongodb::bson::DateTime,
 }
@@ -60,6 +61,7 @@ pub struct MetaDocumentUpdate {
     pub version: Option<String>,
     pub content: Option<String>,
     pub visibility: Option<String>,
+    pub modules: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -682,6 +684,10 @@ pub async fn get_place_registry(state: State<Arc<AppState>>) -> impl IntoRespons
     }
 }
 
+pub async fn get_capital_readme(state: State<Arc<AppState>>) -> impl IntoResponse {
+    get_meta_document(state, "capital_readme".to_string()).await
+}
+
 pub async fn update_meta_document(
     state: State<Arc<AppState>>,
     doc_type: String,
@@ -704,6 +710,9 @@ pub async fn update_meta_document(
     }
     if let Some(visibility) = &update_data.visibility {
         update_doc.insert("visibility", visibility);
+    }
+    if let Some(modules) = &update_data.modules {
+        update_doc.insert("modules", modules);
     }
 
     // Add updatedAt timestamp

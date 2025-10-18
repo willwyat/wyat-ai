@@ -691,3 +691,37 @@ pub async fn reclassify_transaction(
         Err(e) => Err(format!("Database query error: {}", e)),
     }
 }
+
+/// DELETE /capital/transactions/{transaction_id} - Delete a transaction
+///
+/// Deletes a transaction from the database by its ID.
+///
+/// Example:
+/// DELETE /capital/transactions/123e4567-e89b-12d3-a456-426614174000
+pub async fn delete_transaction(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(transaction_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    // Delete the transaction by ID
+    let filter = doc! { "id": &transaction_id };
+
+    match collection.delete_one(filter, None).await {
+        Ok(result) => {
+            if result.deleted_count == 1 {
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "Transaction deleted successfully",
+                    "transaction_id": transaction_id
+                })))
+            } else {
+                Err(format!("Transaction not found: {}", transaction_id))
+            }
+        }
+        Err(e) => Err(format!("Database delete error: {}", e)),
+    }
+}
