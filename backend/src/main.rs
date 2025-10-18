@@ -20,7 +20,8 @@ use journal::{
 use meta::{
     add_person, add_place, delete_person, delete_place, get_capital_readme,
     get_keywording_best_practices, get_person_registry, get_place_registry, get_tag_taxonomy,
-    update_keywording_best_practices, update_person, update_place, update_tag_taxonomy,
+    update_capital_readme, update_keywording_best_practices, update_person, update_place,
+    update_tag_taxonomy,
 };
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
@@ -235,6 +236,11 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { "Hello from backend" }))
         .route("/capital/envelopes", get(capital::get_all_envelopes))
+        .route(
+            "/capital/envelopes/:envelope_id/usage",
+            get(capital::get_envelope_usage),
+        )
+        .route("/capital/cycles", get(capital::get_cycles))
         .route("/capital/accounts", get(capital::get_all_accounts))
         .route("/capital/transactions", get(capital::get_transactions))
         .route(
@@ -307,6 +313,7 @@ async fn main() {
         )
         .route("/meta/tag-taxonomy", patch(update_tag_taxonomy))
         .route("/meta/capital-readme", get(get_capital_readme))
+        .route("/meta/capital-readme", patch(update_capital_readme))
         // Person registry CRUD operations
         .route("/meta/persons", post(add_person))
         .route("/meta/persons", patch(update_person))

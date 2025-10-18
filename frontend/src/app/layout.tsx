@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Serif } from "next/font/google";
+import { Inter, IBM_Plex_Serif, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { NavProvider } from "@/contexts/NavContext";
 import Navigation from "@/components/Navigation";
@@ -11,6 +11,12 @@ const inter = Inter({
 
 const ibmPlexSerif = IBM_Plex_Serif({
   variable: "--font-ibm-plex-serif",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const ibmPlexSans = IBM_Plex_Sans({
+  variable: "--font-ibm-plex-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -92,9 +98,17 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=star"
         />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=directions_bike"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=keyboard_arrow_down"
+        />
       </head>
       <body
-        className={`${inter.variable} ${ibmPlexSerif.variable} font-sans antialiased`}
+        className={`${inter.variable} ${ibmPlexSerif.variable} ${ibmPlexSans.variable} font-sans antialiased`}
       >
         <NavProvider>
           <Navigation />

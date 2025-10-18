@@ -7,8 +7,15 @@ import TransactionRow from "../components/TransactionRow";
 
 interface TransactionQuery {
   account_id?: string;
+  envelope_id?: string;
   from?: number;
   to?: number;
+  label?: string;
+}
+
+interface CycleList {
+  labels: string[];
+  active: string;
 }
 
 interface Transaction {
@@ -42,6 +49,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [cycles, setCycles] = useState<CycleList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionQuery>({});
@@ -63,12 +71,20 @@ export default function TransactionsPage() {
     try {
       const params = new URLSearchParams();
       if (filters.account_id) params.append("account_id", filters.account_id);
-      if (filters.from) params.append("from", filters.from.toString());
-      if (filters.to) params.append("to", filters.to.toString());
+      if (filters.envelope_id)
+        params.append("envelope_id", filters.envelope_id);
+      if (filters.label) {
+        // Cycle label takes precedence over from/to timestamps
+        params.append("label", filters.label);
+      } else {
+        if (filters.from) params.append("from", filters.from.toString());
+        if (filters.to) params.append("to", filters.to.toString());
+      }
 
       const response = await fetch(`${API_URL}/capital/transactions?${params}`);
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
@@ -77,6 +93,22 @@ export default function TransactionsPage() {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCycles = async () => {
+    try {
+      const response = await fetch(`${API_URL}/capital/cycles`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log("Cycles data:", data);
+      console.log("Available cycles:", data.labels);
+      console.log("Active cycle:", data.active);
+      setCycles(data);
+    } catch (err) {
+      console.error("Failed to fetch cycles:", err);
     }
   };
 
@@ -110,6 +142,7 @@ export default function TransactionsPage() {
     fetchTransactions();
     fetchEnvelopes();
     fetchAccounts();
+    fetchCycles();
   }, []);
 
   const handleSortByDate = () => {
@@ -243,7 +276,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 md:p-4 lg:p-8">
       <div className="mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
@@ -255,57 +288,170 @@ export default function TransactionsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-8 border dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 md:rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             Filters
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Account ID
+                Cycle
               </label>
-              <input
-                type="text"
-                placeholder="e.g., acct.chase_credit"
+              <select
+                value={filters.label || ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFilters((prev) => ({
+                    ...prev,
+                    label: value || undefined,
+                    // Clear from/to when selecting a cycle
+                    from: value ? undefined : prev.from,
+                    to: value ? undefined : prev.to,
+                  }));
+                }}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="">All Time</option>
+                {cycles?.labels
+                  .slice()
+                  .reverse()
+                  .map((label) => (
+                    <option key={label} value={label}>
+                      {label} {label === cycles.active ? "(Active)" : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Account
+              </label>
+              <select
                 value={filters.account_id || ""}
                 onChange={(e) =>
-                  handleFilterChange("account_id", e.target.value)
+                  setFilters((prev) => ({
+                    ...prev,
+                    account_id: e.target.value || undefined,
+                  }))
                 }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              />
+              >
+                <option value="">All Accounts</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                From (Unix timestamp)
+                Envelope
               </label>
-              <input
-                type="number"
-                placeholder="e.g., 1696000000"
-                value={filters.from || ""}
-                onChange={(e) => handleFilterChange("from", e.target.value)}
+              <select
+                value={filters.envelope_id || ""}
+                onChange={(e) =>
+                  setFilters((prev) => ({
+                    ...prev,
+                    envelope_id: e.target.value || undefined,
+                  }))
+                }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                To (Unix timestamp)
-              </label>
-              <input
-                type="number"
-                placeholder="e.g., 1698591999"
-                value={filters.to || ""}
-                onChange={(e) => handleFilterChange("to", e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              />
+              >
+                <option value="">All Envelopes</option>
+                {envelopes.map((envelope) => (
+                  <option key={envelope.id} value={envelope.id}>
+                    {envelope.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-          <div className="mt-4">
+
+          {/* Advanced timestamp filters - only show when no cycle is selected */}
+          {!filters.label && (
+            <details className="mb-4">
+              <summary className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer mb-2">
+                Advanced: Custom Date Range (Unix Timestamps)
+              </summary>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                <div>
+                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    From
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g., 1696000000"
+                    value={filters.from || ""}
+                    onChange={(e) => handleFilterChange("from", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    To
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g., 1698591999"
+                    value={filters.to || ""}
+                    onChange={(e) => handleFilterChange("to", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                  />
+                </div>
+              </div>
+            </details>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={fetchTransactions}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Apply Filters
             </button>
+            {(filters.label ||
+              filters.account_id ||
+              filters.envelope_id ||
+              filters.from ||
+              filters.to) && (
+              <>
+                <button
+                  onClick={() => {
+                    setFilters({});
+                    setTimeout(fetchTransactions, 0);
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                >
+                  Clear Filters
+                </button>
+                <div className="flex gap-1 ml-2">
+                  {filters.label && (
+                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-sm">
+                      Cycle: {filters.label}
+                    </span>
+                  )}
+                  {filters.account_id && (
+                    <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-sm">
+                      Account:{" "}
+                      {accountMap.get(filters.account_id) || filters.account_id}
+                    </span>
+                  )}
+                  {filters.envelope_id && (
+                    <span className="px-2 py-1 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded text-sm">
+                      Envelope:{" "}
+                      {envelopes.find((e) => e.id === filters.envelope_id)
+                        ?.name || filters.envelope_id}
+                    </span>
+                  )}
+                  {(filters.from || filters.to) && (
+                    <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-sm">
+                      Custom Range
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -325,7 +471,7 @@ export default function TransactionsPage() {
         )}
 
         {!loading && !error && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700">
+          <div className="bg-white dark:bg-gray-800 md:rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Transactions ({getSortedTransactions().length})
@@ -336,7 +482,7 @@ export default function TransactionsPage() {
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
+                      className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
                       onClick={handleSortByDate}
                       title={`Sort by date (current: ${sortOrder})`}
                     >
@@ -389,27 +535,25 @@ export default function TransactionsPage() {
                         )}
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Account
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Payee
                     </th>
                     {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Direction
                     </th> */}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                       Amount
                     </th>
                     {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th> */}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Envelope
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">

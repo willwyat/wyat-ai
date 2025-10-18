@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_URL, WYAT_API_KEY } from "@/lib/config";
+import MarkdownContent from "@/components/MarkdownContent";
 
 type CapitalReadme = {
   _id: string;
@@ -24,6 +25,49 @@ export default function CapitalPage() {
   const [editVersion, setEditVersion] = useState("");
   const [editModules, setEditModules] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [headings, setHeadings] = useState<
+    Array<{ id: string; text: string; level: number }>
+  >([]);
+
+  // Extract headings from markdown content
+  useEffect(() => {
+    if (!data?.content) return;
+
+    const headingRegex = /^(#{1,3})\s+(.+)$/gm;
+    const extractedHeadings: Array<{
+      id: string;
+      text: string;
+      level: number;
+    }> = [];
+    let match;
+
+    while ((match = headingRegex.exec(data.content)) !== null) {
+      const level = match[1].length;
+      const text = match[2].trim();
+      const id = generateHeadingId(text);
+
+      extractedHeadings.push({ id, text, level });
+    }
+
+    setHeadings(extractedHeadings);
+  }, [data?.content]);
+
+  // Check for dark mode
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    };
+
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/meta/capital-readme`, {
@@ -117,6 +161,13 @@ export default function CapitalPage() {
     setEditModules(newModules);
   };
 
+  const generateHeadingId = (text: string) => {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -143,7 +194,7 @@ export default function CapitalPage() {
 
   return (
     <div className="min-h-screen">
-      <div className="p-6 flex flex-col gap-8 max-w-screen-xl mx-auto">
+      <div className="p-6 flex flex-col gap-8 max-w-screen-lg mx-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-4xl font-bold">{data.title}</h1>
@@ -190,9 +241,28 @@ export default function CapitalPage() {
           </div>
         </div>
 
+        {/* Content Section */}
+        <div>
+          {isEditing ? (
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Content:
+              </label>
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full h-96 p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm"
+                placeholder="Enter content here..."
+              />
+            </div>
+          ) : (
+            <MarkdownContent content={data.content} isDarkMode={isDarkMode} />
+          )}
+        </div>
+
         {/* Modules Section */}
-        <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
-          <h3 className="text-lg font-semibold mb-3 text-zinc-800 dark:text-zinc-200">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
             Modules
           </h3>
           {isEditing ? (
@@ -203,7 +273,7 @@ export default function CapitalPage() {
                     type="text"
                     value={module}
                     onChange={(e) => updateModule(index, e.target.value)}
-                    className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     placeholder="Module name"
                   />
                   <button
@@ -233,7 +303,7 @@ export default function CapitalPage() {
                   </span>
                 ))
               ) : (
-                <span className="text-zinc-500 dark:text-zinc-400 italic">
+                <span className="text-gray-500 dark:text-gray-400 italic">
                   No modules defined
                 </span>
               )}
@@ -241,33 +311,8 @@ export default function CapitalPage() {
           )}
         </div>
 
-        {/* Content Section */}
-        <div className="bg-zinc-100 dark:bg-zinc-800 rounded px-6 py-5">
-          {isEditing ? (
-            <div className="space-y-4">
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Content:
-              </label>
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full h-96 p-3 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono text-sm"
-                placeholder="Enter content here..."
-              />
-            </div>
-          ) : (
-            <div className="prose dark:prose-invert max-w-none">
-              <div
-                className="whitespace-pre-wrap font-mono text-sm"
-                dangerouslySetInnerHTML={{
-                  __html: data.content.replace(/\n/g, "<br/>"),
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+        {/* Footer */}
+        <div className="text-sm text-gray-600 dark:text-gray-400">
           <p>Created: {new Date(data.createdAt).toLocaleDateString()}</p>
           <p>Updated: {new Date(data.updatedAt).toLocaleDateString()}</p>
           <p>Visibility: {data.visibility}</p>

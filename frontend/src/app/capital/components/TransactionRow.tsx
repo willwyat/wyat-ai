@@ -95,25 +95,25 @@ export default function TransactionRow({
       className="transition-color duration-200 hover:bg-gray-50 dark:hover:bg-gray-700"
     >
       {/* Date */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {formatDate(tx.ts)}
       </td>
       {/* Account */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {accountMap.get(tx.legs[0]?.account_id || "") ||
           tx.legs[0]?.account_id ||
           "N/A"}
       </td>
       {/* Payee */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {tx.payee || "N/A"}
       </td>
       {/* Amount */}
       <td
-        className={`px-6 py-4 whitespace-nowrap text-right text-sm ${
+        className={`px-6 py-4 whitespace-nowrap text-right text-base ${
           tx.legs[0]?.direction === "Credit"
-            ? "text-red-800 dark:text-red-300"
-            : "text-green-800 dark:text-green-300"
+            ? "text-red-700 dark:text-red-300"
+            : "text-green-700 dark:text-green-300"
         }`}
       >
         {tx.legs[0]?.direction === "Credit" ? "-" : "+"}
@@ -123,7 +123,7 @@ export default function TransactionRow({
         )}
       </td>
       {/* Envelope or Category */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm">
+      <td className="px-6 py-4 whitespace-nowrap text-base">
         <div className="flex items-center gap-2">
           <select
             value={currentCategory}
@@ -132,7 +132,7 @@ export default function TransactionRow({
               onReclassify(tx.id, pnlLegIdx, newCategoryId);
             }}
             disabled={reclassifying.has(tx.id)}
-            className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+            className="px-2 py-1 text-base border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
           >
             <option value="">No Category</option>
             {envelopes.map((envelope) => (
@@ -147,11 +147,11 @@ export default function TransactionRow({
         </div>
       </td>
       {/* Actions */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm">
+      <td className="px-6 py-4 whitespace-nowrap text-base">
         <button
           onClick={() => onDelete(tx.id, tx.payee || "Unknown")}
           disabled={deleting.has(tx.id)}
-          className="inline-flex items-center px-3 py-1 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-sm font-medium transition-colors"
+          className="inline-flex items-center px-3 py-1 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-base font-medium transition-colors"
           title="Delete transaction"
         >
           {deleting.has(tx.id) ? (

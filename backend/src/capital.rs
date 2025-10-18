@@ -22,8 +22,8 @@ use axum::{
 };
 use mongodb::bson;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -495,12 +495,89 @@ pub struct Position {
 /// - Family (HSBC Joint, HKD) – SinkingFund cap HKD 12,000 *example*, adjust later
 /// - Extras (Chase) – CarryOver cap USD 3,000
 /// - Rent (Chase) – Fixed 4,500/mo but modeled as envelope for forecast; Inactive until lease resumes
-
 // ------------------------- API Handlers -------------------------
+use crate::AppState;
+
+// ------------------------- Helper Functions -------------------------
+
+/// Calculate the active budget cycle window (10th of month → 9th of next month) in UTC.
+/// Returns (start_timestamp, end_timestamp, label) where label is "YYYY-MM" format.
+/// Cycle convention: Settlement window uses UTC. Active cycle = 10th 00:00:00 UTC of month → 9th 23:59:59 UTC of next month. Filtering uses posted_ts if present, otherwise ts.
+fn active_cycle_bounds(now_utc: i64) -> (i64, i64, String) {
+    use chrono::{Datelike, NaiveDateTime, TimeZone, Utc};
+
+    let dt = match Utc.timestamp_opt(now_utc, 0) {
+        chrono::LocalResult::Single(d) => d,
+        _ => {
+            eprintln!("Invalid timestamp: {}", now_utc);
+            // Fallback to current time
+            Utc::now()
+        }
+    };
+    let (y, m, d) = (dt.year(), dt.month(), dt.day());
+
+    // Determine cycle start month
+    let (start_y, start_m) = if d >= 10 {
+        (y, m)
+    } else {
+        if m == 1 { (y - 1, 12) } else { (y, m - 1) }
+    };
+
+    // Start: 10th at 00:00:00
+    let start = match (
+        chrono::NaiveDate::from_ymd_opt(start_y, start_m, 10),
+        chrono::NaiveTime::from_hms_opt(0, 0, 0),
+    ) {
+        (Some(date), Some(time)) => Utc
+            .from_utc_datetime(&NaiveDateTime::new(date, time))
+            .timestamp(),
+        _ => {
+            eprintln!(
+                "Failed to create start date for cycle: {}-{}",
+                start_y, start_m
+            );
+            now_utc
+        }
+    };
+
+    // End: 9th at 23:59:59 of next month
+    let (end_y, end_m) = if start_m == 12 {
+        (start_y + 1, 1)
+    } else {
+        (start_y, start_m + 1)
+    };
+    let end = match (
+        chrono::NaiveDate::from_ymd_opt(end_y, end_m, 9),
+        chrono::NaiveTime::from_hms_opt(23, 59, 59),
+    ) {
+        (Some(date), Some(time)) => Utc
+            .from_utc_datetime(&NaiveDateTime::new(date, time))
+            .timestamp(),
+        _ => {
+            eprintln!("Failed to create end date for cycle: {}-{}", end_y, end_m);
+            now_utc + 2_592_000 // fallback: ~30 days later
+        }
+    };
+
+    (start, end, format!("{start_y:04}-{start_m:02}"))
+}
+
+// ------------------------- Response Types -------------------------
+
+#[derive(Serialize)]
+pub struct EnvelopeUsage {
+    pub envelope_id: String,
+    pub label: String, // cycle label, e.g., "2025-10"
+    pub budget: Money, // from capital_envelopes.funding.amount
+    pub spent: Money,  // sum of P&L legs in window
+    pub remaining: Money,
+    pub percent: f64,
+}
+
+// ------------------------- Envelope Endpoints -------------------------
 
 /// GET /capital/envelopes - Fetch all envelopes from MongoDB
 ///
-use crate::AppState;
 
 pub async fn get_all_envelopes(State(state): State<Arc<AppState>>) -> Json<Vec<Envelope>> {
     let db = state.mongo_client.database("wyat");
@@ -521,6 +598,277 @@ pub async fn get_all_envelopes(State(state): State<Arc<AppState>>) -> Json<Vec<E
             Json(Vec::new())
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageQuery {
+    pub label: Option<String>,
+}
+
+/// GET /capital/envelopes/{envelope_id}/usage - Get envelope usage for a cycle
+///
+/// Returns budget, spent, remaining, and percent for a single envelope ID.
+/// The active cycle runs from the 10th of one month to the 9th of the next month (UTC).
+///
+/// Query parameters:
+/// - label: Optional cycle label (e.g., "2025-10") to query historical usage.
+///          If omitted, returns usage for the active cycle.
+///
+/// Examples:
+/// - GET /capital/envelopes/env_groceries/usage (active cycle)
+/// - GET /capital/envelopes/env_groceries/usage?label=2025-10 (specific cycle)
+pub async fn get_envelope_usage(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(envelope_id): axum::extract::Path<String>,
+    Query(q): Query<UsageQuery>,
+) -> Result<Json<EnvelopeUsage>, String> {
+    use futures::stream::TryStreamExt;
+    use mongodb::bson::{Bson, doc};
+
+    // Determine cycle bounds based on optional label query parameter
+    let (start_ts, end_ts, label) = match q.label.as_deref() {
+        Some(l) => {
+            let (s, e) =
+                cycle_bounds_for_label(l).ok_or_else(|| format!("Invalid cycle label: {}", l))?;
+            (s, e, l.to_string())
+        }
+        None => {
+            let now = chrono::Utc::now().timestamp();
+            active_cycle_bounds(now)
+        }
+    };
+
+    let db = state.mongo_client.database("wyat");
+    let envs = db.collection::<Envelope>("capital_envelopes");
+    let ledger = db.collection::<mongodb::bson::Document>("capital_ledger");
+
+    // Fetch envelope (for budget + currency)
+    let env = match envs.find_one(doc! {"id": &envelope_id}, None).await {
+        Ok(Some(e)) => e,
+        Ok(None) => {
+            eprintln!("Envelope not found: {}", envelope_id);
+            return Err(format!("Envelope not found: {}", envelope_id));
+        }
+        Err(e) => {
+            eprintln!("Database error fetching envelope {}: {}", envelope_id, e);
+            return Err(format!("Database error: {}", e));
+        }
+    };
+
+    let budget_money = env
+        .funding
+        .as_ref()
+        .map(|f| f.amount)
+        .unwrap_or_else(|| Money::zero(env.balance.ccy));
+
+    // Aggregate spent from P&L legs (legs with category_id == envelope_id)
+    // - Uses posted_ts when available, falls back to ts
+    // - Applies proper sign: Debit = positive spend, Credit = negative (refund)
+
+    // Currency string representation for MongoDB (e.g., "USD")
+    let ccy_str = match budget_money.ccy {
+        Currency::USD => "USD",
+        Currency::HKD => "HKD",
+        Currency::BTC => "BTC",
+    };
+
+    let pipeline = vec![
+        doc! {
+            "$match": {
+                "$expr": {
+                    "$and": [
+                        { "$gte": [ { "$ifNull": [ "$posted_ts", "$ts" ] }, start_ts ] },
+                        { "$lte": [ { "$ifNull": [ "$posted_ts", "$ts" ] }, end_ts ] }
+                    ]
+                },
+                "legs.category_id": &envelope_id
+            }
+        },
+        doc! { "$unwind": "$legs" },
+        doc! {
+            "$match": {
+                "legs.category_id": &envelope_id,
+                "legs.amount.kind": "Fiat",
+                "legs.amount.data.ccy": ccy_str
+            }
+        },
+        doc! {
+            "$project": {
+                "signed": {
+                    "$cond": [
+                        { "$eq": [ "$legs.direction", "Debit" ] },
+                        { "$toDecimal": "$legs.amount.data.amount" },
+                        { "$multiply": [ { "$toDecimal": "$legs.amount.data.amount" }, -1 ] }
+                    ]
+                }
+            }
+        },
+        doc! {
+            "$group": {
+                "_id": null,
+                "sum": { "$sum": "$signed" }
+            }
+        },
+    ];
+
+    let mut spent_amount = Decimal::ZERO;
+    match ledger.aggregate(pipeline, None).await {
+        Ok(mut cursor) => {
+            if let Ok(Some(doc)) = cursor.try_next().await {
+                if let Some(sum_val) = doc.get("sum") {
+                    match sum_val {
+                        Bson::Decimal128(d) => {
+                            spent_amount =
+                                Decimal::from_str_exact(&d.to_string()).unwrap_or_else(|e| {
+                                    eprintln!(
+                                        "Failed to parse Decimal128 for envelope {} in cycle {}: {}",
+                                        envelope_id, label, e
+                                    );
+                                    Decimal::ZERO
+                                });
+                        }
+                        Bson::Double(f) => {
+                            spent_amount = Decimal::try_from(*f).unwrap_or_else(|_| {
+                                eprintln!(
+                                    "Failed to convert Double to Decimal for envelope {} in cycle {}",
+                                    envelope_id, label
+                                );
+                                Decimal::ZERO
+                            });
+                        }
+                        Bson::Int32(i) => {
+                            spent_amount = Decimal::from(*i);
+                        }
+                        Bson::Int64(i) => {
+                            spent_amount = Decimal::from(*i);
+                        }
+                        _ => {
+                            eprintln!(
+                                "Unexpected BSON type for sum in envelope {} cycle {}: {:?}",
+                                envelope_id, label, sum_val
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "Error aggregating spent for envelope {} in cycle {}: {}",
+                envelope_id, label, e
+            );
+            // Continue with zero spent rather than failing
+        }
+    }
+
+    let spent = Money {
+        amount: spent_amount,
+        ccy: budget_money.ccy,
+    };
+    let remaining = Money {
+        amount: budget_money.amount - spent.amount,
+        ccy: budget_money.ccy,
+    };
+    let percent = if budget_money.amount.is_zero() {
+        0.0
+    } else {
+        (spent.amount / budget_money.amount)
+            .to_f64()
+            .unwrap_or(0.0)
+            .max(0.0)
+    };
+
+    Ok(Json(EnvelopeUsage {
+        envelope_id,
+        label,
+        budget: budget_money,
+        spent,
+        remaining,
+        percent,
+    }))
+}
+
+// Put near other helpers/constants
+const FIRST_CYCLE_START_UTC: i64 = 1_754_784_000;
+// = 2025-08-10 00:00:00 UTC  (update if your first cycle is a different year)
+
+// Given a cycle label "YYYY-MM", return (start_ts,end_ts)
+fn cycle_bounds_for_label(label: &str) -> Option<(i64, i64)> {
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+    let (yyyy, mm) = label.split_once('-')?;
+    let y: i32 = yyyy.parse().ok()?;
+    let m: u32 = mm.parse().ok()?;
+
+    let start_date = NaiveDate::from_ymd_opt(y, m, 10)?;
+    let start = Utc
+        .from_utc_datetime(&NaiveDateTime::new(
+            start_date,
+            NaiveTime::from_hms_opt(0, 0, 0)?,
+        ))
+        .timestamp();
+
+    let (ey, em) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+    let end_date = NaiveDate::from_ymd_opt(ey, em, 9)?;
+    let end = Utc
+        .from_utc_datetime(&NaiveDateTime::new(
+            end_date,
+            NaiveTime::from_hms_opt(23, 59, 59)?,
+        ))
+        .timestamp();
+
+    Some((start, end))
+}
+
+// Return all cycle labels from FIRST_CYCLE_START_UTC to "now" inclusive.
+// Labels are "YYYY-MM" for the month that STARTS on the 10th.
+fn list_cycle_labels(now_utc: i64) -> Vec<String> {
+    use chrono::{Datelike, TimeZone, Utc};
+    let mut out = Vec::new();
+
+    // first cycle label
+    let start_dt = Utc
+        .timestamp_opt(FIRST_CYCLE_START_UTC, 0)
+        .single()
+        .unwrap();
+    let mut y = start_dt.year();
+    let mut m = start_dt.month();
+
+    // compute active cycle's label (same rule as active_cycle_bounds)
+    let active = Utc.timestamp_opt(now_utc, 0).single().unwrap();
+    let (ay, am) = if active.day() >= 10 {
+        (active.year(), active.month())
+    } else {
+        if active.month() == 1 {
+            (active.year() - 1, 12)
+        } else {
+            (active.year(), active.month() - 1)
+        }
+    };
+
+    while y < ay || (y == ay && m <= am) {
+        out.push(format!("{y:04}-{m:02}"));
+        if m == 12 {
+            y += 1;
+            m = 1;
+        } else {
+            m += 1;
+        }
+    }
+    out
+}
+
+#[derive(Serialize)]
+pub struct CycleList {
+    pub labels: Vec<String>,
+    pub active: String,
+}
+
+/// GET /capital/cycles  → { labels: [...], active: "YYYY-MM" }
+pub async fn get_cycles(State(_state): State<Arc<AppState>>) -> Json<CycleList> {
+    let now = chrono::Utc::now().timestamp();
+    let labels = list_cycle_labels(now);
+    let (_, _, active) = active_cycle_bounds(now);
+    Json(CycleList { labels, active })
 }
 
 /// GET /capital/accounts - Fetch all accounts from MongoDB
@@ -550,8 +898,10 @@ pub async fn get_all_accounts(State(state): State<Arc<AppState>>) -> Json<Vec<Ac
 #[derive(Debug, Deserialize)]
 pub struct TransactionQuery {
     pub account_id: Option<String>,
+    pub envelope_id: Option<String>,
     pub from: Option<i64>, // Unix timestamp
     pub to: Option<i64>,   // Unix timestamp
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -565,18 +915,24 @@ pub struct ReclassifyTransactionRequest {
 ///
 /// Query parameters:
 /// - account_id: Filter by account ID (searches in legs.account_id)
-/// - from: Unix timestamp for start of time range (inclusive)
-/// - to: Unix timestamp for end of time range (inclusive)
+/// - envelope_id: Filter by envelope/category ID (searches in legs.category_id)
+/// - label: Filter by cycle label (e.g., "2025-10"). Takes precedence over from/to.
+/// - from: Unix timestamp for start of time range (inclusive, ignored if label is provided)
+/// - to: Unix timestamp for end of time range (inclusive, ignored if label is provided)
+///
+/// Uses posted_ts when available, falls back to ts for time filtering.
 ///
 /// Examples:
 /// - GET /capital/transactions
 /// - GET /capital/transactions?account_id=acct.chase_credit
+/// - GET /capital/transactions?envelope_id=env.groceries
+/// - GET /capital/transactions?label=2025-10
 /// - GET /capital/transactions?from=1696000000&to=1698591999
-/// - GET /capital/transactions?account_id=acct.chase_credit&from=1696000000&to=1698591999
+/// - GET /capital/transactions?account_id=acct.chase_credit&label=2025-10&envelope_id=env.groceries
 pub async fn get_transactions(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TransactionQuery>,
-) -> Json<Vec<Transaction>> {
+) -> Result<Json<Vec<Transaction>>, String> {
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Transaction>("capital_ledger");
 
@@ -591,30 +947,48 @@ pub async fn get_transactions(
         filter.insert("legs.account_id", account_id);
     }
 
-    // Filter by time range if provided
-    let mut time_filter = doc! {};
-    if let Some(from) = params.from {
-        time_filter.insert("$gte", from);
-    }
-    if let Some(to) = params.to {
-        time_filter.insert("$lte", to);
+    // Filter by envelope_id/category_id if provided
+    if let Some(envelope_id) = &params.envelope_id {
+        filter.insert("legs.category_id", envelope_id);
     }
 
-    if !time_filter.is_empty() {
-        filter.insert("ts", time_filter);
+    // Determine time range: prefer cycle label, fall back to from/to params
+    let (from, to) = if let Some(label) = &params.label {
+        cycle_bounds_for_label(label).ok_or_else(|| format!("Invalid cycle label: {}", label))?
+    } else if params.from.is_some() || params.to.is_some() {
+        (
+            params.from.unwrap_or(i64::MIN),
+            params.to.unwrap_or(i64::MAX),
+        )
+    } else {
+        // No time filter
+        (i64::MIN, i64::MAX)
+    };
+
+    // Apply time filter using posted_ts with fallback to ts
+    if from != i64::MIN || to != i64::MAX {
+        filter.insert(
+            "$expr",
+            doc! {
+                "$and": [
+                    { "$gte": [ { "$ifNull": [ "$posted_ts", "$ts" ] }, from ] },
+                    { "$lte": [ { "$ifNull": [ "$posted_ts", "$ts" ] }, to ] }
+                ]
+            },
+        );
     }
 
-    match collection.find(Some(filter), None).await {
+    match collection.find(filter, None).await {
         Ok(cursor) => match cursor.try_collect::<Vec<Transaction>>().await {
-            Ok(transactions) => Json(transactions),
+            Ok(transactions) => Ok(Json(transactions)),
             Err(e) => {
                 eprintln!("Error collecting transactions: {}", e);
-                Json(Vec::new())
+                Err(format!("Error collecting transactions: {}", e))
             }
         },
         Err(e) => {
             eprintln!("Error fetching transactions: {}", e);
-            Json(Vec::new())
+            Err(format!("Error fetching transactions: {}", e))
         }
     }
 }

@@ -756,3 +756,10 @@ pub async fn update_keywording_best_practices(
 ) -> impl IntoResponse {
     update_meta_document(state, "keywording_best_practices".to_string(), update_data).await
 }
+
+pub async fn update_capital_readme(
+    state: State<Arc<AppState>>,
+    update_data: Json<MetaDocumentUpdate>,
+) -> impl IntoResponse {
+    update_meta_document(state, "capital_readme".to_string(), update_data).await
+}
