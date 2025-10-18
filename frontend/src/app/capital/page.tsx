@@ -7,12 +7,24 @@ import { inferGroupKey, inferGroupLabel } from "@/app/capital/utils";
 import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
 import { AccountRow } from "@/app/capital/components/AccountRow";
 
+interface EnvelopeUsage {
+  envelope_id: string;
+  label: string;
+  budget: { amount: string; ccy: string };
+  spent: { amount: string; ccy: string };
+  remaining: { amount: string; ccy: string };
+  percent: number;
+}
+
 export default function CapitalPage() {
   const [activeTab, setActiveTab] = useState<"envelopes" | "accounts">(
     "envelopes"
   );
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [envelopeUsage, setEnvelopeUsage] = useState<
+    Map<string, EnvelopeUsage>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +47,31 @@ export default function CapitalPage() {
 
         setEnvelopes(envelopesData);
         setAccounts(accountsData);
+
+        // Fetch usage data for each envelope
+        const usagePromises = envelopesData.map(async (env: Envelope) => {
+          try {
+            const res = await fetch(
+              `${API_URL}/capital/envelopes/${env.id}/usage`
+            );
+            if (res.ok) {
+              const usage: EnvelopeUsage = await res.json();
+              return [env.id, usage] as [string, EnvelopeUsage];
+            }
+          } catch (err) {
+            console.error(`Failed to fetch usage for ${env.id}:`, err);
+          }
+          return null;
+        });
+
+        const usageResults = await Promise.all(usagePromises);
+        const usageMap = new Map<string, EnvelopeUsage>();
+        usageResults.forEach((result) => {
+          if (result) {
+            usageMap.set(result[0], result[1]);
+          }
+        });
+        setEnvelopeUsage(usageMap);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
@@ -131,7 +168,7 @@ export default function CapitalPage() {
         {activeTab === "envelopes" && (
           <>
             {/* Summary Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-8 border dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
@@ -171,9 +208,18 @@ export default function CapitalPage() {
                   Active Envelopes
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {activeEnvelopes.map((envelope) => (
-                    <EnvelopeCard key={envelope.id} envelope={envelope} />
-                  ))}
+                  {activeEnvelopes.map((envelope) => {
+                    const usage = envelopeUsage.get(envelope.id);
+                    return (
+                      <EnvelopeCard
+                        key={envelope.id}
+                        envelope={envelope}
+                        totalSpent={usage?.spent}
+                        budget={usage?.budget}
+                        percent={usage?.percent}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -185,9 +231,18 @@ export default function CapitalPage() {
                   Inactive Envelopes
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {inactiveEnvelopes.map((envelope) => (
-                    <EnvelopeCard key={envelope.id} envelope={envelope} />
-                  ))}
+                  {inactiveEnvelopes.map((envelope) => {
+                    const usage = envelopeUsage.get(envelope.id);
+                    return (
+                      <EnvelopeCard
+                        key={envelope.id}
+                        envelope={envelope}
+                        totalSpent={usage?.spent}
+                        budget={usage?.budget}
+                        percent={usage?.percent}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { API_URL } from "@/lib/config";
 import type { Envelope, Account } from "@/app/capital/types";
 import TransactionRow from "../components/TransactionRow";
+import { EnvelopeCard } from "../components/EnvelopeCard";
 
 interface TransactionQuery {
   account_id?: string;
@@ -45,11 +46,23 @@ interface Transaction {
   }>;
 }
 
+interface EnvelopeUsage {
+  envelope_id: string;
+  label: string;
+  budget: { amount: string; ccy: string };
+  spent: { amount: string; ccy: string };
+  remaining: { amount: string; ccy: string };
+  percent: number;
+}
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cycles, setCycles] = useState<CycleList | null>(null);
+  const [envelopeUsage, setEnvelopeUsage] = useState<
+    Map<string, EnvelopeUsage>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionQuery>({});
@@ -112,6 +125,38 @@ export default function TransactionsPage() {
     }
   };
 
+  const fetchEnvelopeUsage = async (cycle: string) => {
+    if (!cycle || envelopes.length === 0) return;
+
+    try {
+      const usagePromises = envelopes.map(async (envelope) => {
+        try {
+          const res = await fetch(
+            `${API_URL}/capital/envelopes/${envelope.id}/usage?label=${cycle}`
+          );
+          if (res.ok) {
+            const usage: EnvelopeUsage = await res.json();
+            return [envelope.id, usage] as [string, EnvelopeUsage];
+          }
+        } catch (err) {
+          console.error(`Failed to fetch usage for ${envelope.id}:`, err);
+        }
+        return null;
+      });
+
+      const usageResults = await Promise.all(usagePromises);
+      const usageMap = new Map<string, EnvelopeUsage>();
+      usageResults.forEach((result) => {
+        if (result) {
+          usageMap.set(result[0], result[1]);
+        }
+      });
+      setEnvelopeUsage(usageMap);
+    } catch (err) {
+      console.error("Failed to fetch envelope usage:", err);
+    }
+  };
+
   const fetchEnvelopes = async () => {
     try {
       const response = await fetch(`${API_URL}/capital/envelopes`);
@@ -139,11 +184,35 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    fetchTransactions();
     fetchEnvelopes();
     fetchAccounts();
     fetchCycles();
   }, []);
+
+  // Set default cycle to active cycle once cycles are loaded
+  useEffect(() => {
+    if (cycles && !filters.label) {
+      setFilters((prev) => ({
+        ...prev,
+        label: cycles.active,
+      }));
+    }
+  }, [cycles]);
+
+  // Fetch transactions when filters change
+  useEffect(() => {
+    if (filters.label) {
+      // Only fetch if we have a cycle selected
+      fetchTransactions();
+    }
+  }, [filters]);
+
+  // Fetch envelope usage when cycle changes or envelopes are loaded
+  useEffect(() => {
+    if (filters.label && envelopes.length > 0) {
+      fetchEnvelopeUsage(filters.label);
+    }
+  }, [filters.label, envelopes]);
 
   const handleSortByDate = () => {
     setSortOrder((prev) => {
@@ -298,20 +367,19 @@ export default function TransactionsPage() {
                 Cycle
               </label>
               <select
-                value={filters.label || ""}
+                value={filters.label || cycles?.active || ""}
                 onChange={(e) => {
                   const value = e.target.value;
                   setFilters((prev) => ({
                     ...prev,
-                    label: value || undefined,
+                    label: value,
                     // Clear from/to when selecting a cycle
-                    from: value ? undefined : prev.from,
-                    to: value ? undefined : prev.to,
+                    from: undefined,
+                    to: undefined,
                   }));
                 }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
               >
-                <option value="">All Time</option>
                 {cycles?.labels
                   .slice()
                   .reverse()
@@ -368,41 +436,6 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          {/* Advanced timestamp filters - only show when no cycle is selected */}
-          {!filters.label && (
-            <details className="mb-4">
-              <summary className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer mb-2">
-                Advanced: Custom Date Range (Unix Timestamps)
-              </summary>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                <div>
-                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                    From
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="e.g., 1696000000"
-                    value={filters.from || ""}
-                    onChange={(e) => handleFilterChange("from", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                    To
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="e.g., 1698591999"
-                    value={filters.to || ""}
-                    onChange={(e) => handleFilterChange("to", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-                  />
-                </div>
-              </div>
-            </details>
-          )}
-
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={fetchTransactions}
@@ -410,15 +443,11 @@ export default function TransactionsPage() {
             >
               Apply Filters
             </button>
-            {(filters.label ||
-              filters.account_id ||
-              filters.envelope_id ||
-              filters.from ||
-              filters.to) && (
+            {(filters.account_id || filters.envelope_id) && (
               <>
                 <button
                   onClick={() => {
-                    setFilters({});
+                    setFilters({ label: filters.label });
                     setTimeout(fetchTransactions, 0);
                   }}
                   className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
@@ -426,11 +455,6 @@ export default function TransactionsPage() {
                   Clear Filters
                 </button>
                 <div className="flex gap-1 ml-2">
-                  {filters.label && (
-                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-sm">
-                      Cycle: {filters.label}
-                    </span>
-                  )}
                   {filters.account_id && (
                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-sm">
                       Account:{" "}
@@ -444,14 +468,32 @@ export default function TransactionsPage() {
                         ?.name || filters.envelope_id}
                     </span>
                   )}
-                  {(filters.from || filters.to) && (
-                    <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-sm">
-                      Custom Range
-                    </span>
-                  )}
                 </div>
               </>
             )}
+          </div>
+        </div>
+
+        {/* Envelopes */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+            Envelopes
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {envelopes
+              .filter((envelope) => envelope.status === "Active")
+              .map((envelope) => {
+                const usage = envelopeUsage.get(envelope.id);
+                return (
+                  <EnvelopeCard
+                    key={envelope.id}
+                    envelope={envelope}
+                    totalSpent={usage?.spent}
+                    budget={usage?.budget}
+                    percent={usage?.percent}
+                  />
+                );
+              })}
           </div>
         </div>
 

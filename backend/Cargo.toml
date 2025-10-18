@@ -29,9 +29,14 @@ utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "4", features = ["axum"] }
 rust_decimal = { version = "1", features = ["serde"] }
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 csv = "1"
 uuid = { version = "1", features = ["v4"] }
 
 [[bin]]
 name = "seed_za_bank_csv"
 path = "src/bin/seed_za_bank_csv.rs"
+
+[[bin]]
+name = "patch_hkd_pnl_to_usd"
+path = "src/bin/patch_hkd_pnl_to_usd.rs"

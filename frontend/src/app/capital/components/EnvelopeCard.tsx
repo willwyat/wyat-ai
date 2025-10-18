@@ -4,15 +4,29 @@ import { formatMoney, getRolloverText } from "../utils";
 
 interface EnvelopeCardProps {
   envelope: Envelope;
+  totalSpent?: {
+    amount: string;
+    ccy: string;
+  };
+  budget?: {
+    amount: string;
+    ccy: string;
+  };
+  percent?: number;
 }
 
-export function EnvelopeCard({ envelope }: EnvelopeCardProps) {
+export function EnvelopeCard({
+  envelope,
+  totalSpent,
+  budget,
+  percent,
+}: EnvelopeCardProps) {
   const isPositive = parseFloat(envelope.balance.amount) >= 0;
   const isActive = envelope.status === "Active";
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border ${
+      className={`bg-white dark:bg-gray-800 rounded-lg p-6 border ${
         isActive
           ? "border-gray-200 dark:border-gray-600"
           : "border-gray-100 dark:border-gray-700 opacity-60"
@@ -45,6 +59,51 @@ export function EnvelopeCard({ envelope }: EnvelopeCardProps) {
           {formatMoney(envelope.balance)}
         </p>
       </div>
+
+      {/* Spending Summary */}
+      {totalSpent && budget && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-sm font-medium text-blue-900 dark:text-blue-300">
+              Cycle Spending
+            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-400">
+              {(percent! * 100).toFixed(1)}%
+            </p>
+          </div>
+          <div className="flex justify-between items-baseline">
+            <div>
+              <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                {totalSpent.ccy === "USD" && "$"}
+                {parseFloat(totalSpent.amount).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                of {budget.ccy === "USD" && "$"}
+                {parseFloat(budget.amount).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+            </div>
+            {/* Progress bar */}
+            <div className="w-24 h-2 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${
+                  percent! > 1
+                    ? "bg-red-500"
+                    : percent! > 0.8
+                    ? "bg-amber-500"
+                    : "bg-blue-500"
+                }`}
+                style={{ width: `${Math.min(percent! * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2 text-sm">
         {envelope.funding && (
