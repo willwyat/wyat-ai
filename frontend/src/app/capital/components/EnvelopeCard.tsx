@@ -47,7 +47,7 @@ export function EnvelopeCard({
         </span>
       </div>
 
-      <div className="mb-4">
+      {/* <div className="mb-4">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Balance</p>
         <p
           className={`text-2xl font-bold ${
@@ -58,13 +58,13 @@ export function EnvelopeCard({
         >
           {formatMoney(envelope.balance)}
         </p>
-      </div>
+      </div> */}
 
       {/* Spending Summary */}
       {totalSpent && budget && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-          <div className="flex justify-between items-center mb-2">
-            <p className="text-sm font-medium text-blue-900 dark:text-blue-300">
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Cycle Spending
             </p>
             <p className="text-xs text-blue-700 dark:text-blue-400">
@@ -73,14 +73,14 @@ export function EnvelopeCard({
           </div>
           <div className="flex justify-between items-baseline">
             <div>
-              <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+              <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">
                 {totalSpent.ccy === "USD" && "$"}
                 {parseFloat(totalSpent.amount).toLocaleString("en-US", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
               </p>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
                 of {budget.ccy === "USD" && "$"}
                 {parseFloat(budget.amount).toLocaleString("en-US", {
                   minimumFractionDigits: 2,
