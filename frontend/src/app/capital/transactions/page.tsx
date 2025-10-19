@@ -27,6 +27,7 @@ export default function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionQuery>({});
   const [reclassifying, setReclassifying] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const [updatingType, setUpdatingType] = useState<Set<string>>(new Set());
   const [sortOrder, setSortOrder] = useState<"default" | "asc" | "desc">(
     "default"
   );
@@ -66,6 +67,7 @@ export default function TransactionsPage() {
       }
 
       const data = await response.json();
+      console.log("Transactions data:", data);
       setTransactions(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -265,6 +267,48 @@ export default function TransactionsPage() {
       );
     } finally {
       setReclassifying((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleUpdateType = async (
+    transactionId: string,
+    txType: string | null
+  ) => {
+    setUpdatingType((prev) => new Set(prev).add(transactionId));
+
+    try {
+      const response = await fetch(
+        `${API_URL}/capital/transactions/${transactionId}/type`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ tx_type: txType }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP error! status: ${response.status}`);
+      }
+
+      // Update the transaction in the local state
+      setTransactions((prev) =>
+        prev.map((tx) =>
+          tx.id === transactionId ? { ...tx, tx_type: txType || undefined } : tx
+        )
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update transaction type"
+      );
+    } finally {
+      setUpdatingType((prev) => {
         const newSet = new Set(prev);
         newSet.delete(transactionId);
         return newSet;
@@ -563,7 +607,7 @@ export default function TransactionsPage() {
                       Amount
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Envelope
+                      Type
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
                   </tr>
@@ -577,7 +621,9 @@ export default function TransactionsPage() {
                       envelopes={envelopes}
                       reclassifying={reclassifying}
                       deleting={deleting}
+                      updatingType={updatingType}
                       onReclassify={handleReclassify}
+                      onUpdateType={handleUpdateType}
                       onDelete={handleDelete}
                       onOpenModal={handleOpenModal}
                     />

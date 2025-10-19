@@ -251,6 +251,10 @@ async fn main() {
             "/capital/transactions/:transaction_id",
             axum::routing::delete(capital::delete_transaction),
         )
+        .route(
+            "/capital/transactions/:transaction_id/type",
+            patch(capital::update_transaction_type),
+        )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
         .route("/journal/mongo/:id", get(get_journal_entry_by_id_mongo))

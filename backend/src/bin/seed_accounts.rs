@@ -28,6 +28,7 @@ async fn main() -> Result<()> {
                 owner_name: "Wong Yiu Sang William & Wong Tsz Yan".into(),
                 account_number: "TBC".into(),
                 routing_number: Some("004".into()),
+                color: None,
             },
         },
         Account {
@@ -39,6 +40,7 @@ async fn main() -> Result<()> {
                 owner_name: "Wong Yiu Sang William & Wong Tsz Yan".into(),
                 account_number: "TBC".into(),
                 routing_number: Some("004".into()),
+                color: None,
             },
         },
         Account {
@@ -50,6 +52,7 @@ async fn main() -> Result<()> {
                 owner_name: "Wong Tsz Yan".into(),
                 account_number: "TBC".into(),
                 routing_number: Some("389".into()),
+                color: None,
             },
         },
         Account {
@@ -61,6 +64,7 @@ async fn main() -> Result<()> {
                 owner_name: "William Wong".into(),
                 account_number: "576725306".into(),
                 routing_number: Some("021000021".into()),
+                color: None,
             },
         },
         Account {
@@ -72,6 +76,7 @@ async fn main() -> Result<()> {
                 owner_name: "William Wong".into(),
                 account_number: "5023553326".into(),
                 routing_number: Some("021000021".into()),
+                color: None,
             },
         },
         Account {
@@ -83,6 +88,7 @@ async fn main() -> Result<()> {
                 owner_name: "Yiu Sang William Wong".into(),
                 account_number: "8820 0096 6156".into(),
                 routing_number: Some("387".into()),
+                color: None,
             },
         },
         Account {
@@ -94,6 +100,7 @@ async fn main() -> Result<()> {
                 owner_name: "Yiu Sang Wong".into(),
                 account_number: "4454844987".into(),
                 routing_number: Some("026013673".into()),
+                color: None,
             },
         },
         Account {
@@ -105,6 +112,7 @@ async fn main() -> Result<()> {
                 owner_name: "Yiu Sang William Wong".into(),
                 account_number: "411051504154".into(),
                 routing_number: Some("031101334".into()),
+                color: None,
             },
         },
         Account {
@@ -116,6 +124,7 @@ async fn main() -> Result<()> {
                 owner_name: "Yiu Sang William Wong".into(),
                 account_number: "310064557809".into(),
                 routing_number: Some("031101334".into()),
+                color: None,
             },
         },
         Account {
@@ -127,6 +136,7 @@ async fn main() -> Result<()> {
                 owner_name: "William Wong".into(),
                 account_number: "TBC".into(),
                 routing_number: None,
+                color: None,
             },
         },
         // -------- CRYPTO (choose BTC as reporting currency) --------
@@ -137,6 +147,7 @@ async fn main() -> Result<()> {
             metadata: AccountMetadata::Cex {
                 cex_name: "Binance".into(),
                 account_id: "aurora".into(),
+                color: None,
             },
         },
         Account {
@@ -146,6 +157,7 @@ async fn main() -> Result<()> {
             metadata: AccountMetadata::Cex {
                 cex_name: "Binance".into(),
                 account_id: "william".into(),
+                color: None,
             },
         },
         Account {
@@ -159,6 +171,7 @@ async fn main() -> Result<()> {
                     chain_id: 1,
                 },
                 is_ledger: false,
+                color: None,
             },
         },
         Account {
@@ -172,6 +185,7 @@ async fn main() -> Result<()> {
                     chain_id: 42161,
                 },
                 is_ledger: false,
+                color: None,
             },
         },
         Account {
@@ -182,6 +196,7 @@ async fn main() -> Result<()> {
                 address: "74mx9c7ryGxkUvZyA5VpKhB9qpxXYapzB4yAEynRMooQ".into(),
                 network: AccountNetwork::Solana,
                 is_ledger: false,
+                color: None,
             },
         },
     ];

@@ -14,11 +14,13 @@ interface TransactionRowProps {
   envelopes: Envelope[];
   reclassifying: Set<string>;
   deleting: Set<string>;
+  updatingType: Set<string>;
   onReclassify: (
     transactionId: string,
     legIndex: number,
     categoryId: string | null
   ) => void;
+  onUpdateType: (transactionId: string, txType: string | null) => void;
   onDelete: (transactionId: string, payee: string) => void;
   onOpenModal: (transaction: Transaction) => void;
 }
@@ -36,7 +38,9 @@ export default function TransactionRow({
   envelopes,
   reclassifying,
   deleting,
+  updatingType,
   onReclassify,
+  onUpdateType,
   onDelete,
   onOpenModal,
 }: TransactionRowProps) {
@@ -44,6 +48,18 @@ export default function TransactionRow({
   const currentCategory =
     pnlLegIdx >= 0 ? tx.legs[pnlLegIdx]?.category_id ?? "" : "";
 
+  const TX_TYPES = [
+    { value: "spending", label: "Spending" },
+    { value: "income", label: "Income" },
+    { value: "fee_only", label: "Fee Only" },
+    { value: "transfer", label: "Transfer" },
+    { value: "transfer_fx", label: "Transfer (FX)" },
+    { value: "trade", label: "Trade" },
+    { value: "adjustment", label: "Adjustment" },
+    { value: "refund", label: "Refund" },
+  ];
+
+  // if (tx.tx_type == "spending" || tx.tx_type == "refund")
   return (
     <tr
       key={tx.id}
@@ -56,19 +72,35 @@ export default function TransactionRow({
       </td>
       {/* Account */}
       <td className="px-6 py-3 whitespace-nowrap">
-        <span
-          className={`text-sm font-medium rounded px-2 py-1 ${getAccountColorClasses(
-            accountMap.get(tx.legs[0]?.account_id || "")?.color || "gray"
-          )}`}
-        >
-          {accountMap.get(tx.legs[0]?.account_id || "")?.name ||
-            tx.legs[0]?.account_id ||
-            "N/A"}
-        </span>
+        <div className="flex gap-2 items-center h-full">
+          <span
+            className={`text-sm font-medium rounded px-2 py-1 ${getAccountColorClasses(
+              accountMap.get(tx.legs[0]?.account_id || "")?.color || "gray"
+            )}`}
+          >
+            {accountMap.get(tx.legs[0]?.account_id || "")?.name ||
+              tx.legs[0]?.account_id ||
+              "N/A"}
+          </span>
+
+          {(tx.tx_type == "transfer" || tx.tx_type == "transfer_fx") && (
+            <span
+              className={`text-sm font-medium rounded px-2 py-1 ${getAccountColorClasses(
+                accountMap.get(tx.legs[1]?.account_id || "")?.color || "gray"
+              )}`}
+            >
+              {accountMap.get(tx.legs[1]?.account_id || "")?.name ||
+                tx.legs[0]?.account_id ||
+                "N/A"}
+            </span>
+          )}
+        </div>
       </td>
       {/* Payee */}
       <td className="px-6 py-3 whitespace-nowrap text-base text-gray-900 dark:text-white">
-        {tx.payee || "N/A"}
+        <div className="flex flex-col gap-1">
+          <div>{tx.payee || "N/A"}</div>
+        </div>
       </td>
       {/* Amount */}
       <td
@@ -84,27 +116,57 @@ export default function TransactionRow({
           tx.legs[0].amount.data.ccy
         )}
       </td>
-      {/* Envelope or Category */}
-      <td className="px-6 py-3 whitespace-nowrap text-base">
-        <div className="flex items-center gap-2">
-          <select
-            value={currentCategory}
-            onChange={(e) => {
-              const newCategoryId = e.target.value || null;
-              onReclassify(tx.id, pnlLegIdx, newCategoryId);
-            }}
-            disabled={reclassifying.has(tx.id)}
-            className="px-2 py-1 text-base border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+      {/* Envelope */}
+      <td className="px-6 py-3 whitespace-nowrap text-base align-middle">
+        <div className="flex gap-4 items-center h-full">
+          {/* Type */}
+          <div
+            className="flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
           >
-            <option value="">No Category</option>
-            {envelopes.map((envelope) => (
-              <option key={envelope.id} value={envelope.id}>
-                {envelope.name}
-              </option>
-            ))}
-          </select>
-          {reclassifying.has(tx.id) && (
-            <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            <select
+              value={tx.tx_type || ""}
+              onChange={(e) => {
+                const newType = e.target.value || null;
+                onUpdateType(tx.id, newType);
+              }}
+              disabled={updatingType.has(tx.id)}
+              className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+            >
+              <option value="">No Type</option>
+              {TX_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            {updatingType.has(tx.id) && (
+              <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            )}
+          </div>
+          {/* Envelope */}
+          {(tx.tx_type == "spending" || tx.tx_type == "refund") && (
+            <div className="flex items-center gap-2">
+              <select
+                value={currentCategory}
+                onChange={(e) => {
+                  const newCategoryId = e.target.value || null;
+                  onReclassify(tx.id, pnlLegIdx, newCategoryId);
+                }}
+                disabled={reclassifying.has(tx.id)}
+                className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+              >
+                <option value="">No Category</option>
+                {envelopes.map((envelope) => (
+                  <option key={envelope.id} value={envelope.id}>
+                    {envelope.name}
+                  </option>
+                ))}
+              </select>
+              {reclassifying.has(tx.id) && (
+                <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+              )}
+            </div>
           )}
         </div>
       </td>

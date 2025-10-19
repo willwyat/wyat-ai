@@ -413,6 +413,7 @@ pub struct Transaction {
     pub reconciled: bool,       // checked off against a statement line
     pub external_refs: Vec<(String, String)>, // pairs of (kind, value) like ("tx_hash", "0x...")
     pub legs: Vec<Leg>,
+    pub tx_type: Option<String>,
 }
 
 impl Transaction {
@@ -1069,6 +1070,78 @@ pub async fn reclassify_transaction(
         }
         Ok(None) => Err(format!("Transaction not found: {}", request.transaction_id)),
         Err(e) => Err(format!("Database query error: {}", e)),
+    }
+}
+
+/// PATCH /capital/transactions/{transaction_id}/type - Update transaction type
+///
+/// Updates the tx_type field of a transaction.
+///
+/// Body: { "tx_type": "spending" | "income" | "fee_only" | "transfer" | "transfer_fx" | "trade" | "adjustment" | null }
+///
+/// Example:
+/// PATCH /capital/transactions/123e4567-e89b-12d3-a456-426614174000/type
+/// { "tx_type": "spending" }
+#[derive(Debug, Deserialize)]
+pub struct UpdateTransactionTypeRequest {
+    pub tx_type: Option<String>,
+}
+
+pub async fn update_transaction_type(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(transaction_id): axum::extract::Path<String>,
+    Json(request): Json<UpdateTransactionTypeRequest>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    // Validate tx_type value if provided
+    if let Some(ref tx_type) = request.tx_type {
+        let valid_types = vec![
+            "spending",
+            "income",
+            "fee_only",
+            "transfer",
+            "transfer_fx",
+            "trade",
+            "adjustment",
+            "refund",
+        ];
+        if !valid_types.contains(&tx_type.as_str()) {
+            return Err(format!(
+                "Invalid tx_type: {}. Must be one of: {}",
+                tx_type,
+                valid_types.join(", ")
+            ));
+        }
+    }
+
+    let filter = doc! { "id": &transaction_id };
+    let update = doc! {
+        "$set": {
+            "tx_type": match &request.tx_type {
+                Some(t) => mongodb::bson::Bson::String(t.clone()),
+                None => mongodb::bson::Bson::Null,
+            }
+        }
+    };
+
+    match collection.update_one(filter, update, None).await {
+        Ok(result) => {
+            if result.modified_count == 1 || result.matched_count == 1 {
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "Transaction type updated successfully",
+                    "transaction_id": transaction_id,
+                    "tx_type": request.tx_type
+                })))
+            } else {
+                Err(format!("Transaction not found: {}", transaction_id))
+            }
+        }
+        Err(e) => Err(format!("Database update error: {}", e)),
     }
 }
 

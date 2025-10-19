@@ -26,6 +26,7 @@ export interface Transaction {
   memo?: string;
   status?: string;
   reconciled: boolean;
+  tx_type?: string;
   external_refs: Array<[string, string]>;
   legs: Array<{
     account_id: string;

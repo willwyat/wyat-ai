@@ -96,6 +96,7 @@ async fn main() -> Result<()> {
             memo: None,
             status: Some("posted".into()),
             reconciled: false,
+            tx_type: None,
             external_refs: vec![("statement".into(), "Chase6886_20250908_20251007".into())],
             legs: vec![account_leg, pnl_leg],
         };

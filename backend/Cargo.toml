@@ -40,3 +40,7 @@ path = "src/bin/seed_za_bank_csv.rs"
 [[bin]]
 name = "patch_hkd_pnl_to_usd"
 path = "src/bin/patch_hkd_pnl_to_usd.rs"
+
+[[bin]]
+name = "backfill_tx_type"
+path = "src/bin/backfill_tx_type.rs"
