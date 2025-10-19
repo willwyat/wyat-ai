@@ -1,5 +1,5 @@
 import React from "react";
-import type { Account, Currency, AccountNetwork } from "../types";
+import type { Account, Currency, AccountNetwork } from "@/app/capital/types";
 
 interface AccountCardProps {
   account: Account;

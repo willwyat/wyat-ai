@@ -1,4 +1,5 @@
 import React from "react";
+import { formatAmount } from "../utils";
 import type { Envelope } from "../types";
 import { formatMoney, getRolloverText } from "../utils";
 
@@ -36,29 +37,12 @@ export function EnvelopeCard({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           {envelope.name}
         </h3>
-        <span
-          className={`text-xs px-2 py-1 rounded ${
-            isActive
-              ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-              : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-          }`}
-        >
-          {envelope.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded px-2 py-1">
+            {getRolloverText(envelope.rollover)}
+          </span>
+        </div>
       </div>
-
-      {/* <div className="mb-4">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Balance</p>
-        <p
-          className={`text-2xl font-bold ${
-            isPositive
-              ? "text-gray-900 dark:text-white"
-              : "text-red-600 dark:text-red-400"
-          }`}
-        >
-          {formatMoney(envelope.balance)}
-        </p>
-      </div> */}
 
       {/* Spending Summary */}
       {totalSpent && budget && (
@@ -73,19 +57,11 @@ export function EnvelopeCard({
           </div>
           <div className="flex justify-between items-baseline">
             <div>
-              <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">
-                {totalSpent.ccy === "USD" && "$"}
-                {parseFloat(totalSpent.amount).toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+              <p className="text-3xl font-bold text-blue-900 dark:text-blue-50">
+                {formatAmount(totalSpent.amount, totalSpent.ccy)}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
-                of {budget.ccy === "USD" && "$"}
-                {parseFloat(budget.amount).toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                of {formatAmount(budget.amount, budget.ccy)}
               </p>
             </div>
             {/* Progress bar */}
@@ -106,17 +82,6 @@ export function EnvelopeCard({
       )}
 
       <div className="space-y-2 text-sm">
-        {envelope.funding && (
-          <div className="flex justify-between">
-            <span className="text-gray-500 dark:text-gray-400">
-              Monthly Funding
-            </span>
-            <span className="text-gray-900 dark:text-white font-medium">
-              {formatMoney(envelope.funding.amount)}
-            </span>
-          </div>
-        )}
-
         {envelope.period_limit && (
           <div className="flex justify-between">
             <span className="text-gray-500 dark:text-gray-400">
@@ -127,20 +92,6 @@ export function EnvelopeCard({
             </span>
           </div>
         )}
-
-        <div className="flex justify-between">
-          <span className="text-gray-500 dark:text-gray-400">Rollover</span>
-          <span className="text-gray-900 dark:text-white font-medium">
-            {getRolloverText(envelope.rollover)}
-          </span>
-        </div>
-
-        <div className="flex justify-between">
-          <span className="text-gray-500 dark:text-gray-400">Type</span>
-          <span className="text-gray-900 dark:text-white font-medium">
-            {envelope.kind}
-          </span>
-        </div>
 
         {envelope.allow_negative && (
           <div className="flex justify-between">

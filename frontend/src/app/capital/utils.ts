@@ -14,6 +14,60 @@ export function formatMoney(money: Money): string {
   return `${symbol}${formatted}`;
 }
 
+export function formatDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString();
+}
+
+export function formatAmount(amount: string, ccy: string): string {
+  const num = parseFloat(amount);
+  const symbol =
+    ccy === "USD" ? "$" : ccy === "HKD" ? "HK$" : ccy === "BTC" ? "₿" : "";
+
+  const decimals = ccy === "BTC" ? 8 : 2;
+  const formatted = num.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+
+  return `${symbol}${formatted}`;
+}
+
+export function getAccountColorClasses(color: string): string {
+  const colorMap: Record<string, string> = {
+    red: "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300",
+    orange:
+      "bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300",
+    amber: "bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300",
+    yellow:
+      "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300",
+    lime: "bg-lime-100 dark:bg-lime-900 text-lime-700 dark:text-lime-300",
+    green: "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300",
+    emerald:
+      "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300",
+    teal: "bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300",
+    cyan: "bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300",
+    sky: "bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300",
+    blue: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300",
+    indigo:
+      "bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300",
+    violet:
+      "bg-violet-100 dark:bg-violet-900 text-violet-700 dark:text-violet-300",
+    purple:
+      "bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300",
+    fuschia:
+      "bg-fuchsia-100 dark:bg-fuchsia-900 text-fuchsia-700 dark:text-fuchsia-300",
+    pink: "bg-pink-100 dark:bg-pink-900 text-pink-700 dark:text-pink-300",
+    rose: "bg-rose-100 dark:bg-rose-900 text-rose-700 dark:text-rose-300",
+    slate: "bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300",
+    gray: "bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300",
+    zinc: "bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300",
+    neutral:
+      "bg-neutral-100 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300",
+    stone: "bg-stone-100 dark:bg-stone-900 text-stone-700 dark:text-stone-300",
+  };
+  return colorMap[color] || colorMap.gray;
+}
+
 export function getRolloverText(rollover: RolloverPolicy): string {
   // Handle the case where rollover might be a string or object
   if (typeof rollover === "string") {

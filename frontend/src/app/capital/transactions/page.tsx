@@ -2,58 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import { API_URL } from "@/lib/config";
-import type { Envelope, Account } from "@/app/capital/types";
-import TransactionRow from "../components/TransactionRow";
-import { EnvelopeCard } from "../components/EnvelopeCard";
-
-interface TransactionQuery {
-  account_id?: string;
-  envelope_id?: string;
-  from?: number;
-  to?: number;
-  label?: string;
-}
-
-interface CycleList {
-  labels: string[];
-  active: string;
-}
-
-interface Transaction {
-  id: string;
-  ts: number;
-  posted_ts?: number;
-  source: string;
-  payee?: string;
-  memo?: string;
-  status?: string;
-  reconciled: boolean;
-  external_refs: Array<[string, string]>;
-  legs: Array<{
-    account_id: string;
-    direction: "Debit" | "Credit";
-    amount: {
-      kind: "Fiat";
-      data: {
-        amount: string;
-        ccy: string;
-      };
-    };
-    fx?: any;
-    category_id?: string | null;
-    fee_of_leg_idx?: number;
-    notes?: string;
-  }>;
-}
-
-interface EnvelopeUsage {
-  envelope_id: string;
-  label: string;
-  budget: { amount: string; ccy: string };
-  spent: { amount: string; ccy: string };
-  remaining: { amount: string; ccy: string };
-  percent: number;
-}
+import type {
+  Envelope,
+  Account,
+  Transaction,
+  TransactionQuery,
+  CycleList,
+  EnvelopeUsage,
+} from "@/app/capital/types";
+import TransactionRow from "@/app/capital/components/TransactionRow";
+import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
+import TransactionModal from "@/app/capital/components/TransactionModal";
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -71,10 +30,16 @@ export default function TransactionsPage() {
   const [sortOrder, setSortOrder] = useState<"default" | "asc" | "desc">(
     "default"
   );
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Create a map of account IDs to account names
+  // Create a map of account IDs to account info
   const accountMap = new Map(
-    accounts.map((account) => [account.id, account.name])
+    accounts.map((account) => [
+      account.id,
+      { name: account.name, color: account.metadata.data.color || "gray" },
+    ])
   );
 
   const fetchTransactions = async () => {
@@ -307,6 +272,16 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleOpenModal = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedTransaction(null);
+  };
+
   const handleDelete = async (transactionId: string, payee: string) => {
     // Confirmation dialog
     const confirmed = window.confirm(
@@ -458,7 +433,8 @@ export default function TransactionsPage() {
                   {filters.account_id && (
                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-sm">
                       Account:{" "}
-                      {accountMap.get(filters.account_id) || filters.account_id}
+                      {accountMap.get(filters.account_id)?.name ||
+                        filters.account_id}
                     </span>
                   )}
                   {filters.envelope_id && (
@@ -479,7 +455,7 @@ export default function TransactionsPage() {
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
             Envelopes
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
             {envelopes
               .filter((envelope) => envelope.status === "Active")
               .map((envelope) => {
@@ -583,15 +559,9 @@ export default function TransactionsPage() {
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Payee
                     </th>
-                    {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Direction
-                    </th> */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                       Amount
                     </th>
-                    {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th> */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Envelope
                     </th>
@@ -609,6 +579,7 @@ export default function TransactionsPage() {
                       deleting={deleting}
                       onReclassify={handleReclassify}
                       onDelete={handleDelete}
+                      onOpenModal={handleOpenModal}
                     />
                   ))}
                 </tbody>
@@ -616,6 +587,15 @@ export default function TransactionsPage() {
             </div>
           </div>
         )}
+
+        {/* Transaction Modal */}
+        <TransactionModal
+          transaction={selectedTransaction}
+          accountMap={accountMap}
+          envelopes={envelopes}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+        />
       </div>
     </div>
   );

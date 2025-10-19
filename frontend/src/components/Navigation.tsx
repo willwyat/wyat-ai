@@ -248,7 +248,7 @@ function DesktopSideMenu() {
                       >
                         <div className="text-center flex flex-col gap-0.5">
                           <IconComponent className="w-6 h-6 mx-auto" />
-                          <div className="text-[10px] font-medium">
+                          <div className="text-[11px] font-medium">
                             {feature.label}
                           </div>
                         </div>

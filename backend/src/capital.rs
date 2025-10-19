@@ -299,31 +299,37 @@ pub enum AccountMetadata {
         owner_name: String, // e.g. "John Doe"
         account_number: String,
         routing_number: Option<String>,
+        color: Option<String>,
     },
     Savings {
         bank_name: String,  // e.g. "Chase"
         owner_name: String, // e.g. "John Doe"
         account_number: String,
         routing_number: Option<String>,
+        color: Option<String>,
     },
     Credit {
         credit_card_name: String, // e.g. "Chase Sapphire"
         owner_name: String,       // e.g. "John Doe"
         account_number: String,
         routing_number: Option<String>,
+        color: Option<String>,
     },
     CryptoWallet {
         address: String,
         network: AccountNetwork,
         is_ledger: bool,
+        color: Option<String>,
     },
     Cex {
         cex_name: String, // e.g. "Binance"
         account_id: String,
+        color: Option<String>,
     },
     Trust {
         trustee: String,
         jurisdiction: String,
+        color: Option<String>,
     },
 }
 

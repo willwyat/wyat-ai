@@ -109,6 +109,7 @@ export default function RootLayout({
       </head>
       <body
         className={`${inter.variable} ${ibmPlexSerif.variable} ${ibmPlexSans.variable} font-sans antialiased`}
+        suppressHydrationWarning={true}
       >
         <NavProvider>
           <Navigation />

@@ -1,52 +1,16 @@
 "use client";
 
 import React from "react";
-
-interface Transaction {
-  id: string;
-  ts: number;
-  posted_ts?: number;
-  source: string;
-  payee?: string;
-  memo?: string;
-  status?: string;
-  reconciled: boolean;
-  external_refs: Array<[string, string]>;
-  legs: Array<{
-    account_id: string;
-    direction: "Debit" | "Credit";
-    amount: {
-      kind: "Fiat";
-      data: {
-        amount: string;
-        ccy: string;
-      };
-    };
-    fx?: any;
-    category_id?: string | null;
-    fee_of_leg_idx?: number;
-    notes?: string;
-  }>;
-}
-
-interface Envelope {
-  id: string;
-  name: string;
-  kind: "Fixed" | "Variable";
-  status: "Active" | "Inactive";
-  funding: any;
-  rollover: any;
-  balance: any;
-  period_limit: any;
-  last_period: string | null;
-  allow_negative: boolean;
-  min_balance: string | null;
-  deficit_policy: string | null;
-}
+import {
+  formatDate,
+  formatAmount,
+  getAccountColorClasses,
+} from "@/app/capital/utils";
+import type { Transaction, Envelope } from "@/app/capital/types";
 
 interface TransactionRowProps {
   transaction: Transaction;
-  accountMap: Map<string, string>;
+  accountMap: Map<string, { name: string; color: string }>;
   envelopes: Envelope[];
   reclassifying: Set<string>;
   deleting: Set<string>;
@@ -56,6 +20,7 @@ interface TransactionRowProps {
     categoryId: string | null
   ) => void;
   onDelete: (transactionId: string, payee: string) => void;
+  onOpenModal: (transaction: Transaction) => void;
 }
 
 const PNL_ACCOUNT_ID = "__pnl__";
@@ -63,17 +28,6 @@ const PNL_ACCOUNT_ID = "__pnl__";
 function getPnlLegIndex(tx: Transaction): number {
   const idx = tx.legs.findIndex((l) => l.account_id === PNL_ACCOUNT_ID);
   return idx >= 0 ? idx : tx.legs.findIndex((l) => l.category_id != null);
-}
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleDateString();
-}
-
-function formatAmount(amount: string, ccy: string): string {
-  const num = parseFloat(amount);
-  const symbol =
-    ccy === "USD" ? "$" : ccy === "HKD" ? "HK$" : ccy === "BTC" ? "₿" : "";
-  return `${symbol}${num.toFixed(2)}`;
 }
 
 export default function TransactionRow({
@@ -84,6 +38,7 @@ export default function TransactionRow({
   deleting,
   onReclassify,
   onDelete,
+  onOpenModal,
 }: TransactionRowProps) {
   const pnlLegIdx = getPnlLegIndex(tx);
   const currentCategory =
@@ -92,25 +47,32 @@ export default function TransactionRow({
   return (
     <tr
       key={tx.id}
-      className="transition-color duration-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+      className="transition-color duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+      onClick={() => onOpenModal(tx)}
     >
       {/* Date */}
-      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+      <td className="px-6 py-3 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {formatDate(tx.ts)}
       </td>
       {/* Account */}
-      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
-        {accountMap.get(tx.legs[0]?.account_id || "") ||
-          tx.legs[0]?.account_id ||
-          "N/A"}
+      <td className="px-6 py-3 whitespace-nowrap">
+        <span
+          className={`text-sm font-medium rounded px-2 py-1 ${getAccountColorClasses(
+            accountMap.get(tx.legs[0]?.account_id || "")?.color || "gray"
+          )}`}
+        >
+          {accountMap.get(tx.legs[0]?.account_id || "")?.name ||
+            tx.legs[0]?.account_id ||
+            "N/A"}
+        </span>
       </td>
       {/* Payee */}
-      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+      <td className="px-6 py-3 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {tx.payee || "N/A"}
       </td>
       {/* Amount */}
       <td
-        className={`px-6 py-4 whitespace-nowrap text-right text-base ${
+        className={`px-6 py-3 whitespace-nowrap text-right text-base font-medium ${
           tx.legs[0]?.direction === "Credit"
             ? "text-red-700 dark:text-red-300"
             : "text-green-700 dark:text-green-300"
@@ -123,7 +85,7 @@ export default function TransactionRow({
         )}
       </td>
       {/* Envelope or Category */}
-      <td className="px-6 py-4 whitespace-nowrap text-base">
+      <td className="px-6 py-3 whitespace-nowrap text-base">
         <div className="flex items-center gap-2">
           <select
             value={currentCategory}
@@ -147,7 +109,7 @@ export default function TransactionRow({
         </div>
       </td>
       {/* Actions */}
-      <td className="px-6 py-4 whitespace-nowrap text-base">
+      <td className="px-6 py-3 whitespace-nowrap text-base">
         <button
           onClick={() => onDelete(tx.id, tx.payee || "Unknown")}
           disabled={deleting.has(tx.id)}
