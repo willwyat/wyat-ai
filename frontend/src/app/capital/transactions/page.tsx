@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { API_URL } from "@/lib/config";
 import type {
   Envelope,
   Account,
@@ -13,6 +12,8 @@ import type {
 import TransactionRow from "@/app/capital/components/TransactionRow";
 import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
 import TransactionModal from "@/app/capital/components/TransactionModal";
+import { getSelectClasses, styles } from "@/app/capital/styles";
+import { API_CONFIG, UI_CONFIG, ICONS } from "@/app/capital/config";
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -29,7 +30,7 @@ export default function TransactionsPage() {
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
   const [updatingType, setUpdatingType] = useState<Set<string>>(new Set());
   const [sortOrder, setSortOrder] = useState<"default" | "asc" | "desc">(
-    "default"
+    UI_CONFIG.TABLE.DEFAULT_SORT_ORDER
   );
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -52,6 +53,7 @@ export default function TransactionsPage() {
       if (filters.account_id) params.append("account_id", filters.account_id);
       if (filters.envelope_id)
         params.append("envelope_id", filters.envelope_id);
+      if (filters.tx_type) params.append("tx_type", filters.tx_type);
       if (filters.label) {
         // Cycle label takes precedence over from/to timestamps
         params.append("label", filters.label);
@@ -60,7 +62,9 @@ export default function TransactionsPage() {
         if (filters.to) params.append("to", filters.to.toString());
       }
 
-      const response = await fetch(`${API_URL}/capital/transactions?${params}`);
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.TRANSACTIONS}?${params}`
+      );
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || `HTTP error! status: ${response.status}`);
@@ -78,7 +82,9 @@ export default function TransactionsPage() {
 
   const fetchCycles = async () => {
     try {
-      const response = await fetch(`${API_URL}/capital/cycles`);
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CYCLES}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -99,7 +105,9 @@ export default function TransactionsPage() {
       const usagePromises = envelopes.map(async (envelope) => {
         try {
           const res = await fetch(
-            `${API_URL}/capital/envelopes/${envelope.id}/usage?label=${cycle}`
+            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENVELOPE_USAGE(
+              envelope.id
+            )}?label=${cycle}`
           );
           if (res.ok) {
             const usage: EnvelopeUsage = await res.json();
@@ -126,7 +134,9 @@ export default function TransactionsPage() {
 
   const fetchEnvelopes = async () => {
     try {
-      const response = await fetch(`${API_URL}/capital/envelopes`);
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENVELOPES}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -139,7 +149,9 @@ export default function TransactionsPage() {
 
   const fetchAccounts = async () => {
     try {
-      const response = await fetch(`${API_URL}/capital/accounts`);
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ACCOUNTS}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -230,7 +242,7 @@ export default function TransactionsPage() {
 
     try {
       const response = await fetch(
-        `${API_URL}/capital/transactions/reclassify`,
+        `${API_CONFIG.BASE_URL}/capital/transactions/reclassify`,
         {
           method: "PUT",
           headers: {
@@ -282,7 +294,9 @@ export default function TransactionsPage() {
 
     try {
       const response = await fetch(
-        `${API_URL}/capital/transactions/${transactionId}/type`,
+        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.UPDATE_TRANSACTION_TYPE(
+          transactionId
+        )}`,
         {
           method: "PATCH",
           headers: {
@@ -338,7 +352,7 @@ export default function TransactionsPage() {
 
     try {
       const response = await fetch(
-        `${API_URL}/capital/transactions/${transactionId}`,
+        `${API_CONFIG.BASE_URL}/capital/transactions/${transactionId}`,
         {
           method: "DELETE",
         }
@@ -363,6 +377,28 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleCyclePrev = () => {
+    if (!cycles || !filters.label) return;
+    const currentIndex = cycles.labels.indexOf(filters.label);
+    if (currentIndex > 0) {
+      setFilters((prev) => ({
+        ...prev,
+        label: cycles.labels[currentIndex - 1],
+      }));
+    }
+  };
+
+  const handleCycleNext = () => {
+    if (!cycles || !filters.label) return;
+    const currentIndex = cycles.labels.indexOf(filters.label);
+    if (currentIndex < cycles.labels.length - 1) {
+      setFilters((prev) => ({
+        ...prev,
+        label: cycles.labels[currentIndex + 1],
+      }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 md:p-4 lg:p-8">
       <div className="mx-auto">
@@ -375,131 +411,53 @@ export default function TransactionsPage() {
           </p>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 md:rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Filters
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Cycle
-              </label>
-              <select
-                value={filters.label || cycles?.active || ""}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFilters((prev) => ({
-                    ...prev,
-                    label: value,
-                    // Clear from/to when selecting a cycle
-                    from: undefined,
-                    to: undefined,
-                  }));
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                {cycles?.labels
-                  .slice()
-                  .reverse()
-                  .map((label) => (
-                    <option key={label} value={label}>
-                      {label} {label === cycles.active ? "(Active)" : ""}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Account
-              </label>
-              <select
-                value={filters.account_id || ""}
-                onChange={(e) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    account_id: e.target.value || undefined,
-                  }))
-                }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">All Accounts</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Envelope
-              </label>
-              <select
-                value={filters.envelope_id || ""}
-                onChange={(e) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    envelope_id: e.target.value || undefined,
-                  }))
-                }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">All Envelopes</option>
-                {envelopes.map((envelope) => (
-                  <option key={envelope.id} value={envelope.id}>
-                    {envelope.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* Cycle Navigation */}
+        <div className={`${styles.card.padded}`}>
+          <div className="flex items-center justify-between gap-4">
             <button
-              onClick={fetchTransactions}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              onClick={handleCyclePrev}
+              disabled={
+                !cycles ||
+                !filters.label ||
+                cycles.labels.indexOf(filters.label) === 0
+              }
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-8"
+              title="Previous cycle"
             >
-              Apply Filters
+              <span className="material-symbols-rounded text-2xl">
+                {ICONS.CHEVRON_LEFT}
+              </span>
             </button>
-            {(filters.account_id || filters.envelope_id) && (
-              <>
-                <button
-                  onClick={() => {
-                    setFilters({ label: filters.label });
-                    setTimeout(fetchTransactions, 0);
-                  }}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                >
-                  Clear Filters
-                </button>
-                <div className="flex gap-1 ml-2">
-                  {filters.account_id && (
-                    <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-sm">
-                      Account:{" "}
-                      {accountMap.get(filters.account_id)?.name ||
-                        filters.account_id}
-                    </span>
-                  )}
-                  {filters.envelope_id && (
-                    <span className="px-2 py-1 bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 rounded text-sm">
-                      Envelope:{" "}
-                      {envelopes.find((e) => e.id === filters.envelope_id)
-                        ?.name || filters.envelope_id}
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {filters.label || cycles?.active || "—"}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {filters.label === cycles?.active && "(Active Cycle)"}
+              </div>
+            </div>
+            <button
+              onClick={handleCycleNext}
+              disabled={
+                !cycles ||
+                !filters.label ||
+                cycles.labels.indexOf(filters.label) ===
+                  cycles.labels.length - 1
+              }
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-8"
+              title="Next cycle"
+            >
+              <span className="material-symbols-rounded text-2xl">
+                {ICONS.CHEVRON_RIGHT}
+              </span>
+            </button>
           </div>
         </div>
 
         {/* Envelopes */}
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
-            Envelopes
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+          <h2 className={styles.text.heading}>Envelopes</h2>
+          <div className={UI_CONFIG.ENVELOPE_GRID}>
             {envelopes
               .filter((envelope) => envelope.status === "Active")
               .map((envelope) => {
@@ -535,7 +493,7 @@ export default function TransactionsPage() {
         {!loading && !error && (
           <div className="bg-white dark:bg-gray-800 md:rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              <h2 className={styles.text.subheading}>
                 Transactions ({getSortedTransactions().length})
               </h2>
             </div>
@@ -598,7 +556,27 @@ export default function TransactionsPage() {
                       </div>
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Account
+                      <div className="flex flex-col gap-1">
+                        <span>Account</span>
+                        <select
+                          id="account-filter"
+                          value={filters.account_id || ""}
+                          onChange={(e) =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              account_id: e.target.value || undefined,
+                            }))
+                          }
+                          className={getSelectClasses("compact")}
+                        >
+                          <option value="">All</option>
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Payee
@@ -606,8 +584,53 @@ export default function TransactionsPage() {
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Type
+                    <th className="px-6 py-3 text-left text-sm text-gray-500 dark:text-gray-400 uppercase">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium tracking-wider">
+                          Type & Envelope
+                        </span>
+                        <div className="flex gap-2">
+                          <select
+                            id="tx-type-filter"
+                            value={filters.tx_type || ""}
+                            onChange={(e) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                tx_type: e.target.value || undefined,
+                              }))
+                            }
+                            className={getSelectClasses("compact")}
+                          >
+                            <option value="">All Types</option>
+                            <option value="spending">Spending</option>
+                            <option value="income">Income</option>
+                            <option value="refund">Refund</option>
+                            <option value="transfer">Transfer</option>
+                            <option value="transfer_fx">Transfer (FX)</option>
+                            <option value="fee_only">Fee</option>
+                            <option value="trade">Trade</option>
+                            <option value="adjustment">Adjustment</option>
+                          </select>
+                          <select
+                            id="envelope-filter"
+                            value={filters.envelope_id || ""}
+                            onChange={(e) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                envelope_id: e.target.value || undefined,
+                              }))
+                            }
+                            className={getSelectClasses("compact")}
+                          >
+                            <option value="">All Envelopes</option>
+                            {envelopes.map((envelope) => (
+                              <option key={envelope.id} value={envelope.id}>
+                                {envelope.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
                   </tr>

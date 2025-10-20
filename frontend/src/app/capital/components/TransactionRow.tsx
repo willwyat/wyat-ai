@@ -1,12 +1,15 @@
 "use client";
 
 import React from "react";
-import {
-  formatDate,
-  formatAmount,
-  getAccountColorClasses,
-} from "@/app/capital/utils";
+import { formatDate, formatAmount } from "@/app/capital/utils";
 import type { Transaction, Envelope } from "@/app/capital/types";
+import { AccountPill } from "./AccountPill";
+import {
+  getSelectClasses,
+  getAmountClasses,
+  styles,
+} from "@/app/capital/styles";
+import { PNL_ACCOUNT_ID, TX_TYPES, ICONS } from "@/app/capital/config";
 
 interface TransactionRowProps {
   transaction: Transaction;
@@ -25,14 +28,20 @@ interface TransactionRowProps {
   onOpenModal: (transaction: Transaction) => void;
 }
 
-const PNL_ACCOUNT_ID = "__pnl__";
-
 type MoneyLike = { amount: string | number; ccy: string };
 
+/**
+ * Determines if a transaction leg is a P&L (profit/loss) leg.
+ * A leg is considered P&L if it's linked to the special P&L account or has a category assigned.
+ */
 function isPnlLeg(l: Transaction["legs"][number]) {
   return l.account_id === PNL_ACCOUNT_ID || l.category_id != null;
 }
 
+/**
+ * Extracts fiat amount and currency from a transaction leg.
+ * Returns null if the leg is missing or has no fiat amount.
+ */
 function pickFiatAmount(l?: any): MoneyLike | null {
   if (!l) return null;
   if (l.amount?.kind === "Fiat")
@@ -42,6 +51,10 @@ function pickFiatAmount(l?: any): MoneyLike | null {
   return v != null && c ? { amount: v, ccy: c } : null;
 }
 
+/**
+ * Derives semantic roles from transaction legs.
+ * Identifies P&L leg, asset legs, source (from), destination (to), and FX details.
+ */
 function deriveRoles(tx: Transaction) {
   const pnl = tx.legs.find(isPnlLeg);
   const assets = tx.legs.filter((l) => !isPnlLeg(l));
@@ -61,6 +74,10 @@ type RowView = {
   subtitle?: string | null;
 };
 
+/**
+ * Generates a rendering view for a transaction based on its type.
+ * Determines display logic: colors, signs, amounts, account visibility, and envelope controls.
+ */
 function viewFor(tx: Transaction): RowView {
   const { pnl, from, to, hasFx, fxRate } = deriveRoles(tx);
   const type = tx.tx_type || "adjustment";
@@ -158,47 +175,10 @@ function viewFor(tx: Transaction): RowView {
   }
 }
 
-const TypeBadge: React.FC<{ kind?: string | null }> = ({ kind }) => {
-  if (!kind) return null;
-  const map: Record<string, string> = {
-    spending: "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300",
-    refund:
-      "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300",
-    income:
-      "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300",
-    transfer: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
-    transfer_fx:
-      "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
-    fee_only:
-      "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
-    trade: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300",
-    adjustment:
-      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-  };
-  return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[kind] || ""}`}>
-      {kind.replace("_", " ")}
-    </span>
-  );
-};
-
-const AccountPill: React.FC<{
-  id?: string | null;
-  accountMap: Map<string, { name: string; color: string }>;
-}> = ({ id, accountMap }) => {
-  if (!id) return <span className="text-xs text-gray-400">N/A</span>;
-  const meta = accountMap.get(id) || { name: id, color: "gray" };
-  return (
-    <span
-      className={`text-sm font-medium rounded px-2 py-1 ${getAccountColorClasses(
-        meta.color
-      )}`}
-    >
-      {meta.name}
-    </span>
-  );
-};
-
+/**
+ * Finds the index of the P&L leg in a transaction.
+ * Used for identifying which leg to update when reclassifying transactions to envelopes.
+ */
 function getPnlLegIndex(tx: Transaction): number {
   const idx = tx.legs.findIndex((l) => l.account_id === PNL_ACCOUNT_ID);
   return idx >= 0 ? idx : tx.legs.findIndex((l) => l.category_id != null);
@@ -221,17 +201,6 @@ export default function TransactionRow({
   const currentCategory =
     pnlLegIdx >= 0 ? tx.legs[pnlLegIdx]?.category_id ?? "" : "";
 
-  const TX_TYPES = [
-    { value: "spending", label: "Spending" },
-    { value: "income", label: "Income" },
-    { value: "fee_only", label: "Fee Only" },
-    { value: "transfer", label: "Transfer" },
-    { value: "transfer_fx", label: "Transfer (FX)" },
-    { value: "trade", label: "Trade" },
-    { value: "adjustment", label: "Adjustment" },
-    { value: "refund", label: "Refund" },
-  ];
-
   // if (tx.tx_type == "spending" || tx.tx_type == "refund")
   return (
     <tr
@@ -246,13 +215,71 @@ export default function TransactionRow({
       {/* Account / Transfer merged cell */}
       {view.accounts.from && view.accounts.to ? (
         <td className="px-6 py-4 whitespace-nowrap" colSpan={2}>
-          <div className="flex items-center gap-3">
-            <AccountPill id={view.accounts.from} accountMap={accountMap} />
-            <span className="material-symbols-outlined text-sm text-gray-400 dark:text-gray-400">
-              arrow_right_alt
-            </span>
-            <AccountPill id={view.accounts.to} accountMap={accountMap} />
-          </div>
+          {tx.tx_type === "transfer_fx" ? (
+            <div className="flex flex-row gap-1">
+              <div className="flex items-center gap-2">
+                <AccountPill id={view.accounts.from} accountMap={accountMap} />
+                {(() => {
+                  const { from, to, pnl } = deriveRoles(tx);
+                  const fromAmt = pickFiatAmount(from);
+                  const toAmt = pickFiatAmount(to);
+                  const feeAmt = pickFiatAmount(pnl);
+                  const fxRate = from?.fx?.rate ?? to?.fx?.rate ?? null;
+                  return (
+                    <>
+                      {fromAmt && (
+                        <span className="font-medium">
+                          {formatAmount(String(fromAmt.amount), fromAmt.ccy)}
+                        </span>
+                      )}
+                      <span className="material-symbols-outlined text-sm text-gray-600 dark:text-gray-400">
+                        {ICONS.ARROW_RIGHT_ALT}
+                      </span>
+                      <AccountPill
+                        id={view.accounts.to}
+                        accountMap={accountMap}
+                      />
+                      {toAmt && (
+                        <span className="font-medium">
+                          {formatAmount(String(toAmt.amount), toAmt.ccy)}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex items-center gap-2 font-medium">
+                {(() => {
+                  const { from, to, pnl } = deriveRoles(tx);
+                  const feeAmt = pickFiatAmount(pnl);
+                  const fxRate = from?.fx?.rate ?? to?.fx?.rate ?? null;
+                  return (
+                    <>
+                      {fxRate && (
+                        <span>
+                          @ {fxRate} {from?.amount.data.ccy}/
+                          {to?.amount.data.ccy}
+                        </span>
+                      )}
+                      {/* {feeAmt && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Fee: {formatAmount(String(feeAmt.amount), feeAmt.ccy)}
+                        </span>
+                      )} */}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <AccountPill id={view.accounts.from} accountMap={accountMap} />
+              <span className="material-symbols-outlined text-sm text-gray-400 dark:text-gray-400">
+                {ICONS.ARROW_RIGHT_ALT}
+              </span>
+              <AccountPill id={view.accounts.to} accountMap={accountMap} />
+            </div>
+          )}
         </td>
       ) : (
         <>
@@ -290,7 +317,7 @@ export default function TransactionRow({
                 onUpdateType(tx.id, newType);
               }}
               disabled={updatingType.has(tx.id)}
-              className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+              className={getSelectClasses("small")}
             >
               <option value="">No Type</option>
               {TX_TYPES.map((type) => (
@@ -300,7 +327,7 @@ export default function TransactionRow({
               ))}
             </select>
             {updatingType.has(tx.id) && (
-              <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+              <div className={styles.spinner.small}></div>
             )}
           </div>
           {/* Envelope */}
@@ -315,7 +342,7 @@ export default function TransactionRow({
                   onReclassify(tx.id, pnlLegIdx, e.target.value || null)
                 }
                 disabled={reclassifying.has(tx.id)}
-                className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                className={getSelectClasses("small")}
               >
                 <option value="">No Category</option>
                 {envelopes.map((envelope) => (
@@ -325,7 +352,7 @@ export default function TransactionRow({
                 ))}
               </select>
               {reclassifying.has(tx.id) && (
-                <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                <div className={styles.spinner.small}></div>
               )}
             </div>
           )}
@@ -336,11 +363,11 @@ export default function TransactionRow({
         <button
           onClick={() => onDelete(tx.id, tx.payee || "Unknown")}
           disabled={deleting.has(tx.id)}
-          className="inline-flex items-center px-3 py-1 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-base font-medium transition-colors"
+          className={styles.button.danger}
           title="Delete transaction"
         >
           {deleting.has(tx.id) ? (
-            <div className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full"></div>
+            <div className={styles.spinner.medium}></div>
           ) : (
             <>
               <svg

@@ -909,6 +909,7 @@ pub struct TransactionQuery {
     pub from: Option<i64>, // Unix timestamp
     pub to: Option<i64>,   // Unix timestamp
     pub label: Option<String>,
+    pub tx_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -926,6 +927,7 @@ pub struct ReclassifyTransactionRequest {
 /// - label: Filter by cycle label (e.g., "2025-10"). Takes precedence over from/to.
 /// - from: Unix timestamp for start of time range (inclusive, ignored if label is provided)
 /// - to: Unix timestamp for end of time range (inclusive, ignored if label is provided)
+/// - tx_type: Filter by transaction type (spending, income, fee_only, transfer, transfer_fx, trade, adjustment, refund)
 ///
 /// Uses posted_ts when available, falls back to ts for time filtering.
 ///
@@ -935,7 +937,8 @@ pub struct ReclassifyTransactionRequest {
 /// - GET /capital/transactions?envelope_id=env.groceries
 /// - GET /capital/transactions?label=2025-10
 /// - GET /capital/transactions?from=1696000000&to=1698591999
-/// - GET /capital/transactions?account_id=acct.chase_credit&label=2025-10&envelope_id=env.groceries
+/// - GET /capital/transactions?tx_type=spending
+/// - GET /capital/transactions?account_id=acct.chase_credit&label=2025-10&envelope_id=env.groceries&tx_type=transfer_fx
 pub async fn get_transactions(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TransactionQuery>,
@@ -957,6 +960,11 @@ pub async fn get_transactions(
     // Filter by envelope_id/category_id if provided
     if let Some(envelope_id) = &params.envelope_id {
         filter.insert("legs.category_id", envelope_id);
+    }
+
+    // Filter by tx_type if provided
+    if let Some(tx_type) = &params.tx_type {
+        filter.insert("tx_type", tx_type);
     }
 
     // Determine time range: prefer cycle label, fall back to from/to params

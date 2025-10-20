@@ -1,4 +1,5 @@
 import type { Money, RolloverPolicy, Account, AccountNetwork } from "./types";
+import { CURRENCY_CONFIG, ACCOUNT_COLORS, DEFAULTS } from "./config";
 
 export function formatMoney(money: Money): string {
   const amount = parseFloat(money.amount);
@@ -23,7 +24,10 @@ export function formatAmount(amount: string, ccy: string): string {
   const symbol =
     ccy === "USD" ? "$" : ccy === "HKD" ? "HK$" : ccy === "BTC" ? "₿" : "";
 
-  const decimals = ccy === "BTC" ? 8 : 2;
+  const decimals =
+    CURRENCY_CONFIG.DECIMAL_PLACES[
+      ccy as keyof typeof CURRENCY_CONFIG.DECIMAL_PLACES
+    ] || 2;
   const formatted = num.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -65,7 +69,7 @@ export function getAccountColorClasses(color: string): string {
       "bg-neutral-100 dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300",
     stone: "bg-stone-100 dark:bg-stone-900 text-stone-700 dark:text-stone-300",
   };
-  return colorMap[color] || colorMap.gray;
+  return colorMap[color] || colorMap[DEFAULTS.ACCOUNT_COLOR];
 }
 
 export function getRolloverText(rollover: RolloverPolicy): string {

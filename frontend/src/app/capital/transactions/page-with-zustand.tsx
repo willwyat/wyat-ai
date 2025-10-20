@@ -1,0 +1,371 @@
+import React, { useEffect } from "react";
+import { useCapitalStore } from "@/stores";
+import TransactionRow from "@/app/capital/components/TransactionRow";
+import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
+import TransactionModal from "@/app/capital/components/TransactionModal";
+import { getSelectClasses, styles } from "@/app/capital/styles";
+import { API_CONFIG, UI_CONFIG, ICONS } from "@/app/capital/config";
+
+export default function TransactionsPage() {
+  const {
+    // Data
+    transactions,
+    envelopes,
+    accounts,
+    cycles,
+    envelopeUsage,
+
+    // UI State
+    loading,
+    error,
+    filters,
+    sortOrder,
+
+    // Operation States
+    reclassifying,
+    deleting,
+    updatingType,
+
+    // Modal State
+    selectedTransaction,
+    isModalOpen,
+
+    // Actions
+    fetchTransactions,
+    fetchEnvelopes,
+    fetchAccounts,
+    fetchCycles,
+    fetchEnvelopeUsage,
+    reclassifyTransaction,
+    updateTransactionType,
+    deleteTransaction,
+    setFilters,
+    setSortOrder,
+    setSelectedTransaction,
+    setIsModalOpen,
+    clearError,
+  } = useCapitalStore();
+
+  // Create a map of account IDs to account info
+  const accountMap = new Map(
+    accounts.map((account) => [
+      account.id,
+      {
+        name: account.name,
+        color: account.metadata.data.color || "gray",
+      },
+    ])
+  );
+
+  // Load data on component mount
+  useEffect(() => {
+    fetchEnvelopes();
+    fetchAccounts();
+    fetchCycles();
+  }, [fetchEnvelopes, fetchAccounts, fetchCycles]);
+
+  // Set default cycle to active cycle once cycles are loaded
+  useEffect(() => {
+    if (cycles && !filters.label) {
+      setFilters({ label: cycles.active });
+    }
+  }, [cycles, filters.label, setFilters]);
+
+  // Fetch transactions when filters change
+  useEffect(() => {
+    fetchTransactions();
+  }, [filters, fetchTransactions]);
+
+  // Fetch envelope usage when cycle changes
+  useEffect(() => {
+    if (filters.label) {
+      fetchEnvelopeUsage(filters.label);
+    }
+  }, [filters.label, fetchEnvelopeUsage]);
+
+  const handleReclassify = (
+    transactionId: string,
+    legIndex: number,
+    categoryId: string | null
+  ) => {
+    reclassifyTransaction(transactionId, legIndex, categoryId);
+  };
+
+  const handleUpdateType = (transactionId: string, txType: string | null) => {
+    updateTransactionType(transactionId, txType);
+  };
+
+  const handleDelete = (transactionId: string, payee: string) => {
+    deleteTransaction(transactionId, payee);
+  };
+
+  const handleOpenModal = (transaction: any) => {
+    setSelectedTransaction(transaction);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedTransaction(null);
+  };
+
+  const handleCyclePrev = () => {
+    if (!cycles || !filters.label) return;
+    const currentIndex = cycles.labels.indexOf(filters.label);
+    if (currentIndex > 0) {
+      setFilters({ label: cycles.labels[currentIndex - 1] });
+    }
+  };
+
+  const handleCycleNext = () => {
+    if (!cycles || !filters.label) return;
+    const currentIndex = cycles.labels.indexOf(filters.label);
+    if (currentIndex < cycles.labels.length - 1) {
+      setFilters({ label: cycles.labels[currentIndex + 1] });
+    }
+  };
+
+  const getSortedTransactions = () => {
+    if (sortOrder === "default") {
+      return transactions;
+    }
+    return [...transactions].sort((a, b) => {
+      const comparison = a.ts - b.ts;
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+  };
+
+  if (loading && transactions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">
+              Error
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
+            <button
+              onClick={clearError}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Transactions
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300">
+            View and filter transaction history
+          </p>
+        </div>
+
+        {/* Cycle Navigation */}
+        <div className={`${styles.card.padded}`}>
+          <div className="flex items-center justify-between gap-4">
+            <button
+              onClick={handleCyclePrev}
+              disabled={
+                !cycles ||
+                !filters.label ||
+                cycles.labels.indexOf(filters.label) === 0
+              }
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-8"
+              title="Previous cycle"
+            >
+              <span className="material-symbols-rounded text-2xl">
+                {ICONS.CHEVRON_LEFT}
+              </span>
+            </button>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {filters.label || cycles?.active || "—"}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {filters.label === cycles?.active && "(Active Cycle)"}
+              </div>
+            </div>
+            <button
+              onClick={handleCycleNext}
+              disabled={
+                !cycles ||
+                !filters.label ||
+                cycles.labels.indexOf(filters.label) ===
+                  cycles.labels.length - 1
+              }
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-8"
+              title="Next cycle"
+            >
+              <span className="material-symbols-rounded text-2xl">
+                {ICONS.CHEVRON_RIGHT}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Envelopes */}
+        <div className="mb-8">
+          <h2 className={styles.text.heading}>Envelopes</h2>
+          <div className={UI_CONFIG.ENVELOPE_GRID}>
+            {envelopes
+              .filter((envelope) => envelope.status === "Active")
+              .map((envelope) => {
+                const usage = envelopeUsage.get(envelope.id);
+                return (
+                  <EnvelopeCard
+                    key={envelope.id}
+                    envelope={envelope}
+                    totalSpent={usage?.spent}
+                    budget={usage?.budget}
+                    percent={usage?.percent}
+                  />
+                );
+              })}
+          </div>
+        </div>
+
+        {/* Transactions Table */}
+        {!loading && !error && (
+          <div className="bg-white dark:bg-gray-800 md:rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className={styles.text.subheading}>
+                Transactions ({getSortedTransactions().length})
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Date
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
+                        <span>Account</span>
+                        <select
+                          id="account-filter"
+                          value={filters.account_id || ""}
+                          onChange={(e) =>
+                            setFilters({
+                              account_id: e.target.value || undefined,
+                            })
+                          }
+                          className={getSelectClasses("compact")}
+                        >
+                          <option value="">All</option>
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Payee
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
+                      Amount
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm text-gray-500 dark:text-gray-400 uppercase">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium tracking-wider">
+                          Type & Envelope
+                        </span>
+                        <div className="flex gap-2">
+                          <select
+                            id="tx-type-filter"
+                            value={filters.tx_type || ""}
+                            onChange={(e) =>
+                              setFilters({
+                                tx_type: e.target.value || undefined,
+                              })
+                            }
+                            className={getSelectClasses("compact")}
+                          >
+                            <option value="">All Types</option>
+                            <option value="spending">Spending</option>
+                            <option value="income">Income</option>
+                            <option value="refund">Refund</option>
+                            <option value="transfer">Transfer</option>
+                            <option value="transfer_fx">Transfer (FX)</option>
+                            <option value="fee_only">Fee</option>
+                            <option value="trade">Trade</option>
+                            <option value="adjustment">Adjustment</option>
+                          </select>
+                          <select
+                            id="envelope-filter"
+                            value={filters.envelope_id || ""}
+                            onChange={(e) =>
+                              setFilters({
+                                envelope_id: e.target.value || undefined,
+                              })
+                            }
+                            className={getSelectClasses("compact")}
+                          >
+                            <option value="">All Envelopes</option>
+                            {envelopes.map((envelope) => (
+                              <option key={envelope.id} value={envelope.id}>
+                                {envelope.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {getSortedTransactions().map((tx) => (
+                    <TransactionRow
+                      key={tx.id}
+                      transaction={tx}
+                      accountMap={accountMap}
+                      envelopes={envelopes}
+                      reclassifying={reclassifying}
+                      deleting={deleting}
+                      updatingType={updatingType}
+                      onReclassify={handleReclassify}
+                      onUpdateType={handleUpdateType}
+                      onDelete={handleDelete}
+                      onOpenModal={handleOpenModal}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Transaction Modal */}
+        <TransactionModal
+          isOpen={isModalOpen}
+          transaction={selectedTransaction}
+          onClose={handleCloseModal}
+          accountMap={accountMap}
+          envelopes={envelopes}
+        />
+      </div>
+    </div>
+  );
+}

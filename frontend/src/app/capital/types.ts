@@ -138,6 +138,7 @@ export interface TransactionQuery {
   from?: number;
   to?: number;
   label?: string;
+  tx_type?: string;
 }
 
 export interface CycleList {
