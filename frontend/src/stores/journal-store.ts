@@ -35,6 +35,11 @@ interface JournalState {
   clearError: () => void;
 }
 
+const getEntryId = (entry: Pick<JournalEntry, "_id"> | null) => {
+  if (!entry) return null;
+  return typeof entry._id === "string" ? entry._id : entry._id.$oid;
+};
+
 export const useJournalStore = create<JournalState>((set, get) => ({
   entries: [],
   loading: false,
@@ -155,7 +160,7 @@ export const useJournalStore = create<JournalState>((set, get) => ({
       await get().fetchEntries();
 
       // If this was the selected entry, refresh it too
-      if (get().selectedEntry?._id === id) {
+      if (getEntryId(get().selectedEntry) === id) {
         await get().fetchEntryById(id);
       }
 
@@ -186,11 +191,13 @@ export const useJournalStore = create<JournalState>((set, get) => ({
       }
 
       // Remove the entry from the list
-      const updatedEntries = get().entries.filter((entry) => entry._id !== id);
+      const updatedEntries = get().entries.filter(
+        (entry) => getEntryId(entry) !== id
+      );
       set({ entries: updatedEntries, loading: false });
 
       // Clear selected entry if it was the deleted one
-      if (get().selectedEntry?._id === id) {
+      if (getEntryId(get().selectedEntry) === id) {
         set({ selectedEntry: null });
       }
 
