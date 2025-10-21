@@ -1,19 +1,22 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import {
   useCapitalStore,
   type ImportResponse,
   type DocumentInfo,
   type ListDocumentsResponse,
 } from "@/stores/capital-store";
-import { Document as PDFDocument, Page as PDFPage, pdfjs } from "react-pdf";
 import Modal from "@/components/Modal";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
 
-// Set up PDF.js worker - use a CDN that works better with modern bundlers
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Dynamically import PDF viewer with SSR disabled to avoid DOMMatrix errors
+const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="text-center py-8 text-gray-500">Loading PDF viewer...</div>
+  ),
+});
 
 type BlobResponse = {
   id?: string;
@@ -565,30 +568,14 @@ export default function DocumentPage() {
       >
         <div className="flex justify-center">
           {viewingDoc && (
-            <PDFDocument
-              file={`${BACKEND_URL}/blobs/${getBlobId(viewingDoc.blob_id)}`}
-              options={pdfOptions}
+            <PDFViewer
+              fileUrl={`${BACKEND_URL}/blobs/${getBlobId(viewingDoc.blob_id)}`}
+              pageNumber={pageNumber}
               onLoadSuccess={({ numPages }: { numPages: number }) =>
                 setNumPages(numPages)
               }
-              loading={
-                <div className="text-center py-8 text-gray-500">
-                  Loading PDF...
-                </div>
-              }
-              error={
-                <div className="text-center py-8 text-red-600">
-                  Failed to load PDF. Please try again.
-                </div>
-              }
-            >
-              <PDFPage
-                pageNumber={pageNumber}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-                className="shadow-lg"
-              />
-            </PDFDocument>
+              options={pdfOptions}
+            />
           )}
         </div>
       </Modal>
