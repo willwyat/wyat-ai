@@ -314,7 +314,7 @@ export default function TransactionRow({
                     : null;
                   return (
                     <>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <AccountPill
                           id={view.accounts.from}
                           accountMap={accountMap}
@@ -326,7 +326,7 @@ export default function TransactionRow({
                       <span className="material-symbols-outlined text-sm text-gray-600 dark:text-gray-400">
                         {ICONS.ARROW_RIGHT_ALT}
                       </span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <AccountPill
                           id={view.accounts.to}
                           accountMap={accountMap}
@@ -403,7 +403,7 @@ export default function TransactionRow({
                     : null;
                   return (
                     <>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <AccountPill
                           id={view.accounts.from}
                           accountMap={accountMap}
@@ -415,7 +415,7 @@ export default function TransactionRow({
                       <span className="material-symbols-outlined text-sm text-gray-600 dark:text-gray-400">
                         {ICONS.ARROW_RIGHT_ALT}
                       </span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <AccountPill
                           id={view.accounts.to}
                           accountMap={accountMap}
