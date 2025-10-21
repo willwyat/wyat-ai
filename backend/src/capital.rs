@@ -20,12 +20,18 @@ use axum::{
     Json,
     extract::{Query, State},
 };
-use mongodb::bson;
+use bytes::Bytes;
+use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::{Database, bson};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
+
+// Import storage functions and types
+use crate::services::openai::{ExtractResult, extract_bank_statement};
+use crate::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 
 // ------------------------- Money -------------------------
 
@@ -1185,4 +1191,85 @@ pub async fn delete_transaction(
         }
         Err(e) => Err(format!("Database delete error: {}", e)),
     }
+}
+
+// POST /capital/documents/import
+#[derive(serde::Deserialize)]
+pub struct ImportReq {
+    pub blob_id: ObjectId,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub namespace: String, // expect "capital"
+    #[serde(default)]
+    pub kind: String, // expect "bank_statement"
+}
+
+#[derive(serde::Serialize)]
+pub struct ImportResp {
+    pub doc: Document,
+    pub csv_blob_id: ObjectId,
+    pub audit: serde_json::Value,
+    pub rows_preview: Vec<serde_json::Value>,
+}
+
+pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Result<ImportResp> {
+    // 1) Create or reuse Document (status: "uploaded")
+    let title = req.title.unwrap_or_else(|| "Bank Statement".to_string());
+    // Generate a unique doc_id for this blob
+    let doc_id = format!("doc_capital_{}", req.blob_id.to_hex());
+
+    let doc = create_document(
+        db,
+        &doc_id,
+        "capital",
+        "bank_statement",
+        &title,
+        req.blob_id,
+        bson::doc! {}, // we'll add inferred fields after extraction
+    )
+    .await?;
+
+    // 2) Extract text locally → call OpenAI once to produce transactions + balances/period
+    let pdf_bytes = get_blob_bytes_by_id(db, req.blob_id).await?;
+    let ExtractResult {
+        csv_text,
+        audit_json,
+        inferred_meta,
+        rows_preview,
+    } = extract_bank_statement(Some(db), &pdf_bytes, None).await?;
+
+    // 3) Persist CSV + audit as blobs
+    let csv_blob = insert_blob(db, Bytes::from(csv_text.into_bytes()), "text/csv").await?;
+    let audit_blob = insert_blob(
+        db,
+        Bytes::from(audit_json.to_string().into_bytes()),
+        "application/json",
+    )
+    .await?;
+
+    // 4) Update Document → "parsed", attach metadata & blob ids
+    let docs = db.collection::<Document>("documents");
+    let now = chrono::Utc::now().timestamp();
+
+    // Convert serde_json::Value to bson::Bson
+    let inferred_bson = bson::to_bson(&inferred_meta)?;
+
+    let update = doc! {
+        "$set": {
+          "status.ingest": "parsed",
+          "updated_at": now,
+          "metadata.csv_blob_id": csv_blob.id,
+          "metadata.audit_blob_id": audit_blob.id,
+          "metadata.inferred": inferred_bson,   // institution, last4, period, balances
+        }
+    };
+    let _ = docs.update_one(doc! {"_id": &doc.id}, update, None).await?;
+
+    Ok(ImportResp {
+        doc,
+        csv_blob_id: csv_blob.id,
+        audit: audit_json,
+        rows_preview,
+    })
 }

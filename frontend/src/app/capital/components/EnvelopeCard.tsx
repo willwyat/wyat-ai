@@ -22,6 +22,7 @@ export function EnvelopeCard({
   budget,
   percent,
 }: EnvelopeCardProps) {
+  console.log("EnvelopeCard", envelope, totalSpent, budget, percent);
   const isPositive = parseFloat(envelope.balance.amount) >= 0;
   const isActive = envelope.status === "Active";
 

@@ -7,6 +7,10 @@ edition = "2024"
 name = "wyat_ai_backend"
 path = "src/lib.rs"
 
+[features]
+default = ["pdfium"]
+pdfium = ["pdfium-render"]
+
 [dependencies]
 axum = "0.6"
 tokio = { version = "1", features = ["full"] }
@@ -29,9 +33,12 @@ utoipa = { version = "4", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "4", features = ["axum"] }
 rust_decimal = { version = "1", features = ["serde"] }
 anyhow = "1"
+bytes = "1"
 clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
 csv = "1"
 uuid = { version = "1", features = ["v4"] }
+pdfium-render = { version = "0.x", optional = true }
 
 [[bin]]
 name = "seed_za_bank_csv"

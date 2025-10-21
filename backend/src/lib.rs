@@ -7,6 +7,7 @@ use mongodb::Client as MongoClient;
 pub mod capital;
 pub mod journal;
 pub mod services;
+pub mod storage;
 
 /// Shared application state
 #[derive(Clone)]

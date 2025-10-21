@@ -3,12 +3,13 @@ mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 mod meta;
+mod storage;
 mod vitals;
 mod workout;
 
 // AppState is now defined in the root module
-struct AppState {
-    mongo_client: mongodb::Client,
+pub struct AppState {
+    pub mongo_client: mongodb::Client,
 }
 
 use journal::{
@@ -47,6 +48,7 @@ use services::oura::{
     handle_oura_daily_stress_sync, handle_oura_heartrate_sync, handle_oura_historical_sync,
     handle_oura_sleep_sync, handle_oura_vo2_max_sync,
 };
+use services::storage_http;
 use vitals::{
     get_daily_activity, get_daily_cardiovascular_age, get_daily_readiness, get_daily_resilience,
     get_daily_spo2, get_daily_stress, get_vo2_max,
@@ -370,6 +372,7 @@ async fn main() {
             post(workout::find_exercise_type_by_muscle),
         )
         .with_state(state.clone())
+        .merge(storage_http::routes(state.clone()))
         .merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
         .layer(cors);
 

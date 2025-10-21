@@ -1,14 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import type {
-  Envelope,
-  Account,
-  Transaction,
-  TransactionQuery,
-  CycleList,
-  EnvelopeUsage,
-} from "@/app/capital/types";
+import React, { useEffect } from "react";
+import { useCapitalStore } from "@/stores";
 import TransactionRow from "@/app/capital/components/TransactionRow";
 import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
 import TransactionModal from "@/app/capital/components/TransactionModal";
@@ -16,321 +9,99 @@ import { getSelectClasses, styles } from "@/app/capital/styles";
 import { API_CONFIG, UI_CONFIG, ICONS } from "@/app/capital/config";
 
 export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [envelopes, setEnvelopes] = useState<Envelope[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [cycles, setCycles] = useState<CycleList | null>(null);
-  const [envelopeUsage, setEnvelopeUsage] = useState<
-    Map<string, EnvelopeUsage>
-  >(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<TransactionQuery>({});
-  const [reclassifying, setReclassifying] = useState<Set<string>>(new Set());
-  const [deleting, setDeleting] = useState<Set<string>>(new Set());
-  const [updatingType, setUpdatingType] = useState<Set<string>>(new Set());
-  const [sortOrder, setSortOrder] = useState<"default" | "asc" | "desc">(
-    UI_CONFIG.TABLE.DEFAULT_SORT_ORDER
-  );
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const {
+    // Data
+    transactions,
+    envelopes,
+    accounts,
+    cycles,
+    envelopeUsage,
+
+    // UI State
+    loading,
+    error,
+    filters,
+    sortOrder,
+
+    // Operation States
+    reclassifying,
+    deleting,
+    updatingType,
+
+    // Modal State
+    selectedTransaction,
+    isModalOpen,
+
+    // Actions
+    fetchTransactions,
+    fetchEnvelopes,
+    fetchAccounts,
+    fetchCycles,
+    fetchEnvelopeUsage,
+    reclassifyTransaction,
+    updateTransactionType,
+    deleteTransaction,
+    setFilters,
+    setSortOrder,
+    setSelectedTransaction,
+    setIsModalOpen,
+    clearError,
+  } = useCapitalStore();
 
   // Create a map of account IDs to account info
   const accountMap = new Map(
     accounts.map((account) => [
       account.id,
-      { name: account.name, color: account.metadata.data.color || "gray" },
+      {
+        name: account.name,
+        color: account.metadata.data.color || "gray",
+      },
     ])
   );
 
-  const fetchTransactions = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (filters.account_id) params.append("account_id", filters.account_id);
-      if (filters.envelope_id)
-        params.append("envelope_id", filters.envelope_id);
-      if (filters.tx_type) params.append("tx_type", filters.tx_type);
-      if (filters.label) {
-        // Cycle label takes precedence over from/to timestamps
-        params.append("label", filters.label);
-      } else {
-        if (filters.from) params.append("from", filters.from.toString());
-        if (filters.to) params.append("to", filters.to.toString());
-      }
-
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.TRANSACTIONS}?${params}`
-      );
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("Transactions data:", data);
-      setTransactions(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCycles = async () => {
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CYCLES}`
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      console.log("Cycles data:", data);
-      console.log("Available cycles:", data.labels);
-      console.log("Active cycle:", data.active);
-      setCycles(data);
-    } catch (err) {
-      console.error("Failed to fetch cycles:", err);
-    }
-  };
-
-  const fetchEnvelopeUsage = async (cycle: string) => {
-    if (!cycle || envelopes.length === 0) return;
-
-    try {
-      const usagePromises = envelopes.map(async (envelope) => {
-        try {
-          const res = await fetch(
-            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENVELOPE_USAGE(
-              envelope.id
-            )}?label=${cycle}`
-          );
-          if (res.ok) {
-            const usage: EnvelopeUsage = await res.json();
-            return [envelope.id, usage] as [string, EnvelopeUsage];
-          }
-        } catch (err) {
-          console.error(`Failed to fetch usage for ${envelope.id}:`, err);
-        }
-        return null;
-      });
-
-      const usageResults = await Promise.all(usagePromises);
-      const usageMap = new Map<string, EnvelopeUsage>();
-      usageResults.forEach((result) => {
-        if (result) {
-          usageMap.set(result[0], result[1]);
-        }
-      });
-      setEnvelopeUsage(usageMap);
-    } catch (err) {
-      console.error("Failed to fetch envelope usage:", err);
-    }
-  };
-
-  const fetchEnvelopes = async () => {
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ENVELOPES}`
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setEnvelopes(data);
-    } catch (err) {
-      console.error("Failed to fetch envelopes:", err);
-    }
-  };
-
-  const fetchAccounts = async () => {
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ACCOUNTS}`
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setAccounts(data);
-    } catch (err) {
-      console.error("Failed to fetch accounts:", err);
-    }
-  };
-
+  // Load data on component mount
   useEffect(() => {
     fetchEnvelopes();
     fetchAccounts();
     fetchCycles();
-  }, []);
+  }, [fetchEnvelopes, fetchAccounts, fetchCycles]);
 
   // Set default cycle to active cycle once cycles are loaded
   useEffect(() => {
     if (cycles && !filters.label) {
-      setFilters((prev) => ({
-        ...prev,
-        label: cycles.active,
-      }));
+      setFilters({ label: cycles.active });
     }
-  }, [cycles]);
+  }, [cycles, filters.label, setFilters]);
 
   // Fetch transactions when filters change
   useEffect(() => {
-    if (filters.label) {
-      // Only fetch if we have a cycle selected
-      fetchTransactions();
-    }
-  }, [filters]);
+    fetchTransactions();
+  }, [filters, fetchTransactions]);
 
   // Fetch envelope usage when cycle changes or envelopes are loaded
   useEffect(() => {
     if (filters.label && envelopes.length > 0) {
       fetchEnvelopeUsage(filters.label);
     }
-  }, [filters.label, envelopes]);
+  }, [filters.label, envelopes.length, fetchEnvelopeUsage]);
 
-  const handleSortByDate = () => {
-    setSortOrder((prev) => {
-      switch (prev) {
-        case "default":
-          return "desc";
-        case "desc":
-          return "asc";
-        case "asc":
-          return "default";
-        default:
-          return "default";
-      }
-    });
-  };
-
-  const getSortedTransactions = () => {
-    if (sortOrder === "default") {
-      return transactions;
-    }
-
-    return [...transactions].sort((a, b) => {
-      if (sortOrder === "asc") {
-        return a.ts - b.ts;
-      } else {
-        return b.ts - a.ts;
-      }
-    });
-  };
-
-  const handleFilterChange = (key: keyof TransactionQuery, value: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value
-        ? key === "account_id"
-          ? value
-          : parseInt(value)
-        : undefined,
-    }));
-  };
-
-  const handleReclassify = async (
+  const handleReclassify = (
     transactionId: string,
     legIndex: number,
     categoryId: string | null
   ) => {
-    setReclassifying((prev) => new Set(prev).add(transactionId));
-
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}/capital/transactions/reclassify`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            transaction_id: transactionId,
-            leg_index: legIndex,
-            category_id: categoryId,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Update the transaction in the local state
-      setTransactions((prev) =>
-        prev.map((tx) =>
-          tx.id === transactionId
-            ? {
-                ...tx,
-                legs: tx.legs.map((leg, index) =>
-                  index === legIndex ? { ...leg, category_id: categoryId } : leg
-                ),
-              }
-            : tx
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reclassify transaction"
-      );
-    } finally {
-      setReclassifying((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(transactionId);
-        return newSet;
-      });
-    }
+    reclassifyTransaction(transactionId, legIndex, categoryId);
   };
 
-  const handleUpdateType = async (
-    transactionId: string,
-    txType: string | null
-  ) => {
-    setUpdatingType((prev) => new Set(prev).add(transactionId));
-
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.UPDATE_TRANSACTION_TYPE(
-          transactionId
-        )}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ tx_type: txType }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP error! status: ${response.status}`);
-      }
-
-      // Update the transaction in the local state
-      setTransactions((prev) =>
-        prev.map((tx) =>
-          tx.id === transactionId ? { ...tx, tx_type: txType || undefined } : tx
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to update transaction type"
-      );
-    } finally {
-      setUpdatingType((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(transactionId);
-        return newSet;
-      });
-    }
+  const handleUpdateType = (transactionId: string, txType: string | null) => {
+    updateTransactionType(transactionId, txType);
   };
 
-  const handleOpenModal = (transaction: Transaction) => {
+  const handleDelete = (transactionId: string, payee: string) => {
+    deleteTransaction(transactionId, payee);
+  };
+
+  const handleOpenModal = (transaction: any) => {
     setSelectedTransaction(transaction);
     setIsModalOpen(true);
   };
@@ -340,51 +111,11 @@ export default function TransactionsPage() {
     setSelectedTransaction(null);
   };
 
-  const handleDelete = async (transactionId: string, payee: string) => {
-    // Confirmation dialog
-    const confirmed = window.confirm(
-      `Are you sure you want to delete the transaction "${payee}"?\n\nThis action cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
-    setDeleting((prev) => new Set(prev).add(transactionId));
-
-    try {
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}/capital/transactions/${transactionId}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Remove the transaction from the local state
-      setTransactions((prev) => prev.filter((tx) => tx.id !== transactionId));
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to delete transaction"
-      );
-    } finally {
-      setDeleting((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(transactionId);
-        return newSet;
-      });
-    }
-  };
-
   const handleCyclePrev = () => {
     if (!cycles || !filters.label) return;
     const currentIndex = cycles.labels.indexOf(filters.label);
     if (currentIndex > 0) {
-      setFilters((prev) => ({
-        ...prev,
-        label: cycles.labels[currentIndex - 1],
-      }));
+      setFilters({ label: cycles.labels[currentIndex - 1] });
     }
   };
 
@@ -392,18 +123,67 @@ export default function TransactionsPage() {
     if (!cycles || !filters.label) return;
     const currentIndex = cycles.labels.indexOf(filters.label);
     if (currentIndex < cycles.labels.length - 1) {
-      setFilters((prev) => ({
-        ...prev,
-        label: cycles.labels[currentIndex + 1],
-      }));
+      setFilters({ label: cycles.labels[currentIndex + 1] });
     }
   };
 
+  const handleSortByDate = () => {
+    setSortOrder(
+      sortOrder === "default"
+        ? "desc"
+        : sortOrder === "desc"
+        ? "asc"
+        : "default"
+    );
+  };
+
+  const getSortedTransactions = () => {
+    if (sortOrder === "default") {
+      return transactions;
+    }
+    return [...transactions].sort((a, b) => {
+      const comparison = a.ts - b.ts;
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+  };
+
+  if (loading && transactions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">
+              Error
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
+            <button
+              onClick={clearError}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 md:p-4 lg:p-8">
-      <div className="mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             Transactions
           </h1>
           <p className="text-gray-600 dark:text-gray-300">
@@ -475,21 +255,7 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Results */}
-        {loading && (
-          <div className="text-center py-8">
-            <p className="text-gray-500 dark:text-gray-400">
-              Loading transactions...
-            </p>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-            <p className="text-red-600 dark:text-red-400">Error: {error}</p>
-          </div>
-        )}
-
+        {/* Transactions Table */}
         {!loading && !error && (
           <div className="bg-white dark:bg-gray-800 md:rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -562,12 +328,11 @@ export default function TransactionsPage() {
                           id="account-filter"
                           value={filters.account_id || ""}
                           onChange={(e) =>
-                            setFilters((prev) => ({
-                              ...prev,
+                            setFilters({
                               account_id: e.target.value || undefined,
-                            }))
+                            })
                           }
-                          className={getSelectClasses("compact")}
+                          className={getSelectClasses("small")}
                         >
                           <option value="">All</option>
                           {accounts.map((account) => (
@@ -594,12 +359,11 @@ export default function TransactionsPage() {
                             id="tx-type-filter"
                             value={filters.tx_type || ""}
                             onChange={(e) =>
-                              setFilters((prev) => ({
-                                ...prev,
+                              setFilters({
                                 tx_type: e.target.value || undefined,
-                              }))
+                              })
                             }
-                            className={getSelectClasses("compact")}
+                            className={getSelectClasses("small")}
                           >
                             <option value="">All Types</option>
                             <option value="spending">Spending</option>
@@ -615,12 +379,11 @@ export default function TransactionsPage() {
                             id="envelope-filter"
                             value={filters.envelope_id || ""}
                             onChange={(e) =>
-                              setFilters((prev) => ({
-                                ...prev,
+                              setFilters({
                                 envelope_id: e.target.value || undefined,
-                              }))
+                              })
                             }
-                            className={getSelectClasses("compact")}
+                            className={getSelectClasses("small")}
                           >
                             <option value="">All Envelopes</option>
                             {envelopes.map((envelope) => (
@@ -659,11 +422,11 @@ export default function TransactionsPage() {
 
         {/* Transaction Modal */}
         <TransactionModal
+          isOpen={isModalOpen}
           transaction={selectedTransaction}
+          onClose={handleCloseModal}
           accountMap={accountMap}
           envelopes={envelopes}
-          isOpen={isModalOpen}
-          onClose={handleCloseModal}
         />
       </div>
     </div>

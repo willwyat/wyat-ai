@@ -1,8 +1,40 @@
+use anyhow::Result;
+use async_openai::Client;
+use async_openai::config::OpenAIConfig;
 use async_openai::types::{
     ChatCompletionRequestMessageArgs, CreateChatCompletionRequestArgs, Role,
 };
-use async_openai::{Client, config::OpenAIConfig};
 
+use anyhow::anyhow;
+use bytes::Bytes;
+use mongodb::{
+    Database,
+    bson::{doc, oid::ObjectId},
+};
+use serde::{Deserialize, Serialize};
+
+use crate::services::pdf::extract_text_from_pdf;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Prompt {
+    #[serde(rename = "_id")]
+    _id: ObjectId,
+    pub id: String,
+    pub namespace: String,
+    pub task: String,
+    pub version: i32,
+    pub description: Option<String>,
+    pub model: Option<String>,
+    pub prompt_template: String,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub calls: Vec<serde_json::Value>,
+}
+
+// ===================
+// * * * JOURNAL * * *
+// ===================
 pub async fn generate_tags_and_keywords(
     entry_text: &str,
 ) -> Result<(Vec<String>, Vec<String>), String> {
@@ -78,4 +110,89 @@ pub async fn generate_tags_and_keywords(
     println!("=== End OpenAI API Call ===");
 
     Ok((tags, keywords))
+}
+
+// ===================
+// * * * CAPITAL * * *
+// ===================
+/// Extract transactions from a bank statement PDF.
+/// - Accepts already-loaded `pdf_bytes`
+/// - Extracts transactions + summary info in one OpenAI call.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExtractResult {
+    pub csv_text: String,
+    pub audit_json: serde_json::Value,
+    pub inferred_meta: serde_json::Value,
+    pub rows_preview: Vec<serde_json::Value>,
+}
+pub async fn extract_bank_statement(
+    db: Option<&Database>,
+    pdf_bytes: &Bytes,
+    prompt_override: Option<String>,
+) -> Result<ExtractResult> {
+    // 1) bytes -> text
+    let text = extract_text_from_pdf(pdf_bytes)?; // implement or call another helper
+    let text_preview = text.chars().take(8000).collect::<String>();
+
+    // 2) load prompt template
+    let prompt = if let Some(p) = prompt_override {
+        if p.contains("{}") {
+            p.replace("{}", &text_preview)
+        } else {
+            format!("{p}\n\nTEXT:\n{text_preview}")
+        }
+    } else {
+        let db = db.ok_or_else(|| anyhow!("no prompt provided and no DB connection"))?;
+        let coll = db.collection::<Prompt>("ai_prompts");
+        let prompt_doc = coll
+            .find_one(doc! {"id": "capital.extract_bank_statement"}, None)
+            .await?
+            .ok_or_else(|| anyhow!("missing prompt capital.extract_bank_statement"))?;
+        let mut t = prompt_doc.prompt_template;
+        if !t.contains("{}") {
+            t.push_str("\n\nTEXT:\n{}");
+        }
+        t.replace("{}", &text_preview)
+    };
+
+    // 3) call OpenAI
+    let api_key = std::env::var("OPENAI_API_SECRET")?;
+    let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+
+    let req = CreateChatCompletionRequestArgs::default()
+        .model("gpt-4o-mini")
+        .messages([ChatCompletionRequestMessageArgs::default()
+            .role(Role::User)
+            .content(prompt)
+            .build()?])
+        .temperature(0.2)
+        .build()?;
+
+    let resp = client.chat().create(req).await?;
+
+    // 4) parse content (strip code fences if present)
+    let content = resp
+        .choices
+        .first()
+        .and_then(|c| c.message.content.clone())
+        .ok_or_else(|| anyhow!("no model content"))?;
+    let cleaned = strip_code_fences(&content);
+    let v: serde_json::Value = serde_json::from_str(&cleaned)
+        .map_err(|e| anyhow!("model did not return valid JSON: {e}"))?;
+
+    Ok(ExtractResult {
+        csv_text: v["csv_text"].as_str().unwrap_or_default().to_string(),
+        audit_json: v["audit_json"].clone(),
+        inferred_meta: v["inferred_meta"].clone(),
+        rows_preview: v["rows_preview"].as_array().cloned().unwrap_or_default(),
+    })
+}
+
+fn strip_code_fences(s: &str) -> String {
+    let s = s.trim();
+    if s.starts_with("```") {
+        let s = s.trim_start_matches("```json").trim_start_matches("```");
+        return s.trim_end_matches("```").trim().to_string();
+    }
+    s.to_string()
 }

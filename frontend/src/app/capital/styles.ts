@@ -7,12 +7,9 @@ export const styles = {
   // Select dropdown styling - used in table headers and transaction rows
   select: {
     base: "px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50",
-    // Compact version for table headers
-    compact:
-      "text-xs font-normal normal-case px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
     // Small version for transaction rows
     small:
-      "px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50",
+      "px-2 py-0.5 text-xs font-normal normal-case tracking-normal border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50",
   },
 
   // Button styling
@@ -86,9 +83,7 @@ export const styles = {
 } as const;
 
 // Helper functions for common style combinations
-export const getSelectClasses = (
-  variant: "base" | "compact" | "small" = "base"
-) => {
+export const getSelectClasses = (variant: "base" | "small" = "base") => {
   return styles.select[variant];
 };
 
