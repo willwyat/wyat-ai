@@ -10,6 +10,35 @@ import type {
   EnvelopeUsage,
 } from "@/app/capital/types";
 
+// Document Import Types
+export interface ImportRequest {
+  blob_id: string;
+  namespace?: string;
+  kind?: string;
+  title?: string;
+}
+
+export interface ImportResponse {
+  doc: {
+    id: string;
+    doc_id: string;
+    namespace: string;
+    kind: string;
+    title: string;
+    blob_id: string;
+    sha256: string;
+    size_bytes: number;
+    content_type: string;
+    status: { ingest: string; error?: string | null };
+    metadata?: Record<string, any>;
+    created_at: number;
+    updated_at: number;
+  };
+  csv_blob_id: string;
+  audit: Record<string, any>;
+  rows_preview: Record<string, any>[];
+}
+
 interface CapitalState {
   // Data
   transactions: Transaction[];
@@ -51,6 +80,10 @@ interface CapitalState {
     txType: string | null
   ) => Promise<void>;
   deleteTransaction: (transactionId: string, payee: string) => Promise<void>;
+  createTransaction: (transactionData: any) => Promise<any>;
+
+  // Actions - Document Import
+  importBankStatement: (request: ImportRequest) => Promise<ImportResponse>;
 
   // Actions - UI
   setFilters: (filters: Partial<TransactionQuery>) => void;
@@ -365,6 +398,65 @@ export const useCapitalStore = create<CapitalState>()(
             return { deleting: newSet };
           });
         }
+      },
+
+      // Document Import Actions
+      importBankStatement: async (request: ImportRequest) => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/documents/import`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              blob_id: request.blob_id,
+              namespace: request.namespace || "capital",
+              kind: request.kind || "bank_statement",
+              title: request.title || "Bank Statement",
+            }),
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Import failed (${response.status}): ${text}`);
+        }
+
+        const data: ImportResponse = await response.json();
+        return data;
+      },
+
+      // Transaction Creation Actions
+      createTransaction: async (transactionData: any) => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/transactions`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify(transactionData),
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(
+            `Create transaction failed (${response.status}): ${text}`
+          );
+        }
+
+        const data = await response.json();
+
+        // Refresh transactions after successful creation
+        get().fetchTransactions();
+
+        return data;
       },
 
       // UI Actions

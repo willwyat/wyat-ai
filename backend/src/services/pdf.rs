@@ -1,32 +1,29 @@
 use bytes::Bytes;
 
-#[cfg(feature = "pdfium")]
 pub fn extract_text_from_pdf(bytes: &Bytes) -> anyhow::Result<String> {
-    use pdfium_render::prelude::*;
+    println!("=== extract_text_from_pdf START ===");
+    println!("Input bytes length: {}", bytes.len());
 
-    let bindings = Pdfium::bind_to_system_library()
-        .or_else(|_| Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name()))?;
-    let pdfium = Pdfium::new(bindings);
+    use lopdf::Document;
 
-    // keep a Vec alive while the doc is in scope; no leak
-    let buf = bytes.to_vec();
-    let doc = pdfium.load_pdf_from_byte_slice(&buf, None)?;
+    println!("Loading PDF with lopdf...");
+    let doc = Document::load_mem(bytes)?;
+    println!("PDF document loaded successfully");
 
+    let page_count = doc.get_pages().len();
+    println!("Processing {} pages", page_count);
+
+    // lopdf::Document::extract_text expects **page numbers** (1-based), not the internal page IDs.
     let mut out = String::new();
-    for page in doc.pages().iter() {
-        let textpage = page.text()?; // this returns a Result
-        let s: String = textpage.all(); // in your version, this returns String (no `?`)
-        out.push_str(&s); // push_str needs &str / &String
+    for page_num in 1..=page_count as u32 {
+        println!("Processing page {}", page_num);
+        let text = doc.extract_text(&[page_num])?;
+        println!("Page {} text length: {} chars", page_num, text.len());
+        out.push_str(&text);
         out.push('\n');
     }
-    Ok(out)
-}
 
-// Fallback when pdfium feature is off
-#[cfg(not(feature = "pdfium"))]
-pub fn extract_text_from_pdf(_bytes: &Bytes) -> anyhow::Result<String> {
-    // TODO: Add lopdf to Cargo.toml or use alternative PDF extraction
-    anyhow::bail!(
-        "PDF extraction requires 'pdfium' feature or lopdf dependency. Run with --features pdfium"
-    )
+    println!("Total extracted text length: {} chars", out.len());
+    println!("=== extract_text_from_pdf SUCCESS ===");
+    Ok(out)
 }

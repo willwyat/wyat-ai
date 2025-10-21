@@ -5,10 +5,13 @@ import { useCapitalStore } from "@/stores";
 import TransactionRow from "@/app/capital/components/TransactionRow";
 import { EnvelopeCard } from "@/app/capital/components/EnvelopeCard";
 import TransactionModal from "@/app/capital/components/TransactionModal";
+import TransactionCreateModal from "@/app/capital/components/TransactionCreateModal";
 import { getSelectClasses, styles } from "@/app/capital/styles";
 import { API_CONFIG, UI_CONFIG, ICONS } from "@/app/capital/config";
 
 export default function TransactionsPage() {
+  const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false);
+
   const {
     // Data
     transactions,
@@ -183,12 +186,23 @@ export default function TransactionsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Transactions
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            View and filter transaction history
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Transactions
+              </h1>
+              <p className="text-gray-600 dark:text-gray-300">
+                View and filter transaction history
+              </p>
+            </div>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-rounded text-lg">add</span>
+              Create Transaction
+            </button>
+          </div>
         </div>
 
         {/* Cycle Navigation */}
@@ -427,6 +441,12 @@ export default function TransactionsPage() {
           onClose={handleCloseModal}
           accountMap={accountMap}
           envelopes={envelopes}
+        />
+
+        {/* Transaction Create Modal */}
+        <TransactionCreateModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
         />
       </div>
     </div>

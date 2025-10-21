@@ -1193,8 +1193,105 @@ pub async fn delete_transaction(
     }
 }
 
+// POST /capital/transactions
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateTransactionReq {
+    pub id: String,
+    pub ts: i64,
+    pub posted_ts: Option<i64>,
+    pub source: String,
+    pub payee: Option<String>,
+    pub memo: Option<String>,
+    pub status: Option<String>,
+    pub reconciled: bool,
+    pub external_refs: Vec<(String, String)>,
+    pub legs: Vec<Leg>,
+    pub tx_type: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CreateTransactionResp {
+    pub success: bool,
+    pub transaction_id: String,
+    pub message: String,
+}
+
+pub async fn create_transaction(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateTransactionReq>,
+) -> Result<Json<CreateTransactionResp>, String> {
+    println!("=== create_transaction START ===");
+    println!("Request: {:?}", req);
+
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    // Check if transaction already exists
+    let existing = collection
+        .find_one(doc! { "id": &req.id }, None)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+    if existing.is_some() {
+        return Err(format!("Transaction with ID '{}' already exists", req.id));
+    }
+
+    // Validate transaction balance (optional check)
+    let (is_balanced, net_amount) = Transaction {
+        id: req.id.clone(),
+        ts: req.ts,
+        posted_ts: req.posted_ts,
+        source: req.source.clone(),
+        payee: req.payee.clone(),
+        memo: req.memo.clone(),
+        status: req.status.clone(),
+        reconciled: req.reconciled,
+        external_refs: req.external_refs.clone(),
+        legs: req.legs.clone(),
+        tx_type: req.tx_type.clone(),
+    }
+    .is_balanced_in(Currency::USD);
+
+    if !is_balanced {
+        println!(
+            "Warning: Transaction is not balanced. Net amount: {:?}",
+            net_amount
+        );
+    }
+
+    // Create the transaction
+    let transaction = Transaction {
+        id: req.id.clone(),
+        ts: req.ts,
+        posted_ts: req.posted_ts,
+        source: req.source,
+        payee: req.payee,
+        memo: req.memo,
+        status: req.status,
+        reconciled: req.reconciled,
+        external_refs: req.external_refs,
+        legs: req.legs,
+        tx_type: req.tx_type,
+    };
+
+    // Insert into database
+    match collection.insert_one(&transaction, None).await {
+        Ok(_) => {
+            println!("Transaction created successfully: {}", req.id);
+            Ok(Json(CreateTransactionResp {
+                success: true,
+                transaction_id: req.id,
+                message: "Transaction created successfully".to_string(),
+            }))
+        }
+        Err(e) => {
+            println!("Failed to create transaction: {}", e);
+            Err(format!("Database error: {}", e))
+        }
+    }
+}
+
 // POST /capital/documents/import
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct ImportReq {
     pub blob_id: ObjectId,
     #[serde(default)]
@@ -1214,11 +1311,19 @@ pub struct ImportResp {
 }
 
 pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Result<ImportResp> {
+    println!("=== import_bank_statement START ===");
+    println!(
+        "Request: blob_id={}, title={:?}, namespace={}, kind={}",
+        req.blob_id, req.title, req.namespace, req.kind
+    );
+
     // 1) Create or reuse Document (status: "uploaded")
     let title = req.title.unwrap_or_else(|| "Bank Statement".to_string());
     // Generate a unique doc_id for this blob
     let doc_id = format!("doc_capital_{}", req.blob_id.to_hex());
+    println!("Generated doc_id: {}", doc_id);
 
+    println!("Creating document...");
     let doc = create_document(
         db,
         &doc_id,
@@ -1229,26 +1334,40 @@ pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Res
         bson::doc! {}, // we'll add inferred fields after extraction
     )
     .await?;
+    println!("Document created successfully: {}", doc.id);
 
     // 2) Extract text locally → call OpenAI once to produce transactions + balances/period
+    println!("Fetching PDF bytes...");
     let pdf_bytes = get_blob_bytes_by_id(db, req.blob_id).await?;
+    println!("PDF bytes fetched: {} bytes", pdf_bytes.len());
+
+    println!("Extracting bank statement...");
     let ExtractResult {
         csv_text,
         audit_json,
         inferred_meta,
         rows_preview,
     } = extract_bank_statement(Some(db), &pdf_bytes, None).await?;
+    println!("Bank statement extracted successfully");
+    println!("CSV text length: {} chars", csv_text.len());
+    println!("Rows preview count: {}", rows_preview.len());
 
     // 3) Persist CSV + audit as blobs
+    println!("Persisting CSV blob...");
     let csv_blob = insert_blob(db, Bytes::from(csv_text.into_bytes()), "text/csv").await?;
+    println!("CSV blob created: {}", csv_blob.id);
+
+    println!("Persisting audit blob...");
     let audit_blob = insert_blob(
         db,
         Bytes::from(audit_json.to_string().into_bytes()),
         "application/json",
     )
     .await?;
+    println!("Audit blob created: {}", audit_blob.id);
 
     // 4) Update Document → "parsed", attach metadata & blob ids
+    println!("Updating document with parsed status...");
     let docs = db.collection::<Document>("documents");
     let now = chrono::Utc::now().timestamp();
 
@@ -1264,8 +1383,10 @@ pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Res
           "metadata.inferred": inferred_bson,   // institution, last4, period, balances
         }
     };
-    let _ = docs.update_one(doc! {"_id": &doc.id}, update, None).await?;
+    let result = docs.update_one(doc! {"_id": &doc.id}, update, None).await?;
+    println!("Document updated: modified_count={}", result.modified_count);
 
+    println!("=== import_bank_statement SUCCESS ===");
     Ok(ImportResp {
         doc,
         csv_blob_id: csv_blob.id,
