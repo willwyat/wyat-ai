@@ -1,7 +1,11 @@
 "use client";
 
-import React from "react";
-import { formatDate, formatAmount } from "@/app/capital/utils";
+import React, { useState } from "react";
+import {
+  formatDate,
+  formatAmount,
+  formatCryptoAmount,
+} from "@/app/capital/utils";
 import type { Transaction, Envelope } from "@/app/capital/types";
 import { AccountPill } from "./AccountPill";
 import {
@@ -29,13 +33,17 @@ interface TransactionRowProps {
 }
 
 type MoneyLike = { amount: string | number; ccy: string };
+type CryptoLike = { qty: string | number; asset: string };
+type AmountLike =
+  | { kind: "Fiat"; data: MoneyLike }
+  | { kind: "Crypto"; data: CryptoLike };
 
 /**
  * Determines if a transaction leg is a P&L (profit/loss) leg.
  * A leg is considered P&L if it's linked to the special P&L account or has a category assigned.
  */
 function isPnlLeg(l: Transaction["legs"][number]) {
-  return l.account_id === PNL_ACCOUNT_ID || l.category_id != null;
+  return l.account_id === PNL_ACCOUNT_ID;
 }
 
 /**
@@ -49,6 +57,37 @@ function pickFiatAmount(l?: any): MoneyLike | null {
   const v = l.amount?.data?.amount ?? l.amount?.amount;
   const c = l.amount?.data?.ccy ?? l.amount?.ccy;
   return v != null && c ? { amount: v, ccy: c } : null;
+}
+
+/**
+ * Extracts any amount (Fiat or Crypto) from a transaction leg.
+ * Returns null if the leg is missing or has no amount.
+ */
+function pickAmount(l?: any): AmountLike | null {
+  if (!l) return null;
+  if (l.amount?.kind === "Fiat") {
+    return {
+      kind: "Fiat",
+      data: { amount: l.amount.data.amount, ccy: l.amount.data.ccy },
+    };
+  }
+  if (l.amount?.kind === "Crypto") {
+    return {
+      kind: "Crypto",
+      data: { qty: l.amount.data.qty, asset: l.amount.data.asset },
+    };
+  }
+  // Fallback for legacy data
+  const v = l.amount?.data?.amount ?? l.amount?.amount;
+  const c = l.amount?.data?.ccy ?? l.amount?.ccy;
+  return v != null && c ? { kind: "Fiat", data: { amount: v, ccy: c } } : null;
+}
+
+/**
+ * Finds legs with "acct." prefix (actual asset accounts)
+ */
+function findAssetLegs(tx: Transaction) {
+  return tx.legs.filter((l) => l.account_id.startsWith("acct."));
 }
 
 /**
@@ -67,7 +106,7 @@ function deriveRoles(tx: Transaction) {
 
 type RowView = {
   showEnvelope: boolean;
-  amount: MoneyLike | null;
+  amount: AmountLike | null;
   sign: "" | "+" | "-";
   colorClass: string;
   accounts: { from?: string; to?: string; single?: string };
@@ -81,6 +120,7 @@ type RowView = {
 function viewFor(tx: Transaction): RowView {
   const { pnl, from, to, hasFx, fxRate } = deriveRoles(tx);
   const type = tx.tx_type || "adjustment";
+  const assetLegs = findAssetLegs(tx);
 
   const red = "text-red-700 dark:text-red-300";
   const green = "text-green-700 dark:text-green-300";
@@ -88,88 +128,106 @@ function viewFor(tx: Transaction): RowView {
 
   switch (type) {
     case "spending": {
-      const amt = pickFiatAmount(pnl);
+      // For spending: one asset account (usually Debit - money going out)
+      const assetLeg =
+        assetLegs.find((l) => l.direction === "Debit") || assetLegs[0];
+      const amt = pickAmount(assetLeg) || pickAmount(pnl);
       return {
         showEnvelope: true,
         amount: amt,
         sign: "-",
         colorClass: red,
-        accounts: { single: from?.account_id || to?.account_id },
+        accounts: { single: assetLeg?.account_id },
       };
     }
     case "refund": {
-      const amt = pickFiatAmount(pnl);
+      // For refund: one asset account (usually Credit - money coming in)
+      const assetLeg =
+        assetLegs.find((l) => l.direction === "Credit") || assetLegs[0];
+      const amt = pickAmount(assetLeg) || pickAmount(pnl);
       return {
         showEnvelope: true,
         amount: amt,
         sign: "+",
         colorClass: green,
-        accounts: { single: to?.account_id || from?.account_id },
+        accounts: { single: assetLeg?.account_id },
       };
     }
     case "income": {
-      const amt = pickFiatAmount(pnl);
+      // For income: one asset account (usually Debit - money coming in)
+      const assetLeg =
+        assetLegs.find((l) => l.direction === "Debit") || assetLegs[0];
+      const amt = pickAmount(assetLeg) || pickAmount(pnl);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "+",
         colorClass: green,
-        accounts: { single: to?.account_id },
+        accounts: { single: assetLeg?.account_id },
       };
     }
     case "transfer": {
-      // Show destination amount if present; otherwise source
-      const amt = pickFiatAmount(to) || pickFiatAmount(from);
+      // For transfer: two asset accounts
+      const fromAsset = assetLegs.find((l) => l.direction === "Credit");
+      const toAsset = assetLegs.find((l) => l.direction === "Debit");
+      const amt = pickAmount(toAsset) || pickAmount(fromAsset);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "",
         colorClass: neutral,
-        accounts: { from: from?.account_id, to: to?.account_id },
+        accounts: { from: fromAsset?.account_id, to: toAsset?.account_id },
       };
     }
     case "transfer_fx": {
-      const amt = pickFiatAmount(to) || pickFiatAmount(from);
-      const rateStr = fxRate ? `${fxRate}` : null;
+      // For transfer_fx: two asset accounts with FX
+      const fromAsset = assetLegs.find((l) => l.direction === "Credit");
+      const toAsset = assetLegs.find((l) => l.direction === "Debit");
+      const amt = pickAmount(toAsset) || pickAmount(fromAsset);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "",
         colorClass: neutral,
-        accounts: { from: from?.account_id, to: to?.account_id },
+        accounts: { from: fromAsset?.account_id, to: toAsset?.account_id },
       };
     }
     case "fee_only": {
-      const amt = pickFiatAmount(pnl) || pickFiatAmount(from);
+      // For fee_only: one asset account (usually Debit - fee being paid)
+      const assetLeg =
+        assetLegs.find((l) => l.direction === "Debit") || assetLegs[0];
+      const amt = pickAmount(assetLeg) || pickAmount(pnl);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "-",
         colorClass: red,
-        accounts: { single: from?.account_id },
+        accounts: { single: assetLeg?.account_id },
       };
     }
     case "trade": {
-      // Neutral row; amount can be valued leg if present—leave neutral
-      const amt =
-        pickFiatAmount(to) || pickFiatAmount(from) || pickFiatAmount(pnl);
+      // For trade: two asset accounts (buy/sell)
+      const fromAsset = assetLegs.find((l) => l.direction === "Credit");
+      const toAsset = assetLegs.find((l) => l.direction === "Debit");
+      const amt = pickAmount(toAsset) || pickAmount(fromAsset);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "",
         colorClass: neutral,
-        accounts: { from: from?.account_id, to: to?.account_id },
+        accounts: { from: fromAsset?.account_id, to: toAsset?.account_id },
       };
     }
     default: {
-      const amt =
-        pickFiatAmount(pnl) || pickFiatAmount(to) || pickFiatAmount(from);
+      // For unknown types: try to find one asset account
+      const assetLeg = assetLegs[0];
+      const amt = pickAmount(assetLeg) || pickAmount(pnl);
       return {
         showEnvelope: false,
         amount: amt,
         sign: "",
         colorClass: neutral,
-        accounts: { single: from?.account_id || to?.account_id },
+        accounts: { single: assetLeg?.account_id },
       };
     }
   }
@@ -196,6 +254,7 @@ export default function TransactionRow({
   onDelete,
   onOpenModal,
 }: TransactionRowProps) {
+  const [toggleAmounts, setToggleAmounts] = useState(false);
   const view = viewFor(tx);
   const pnlLegIdx = getPnlLegIndex(tx);
   const currentCategory =
@@ -205,45 +264,77 @@ export default function TransactionRow({
   return (
     <tr
       key={tx.id}
-      className="transition-color duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-      onClick={() => onOpenModal(tx)}
+      className="transition-colors duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 "
+      // onClick={() => onOpenModal(tx)}
     >
       {/* Date */}
-      <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+      <td className="pl-6 pr-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
         {formatDate(tx.ts)}
       </td>
       {/* Account / Transfer merged cell */}
       {view.accounts.from && view.accounts.to ? (
-        <td className="px-6 py-4 whitespace-nowrap" colSpan={2}>
+        <td className="px-3 py-4 whitespace-nowrap" colSpan={2}>
           {tx.tx_type === "transfer_fx" ? (
             <div className="flex flex-row gap-1">
-              <div className="flex items-center gap-2">
-                <AccountPill id={view.accounts.from} accountMap={accountMap} />
+              <div className="flex items-center gap-3">
+                {/* <AccountPill id={view.accounts.from} accountMap={accountMap} /> */}
                 {(() => {
                   const { from, to, pnl } = deriveRoles(tx);
-                  const fromAmt = pickFiatAmount(from);
-                  const toAmt = pickFiatAmount(to);
-                  const feeAmt = pickFiatAmount(pnl);
+                  console.log("### from", from);
+                  console.log("### to", to);
+                  console.log("### pnl", pnl);
+                  const fromAmt = pickAmount(from);
+                  console.log("### fromAmt", fromAmt);
+                  const toAmt = pickAmount(to);
+                  console.log("### toAmt", toAmt);
+                  const feeAmt = pickAmount(pnl);
                   const fxRate = from?.fx?.rate ?? to?.fx?.rate ?? null;
+
+                  // Safely extract and format FROM amount
+                  const fromAmtDisplay = fromAmt
+                    ? fromAmt.kind === "Fiat"
+                      ? formatAmount(
+                          String(fromAmt.data.amount),
+                          fromAmt.data.ccy
+                        )
+                      : formatCryptoAmount(
+                          String(fromAmt.data.qty),
+                          fromAmt.data.asset
+                        )
+                    : null;
+
+                  // Safely extract and format TO amount
+                  const toAmtDisplay = toAmt
+                    ? toAmt.kind === "Fiat"
+                      ? formatAmount(String(toAmt.data.amount), toAmt.data.ccy)
+                      : formatCryptoAmount(
+                          String(toAmt.data.qty),
+                          toAmt.data.asset
+                        )
+                    : null;
                   return (
                     <>
-                      {fromAmt && (
-                        <span className="font-medium">
-                          {formatAmount(String(fromAmt.amount), fromAmt.ccy)}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <AccountPill
+                          id={view.accounts.from}
+                          accountMap={accountMap}
+                        />
+                        {toAmtDisplay && (
+                          <span className="font-medium">{fromAmtDisplay}</span>
+                        )}
+                      </div>
                       <span className="material-symbols-outlined text-sm text-gray-600 dark:text-gray-400">
                         {ICONS.ARROW_RIGHT_ALT}
                       </span>
-                      <AccountPill
-                        id={view.accounts.to}
-                        accountMap={accountMap}
-                      />
-                      {toAmt && (
-                        <span className="font-medium">
-                          {formatAmount(String(toAmt.amount), toAmt.ccy)}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <AccountPill
+                          id={view.accounts.to}
+                          accountMap={accountMap}
+                        />
+                        {toAmtDisplay && (
+                          <span className="font-medium">{toAmtDisplay}</span>
+                        )}
+                      </div>
                     </>
                   );
                 })()}
@@ -255,12 +346,20 @@ export default function TransactionRow({
                   const fxRate = from?.fx?.rate ?? to?.fx?.rate ?? null;
                   return (
                     <>
-                      {fxRate && (
+                      {/* {fxRate && from && to && (
                         <span>
-                          @ {fxRate} {from?.amount.data.ccy}/
-                          {to?.amount.data.ccy}
+                          @ {fxRate}{" "}
+                          {from.amount.kind === "Fiat" &&
+                          to.amount.kind === "Fiat"
+                            ? `${from.amount.data.ccy}/${to.amount.data.ccy}`
+                            : from.amount.kind === "Crypto" &&
+                              to.amount.kind === "Crypto" &&
+                              from.amount.data?.asset &&
+                              to.amount.data?.asset
+                            ? `${from.amount.data.asset}/${to.amount.data.asset}`
+                            : ""}
                         </span>
-                      )}
+                      )} */}
                       {/* {feeAmt && (
                         <span className="text-amber-600 dark:text-amber-400">
                           Fee: {formatAmount(String(feeAmt.amount), feeAmt.ccy)}
@@ -272,38 +371,234 @@ export default function TransactionRow({
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <AccountPill id={view.accounts.from} accountMap={accountMap} />
-              <span className="material-symbols-outlined text-sm text-gray-400 dark:text-gray-400">
-                {ICONS.ARROW_RIGHT_ALT}
-              </span>
-              <AccountPill id={view.accounts.to} accountMap={accountMap} />
+            <div className="flex flex-row gap-1">
+              <div className="flex items-center gap-3">
+                {(() => {
+                  const { from, to, pnl } = deriveRoles(tx);
+                  const fromAmt = pickAmount(from);
+                  const toAmt = pickAmount(to);
+                  const feeAmt = pickAmount(pnl);
+
+                  // Safely extract and format FROM amount
+                  const fromAmtDisplay = fromAmt
+                    ? fromAmt.kind === "Fiat"
+                      ? formatAmount(
+                          String(fromAmt.data.amount),
+                          fromAmt.data.ccy
+                        )
+                      : formatCryptoAmount(
+                          String(fromAmt.data.qty),
+                          fromAmt.data.asset
+                        )
+                    : null;
+
+                  // Safely extract and format TO amount
+                  const toAmtDisplay = toAmt
+                    ? toAmt.kind === "Fiat"
+                      ? formatAmount(String(toAmt.data.amount), toAmt.data.ccy)
+                      : formatCryptoAmount(
+                          String(toAmt.data.qty),
+                          toAmt.data.asset
+                        )
+                    : null;
+                  return (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <AccountPill
+                          id={view.accounts.from}
+                          accountMap={accountMap}
+                        />
+                        {fromAmtDisplay && (
+                          <span className="font-medium">{fromAmtDisplay}</span>
+                        )}
+                      </div>
+                      <span className="material-symbols-outlined text-sm text-gray-600 dark:text-gray-400">
+                        {ICONS.ARROW_RIGHT_ALT}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <AccountPill
+                          id={view.accounts.to}
+                          accountMap={accountMap}
+                        />
+                        {toAmtDisplay && (
+                          <span className="font-medium ">{toAmtDisplay}</span>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex items-center gap-2 font-medium">
+                {(() => {
+                  const { from, to, pnl } = deriveRoles(tx);
+                  const feeAmt = pickFiatAmount(pnl);
+                  return (
+                    <>
+                      {/* No FX rate display for regular transfers */}
+                      {/* {feeAmt && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Fee: {formatAmount(String(feeAmt.amount), feeAmt.ccy)}
+                        </span>
+                      )} */}
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           )}
         </td>
       ) : (
         <>
           {/* Account */}
-          <td className="px-6 py-4 whitespace-nowrap">
+          <td className="px-3 py-4 whitespace-nowrap">
             <AccountPill id={view.accounts.single} accountMap={accountMap} />
           </td>
           {/* Payee */}
-          <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+          <td className="px-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
             {tx.payee || "N/A"}
           </td>
         </>
       )}
       {/* Amount */}
       <td
-        className={`px-6 py-3 whitespace-nowrap text-right text-base font-medium ${view.colorClass}`}
+        className={`px-3 py-3 whitespace-nowrap text-right text-base font-medium ${view.colorClass}`}
       >
-        {view.sign}
-        {view.amount
-          ? formatAmount(String(view.amount.amount), view.amount.ccy)
-          : "—"}
+        <span
+          className="cursor-pointer rounded-sm px-1 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-600 active:bg-gray-200 dark:active:bg-gray-500 ease-in-out transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (
+              tx.tx_type === "transfer_fx" ||
+              tx.tx_type === "transfer" ||
+              tx.tx_type === "trade"
+            ) {
+              setToggleAmounts(!toggleAmounts);
+            }
+          }}
+        >
+          {view.sign}
+          {(() => {
+            if (!view.amount) return "—";
+
+            const { from, to } = deriveRoles(tx);
+            if (!from?.amount || !to?.amount) {
+              // Fallback to original amount display
+              return view.amount.kind === "Fiat"
+                ? formatAmount(
+                    String(view.amount.data.amount),
+                    view.amount.data.ccy
+                  )
+                : view.amount.kind === "Crypto" &&
+                  view.amount.data?.qty &&
+                  view.amount.data?.asset
+                ? formatCryptoAmount(
+                    String(view.amount.data.qty),
+                    view.amount.data.asset
+                  )
+                : "—";
+            }
+
+            // Use toggle state to show from or to amount
+            const displayAmount = toggleAmounts ? from.amount : to.amount;
+
+            if (displayAmount.kind === "Fiat") {
+              return formatAmount(
+                String(displayAmount.data.amount),
+                displayAmount.data.ccy
+              );
+            } else if (displayAmount.kind === "Crypto") {
+              return formatCryptoAmount(
+                String(displayAmount.data.qty),
+                displayAmount.data.asset
+              );
+            }
+
+            return "—";
+          })()}
+        </span>
+      </td>
+      <td
+        className={`px-3 py-3 whitespace-nowrap text-base font-medium ${view.colorClass} text-left`}
+      >
+        {view.accounts.from && view.accounts.to
+          ? (() => {
+              const { from, to } = deriveRoles(tx);
+              if (!from?.amount || !to?.amount) return null;
+
+              let fromValue: number;
+              let toValue: number;
+
+              if (from.amount.kind === "Fiat" && to.amount.kind === "Fiat") {
+                fromValue = parseFloat(from.amount.data.amount);
+                toValue = parseFloat(to.amount.data.amount);
+              } else if (
+                from.amount.kind === "Crypto" &&
+                to.amount.kind === "Crypto"
+              ) {
+                fromValue = parseFloat(from.amount.data.qty);
+                toValue = parseFloat(to.amount.data.qty);
+              } else if (
+                from.amount.kind === "Crypto" &&
+                to.amount.kind === "Fiat"
+              ) {
+                // Crypto to Fiat conversion
+                fromValue = parseFloat(from.amount.data.qty);
+                toValue = parseFloat(to.amount.data.amount);
+              } else if (
+                from.amount.kind === "Fiat" &&
+                to.amount.kind === "Crypto"
+              ) {
+                // Fiat to Crypto conversion
+                fromValue = parseFloat(from.amount.data.amount);
+                toValue = parseFloat(to.amount.data.qty);
+              } else {
+                return null; // Should not reach here
+              }
+
+              const fxRate =
+                toValue !== 0
+                  ? toggleAmounts
+                    ? toValue / fromValue
+                    : fromValue / toValue
+                  : null;
+              return fxRate ? (
+                <span
+                  className="cursor-pointer rounded-sm px-1 py-0.5 hover:bg-gray-100 active:bg-gray-200 dark:hover:bg-gray-600 dark:active:bg-gray-500 ease-in-out transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (
+                      tx.tx_type === "transfer_fx" ||
+                      tx.tx_type === "transfer" ||
+                      tx.tx_type === "trade"
+                    ) {
+                      setToggleAmounts(!toggleAmounts);
+                    }
+                  }}
+                >
+                  @{" "}
+                  {formatAmount(
+                    String(fxRate),
+                    (toggleAmounts ? to.amount : from.amount).kind === "Fiat"
+                      ? (
+                          (toggleAmounts ? to.amount : from.amount).data as {
+                            amount: string;
+                            ccy: string;
+                          }
+                        ).ccy
+                      : (
+                          (toggleAmounts ? to.amount : from.amount).data as {
+                            qty: string;
+                            asset: string;
+                          }
+                        ).asset
+                  )}
+                </span>
+              ) : null;
+            })()
+          : null}
       </td>
       {/* Envelope */}
-      <td className="px-6 py-4 whitespace-nowrap text-base align-middle">
+      <td className="px-3 py-4 whitespace-nowrap text-base align-middle">
         <div className="flex gap-4 items-center h-full">
           {/* Type */}
           <div
@@ -359,7 +654,7 @@ export default function TransactionRow({
         </div>
       </td>
       {/* Actions */}
-      <td className="px-6 py-4 whitespace-nowrap text-base">
+      <td className="px-3 py-4 whitespace-nowrap text-base">
         <button
           onClick={() => onDelete(tx.id, tx.payee || "Unknown")}
           disabled={deleting.has(tx.id)}

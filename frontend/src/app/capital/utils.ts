@@ -36,6 +36,23 @@ export function formatAmount(amount: string, ccy: string): string {
   return `${symbol}${formatted}`;
 }
 
+export function formatCryptoAmount(qty: string, asset: string): string {
+  const num = parseFloat(qty);
+
+  // Determine decimal places based on asset
+  let decimals = 0; // Default for stablecoins like USDC, USDT
+  if (asset === "BTC" || asset === "WBTC") {
+    decimals = 4;
+  } else if (asset === "ETH") {
+    decimals = 3;
+  }
+
+  return `${num.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })} ${asset}`;
+}
+
 export function getAccountColorClasses(color: string): string {
   const colorMap: Record<string, string> = {
     red: "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300",

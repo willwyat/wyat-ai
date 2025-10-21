@@ -17,6 +17,10 @@ export interface RolloverPolicy {
   Decay?: { keep_ratio: string; cap: Money | null };
 }
 
+export type LegAmount =
+  | { kind: "Fiat"; data: { amount: string; ccy: string } }
+  | { kind: "Crypto"; data: { qty: string; asset: string } };
+
 export interface Transaction {
   id: string;
   ts: number;
@@ -31,13 +35,7 @@ export interface Transaction {
   legs: Array<{
     account_id: string;
     direction: "Debit" | "Credit";
-    amount: {
-      kind: "Fiat";
-      data: {
-        amount: string;
-        ccy: string;
-      };
-    };
+    amount: LegAmount;
     fx?: any;
     category_id?: string | null;
     fee_of_leg_idx?: number;

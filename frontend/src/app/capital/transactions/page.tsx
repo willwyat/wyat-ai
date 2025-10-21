@@ -171,7 +171,7 @@ export default function TransactionsPage() {
             <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
             <button
               onClick={clearError}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
             >
               Try Again
             </button>
@@ -183,7 +183,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto px-3 sm:px-3 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex justify-between items-start">
@@ -197,7 +197,7 @@ export default function TransactionsPage() {
             </div>
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
+              className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
             >
               <span className="material-symbols-rounded text-lg">add</span>
               Create Transaction
@@ -272,7 +272,7 @@ export default function TransactionsPage() {
         {/* Transactions Table */}
         {!loading && !error && (
           <div className="bg-white dark:bg-gray-800 md:rounded-lg border border-gray-200 dark:border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="px-3 py-4 border-b border-gray-200 dark:border-gray-700">
               <h2 className={styles.text.subheading}>
                 Transactions ({getSortedTransactions().length})
               </h2>
@@ -282,7 +282,7 @@ export default function TransactionsPage() {
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
                     <th
-                      className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
+                      className="pl-6 pr-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
                       onClick={handleSortByDate}
                       title={`Sort by date (current: ${sortOrder})`}
                     >
@@ -335,7 +335,7 @@ export default function TransactionsPage() {
                         )}
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       <div className="flex flex-col gap-1">
                         <span>Account</span>
                         <select
@@ -357,13 +357,16 @@ export default function TransactionsPage() {
                         </select>
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Payee
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
+                    <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                       Amount
                     </th>
-                    <th className="px-6 py-3 text-left text-sm text-gray-500 dark:text-gray-400 uppercase">
+                    <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Rate
+                    </th>
+                    <th className="px-3 py-3 text-left text-sm text-gray-500 dark:text-gray-400 uppercase">
                       <div className="flex flex-col gap-1">
                         <span className="font-medium tracking-wider">
                           Type & Envelope
@@ -409,7 +412,7 @@ export default function TransactionsPage() {
                         </div>
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
+                    <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" />
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
