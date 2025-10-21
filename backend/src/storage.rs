@@ -104,12 +104,18 @@ pub async fn insert_blob(db: &Database, bytes: Bytes, content_type: &str) -> Res
     // 1) Hash
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
     let size_bytes = bytes.len() as i64;
+    println!(
+        "insert_blob: sha256: {}, size_bytes: {}",
+        sha256, size_bytes
+    );
 
     // 2) Fast path: existing
     let coll = db.collection::<Blob>("blobs");
     if let Some(existing) = coll.find_one(doc! {"sha256": &sha256}, None).await? {
+        println!("insert_blob: found existing blob with sha256: {}", sha256);
         return Ok(existing);
     }
+    println!("insert_blob: no existing blob found, creating new one");
 
     // 3) Decide storage
     if bytes.len() > MAX_INLINE_SIZE_BYTES {
@@ -120,6 +126,7 @@ pub async fn insert_blob(db: &Database, bytes: Bytes, content_type: &str) -> Res
             MAX_INLINE_SIZE_BYTES
         );
     }
+    println!("insert_blob: bytes: {:?}", bytes);
 
     let blob = Blob {
         id: ObjectId::new(),
@@ -136,19 +143,26 @@ pub async fn insert_blob(db: &Database, bytes: Bytes, content_type: &str) -> Res
         created_at: chrono::Utc::now().timestamp(),
     };
 
+    println!("insert_blob: blob: {:?}", blob);
+
     // 4) Insert with race-safe fallback
     match coll.insert_one(&blob, None).await {
-        Ok(_) => Ok(blob),
+        Ok(_) => {
+            println!("insert_blob: successfully inserted blob");
+            Ok(blob)
+        }
         Err(e) => {
             // If another request inserted the same sha256 in between, return that one
             let dup = matches!(e.kind.as_ref(),
                 ErrorKind::Write(WriteFailure::WriteError(we)) if we.code == 11000
             );
             if dup {
+                println!("insert_blob: duplicate key error, fetching existing blob");
                 if let Some(existing) = coll.find_one(doc! {"sha256": &sha256}, None).await? {
                     return Ok(existing);
                 }
             }
+            eprintln!("insert_blob: error: {:?}", e);
             Err(e.into())
         }
     }

@@ -26,7 +26,7 @@ pub fn routes(state: Arc<crate::AppState>) -> Router {
         .with_state(state)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct BlobResponse {
     blob_id: String,
     sha256: String,
@@ -69,21 +69,33 @@ async fn upload_blob_handler(
     State(state): State<Arc<crate::AppState>>,
     body: Bytes,
 ) -> Result<Json<BlobResponse>, StatusCode> {
-    let db = state.mongo_client.database("wyat");
+    println!("=== upload_blob_handler START ===");
+    println!("Body size: {} bytes", body.len());
 
+    let db = state.mongo_client.database("wyat");
+    // Is the colleciton stated?
     // For now, assume PDF - in production, parse Content-Type header
     let content_type = "application/pdf";
 
-    let blob = insert_blob(&db, body, content_type)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blob = insert_blob(&db, body, content_type).await.map_err(|e| {
+        eprintln!("upload_blob_handler: insert_blob failed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    Ok(Json(BlobResponse {
+    println!("=== upload_blob_handler SUCCESS ===");
+    println!("Blob ID: {}", blob.id.to_hex());
+    println!("SHA256: {}", blob.sha256);
+
+    let response = BlobResponse {
         blob_id: blob.id.to_hex(),
         sha256: blob.sha256,
         size_bytes: blob.size_bytes,
         content_type: blob.content_type,
-    }))
+    };
+
+    println!("Response: {:?}", response);
+
+    Ok(Json(response))
 }
 
 async fn get_blob_handler(

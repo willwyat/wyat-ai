@@ -20,11 +20,10 @@ const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
 });
 
 type BlobResponse = {
-  id?: string;
-  _id?: string;
-  sha256?: string;
-  size_bytes?: number;
-  content_type?: string;
+  blob_id: string;
+  sha256: string;
+  size_bytes: number;
+  content_type: string;
 };
 
 type ImportResp = ImportResponse;
@@ -77,10 +76,7 @@ export default function DocumentPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importResp, setImportResp] = useState<ImportResp | null>(null);
 
-  const blobId = useMemo(
-    () => (blob?.id || (blob as any)?._id) as string | undefined,
-    [blob]
-  );
+  const blobId = useMemo(() => blob?.blob_id, [blob]);
 
   // Fetch documents on mount and after creation
   async function fetchDocuments() {
@@ -106,6 +102,7 @@ export default function DocumentPage() {
   }
 
   async function handleUpload() {
+    console.log("handleUpload", file);
     setUploadError(null);
     if (!file) {
       setUploadError("Please choose a PDF to upload.");
@@ -123,13 +120,15 @@ export default function DocumentPage() {
         body: file,
         credentials: "include",
       });
-
+      console.log("handleUpload res", res);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Upload failed (${res.status}): ${text}`);
       }
 
       const data: BlobResponse = await res.json();
+      console.log("handleUpload data", data);
+      console.log("blob_id from response:", data.blob_id);
       setBlob(data);
       if (!title) {
         setTitle(filenameBase(file.name));
@@ -147,11 +146,17 @@ export default function DocumentPage() {
       setUploadError("Please enter a blob ID");
       return;
     }
-    setBlob({ id: manualBlobId.trim() });
+    setBlob({
+      blob_id: manualBlobId.trim(),
+      sha256: "",
+      size_bytes: 0,
+      content_type: "application/pdf",
+    });
     setStep(2);
   }
 
   async function handleCreateDocument() {
+    console.log("handleCreateDocument", blobId, namespace, kind, title);
     if (!blobId) {
       setCreateError("Missing blob_id");
       return;
@@ -245,7 +250,7 @@ export default function DocumentPage() {
               </button>
               {blob && (
                 <span className="text-sm text-gray-600">
-                  Uploaded blob: {(blob.id || (blob as any)?._id) as string}
+                  Uploaded blob: {blob.blob_id}
                 </span>
               )}
             </div>
