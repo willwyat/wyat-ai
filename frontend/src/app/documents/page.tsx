@@ -9,6 +9,7 @@ import {
   type ListDocumentsResponse,
 } from "@/stores/capital-store";
 import Modal from "@/components/Modal";
+import { API_URL } from "@/lib/config";
 
 // Dynamically import PDF viewer with SSR disabled to avoid DOMMatrix errors
 const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
@@ -28,9 +29,7 @@ type BlobResponse = {
 
 type ImportResp = ImportResponse;
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
-  "http://localhost:3001";
+const BACKEND_URL = API_URL;
 
 function classNames(...xs: (string | false | undefined)[]) {
   return xs.filter(Boolean).join(" ");

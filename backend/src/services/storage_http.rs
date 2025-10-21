@@ -120,8 +120,19 @@ async fn get_blob_handler(
 
     println!("=== get_blob_handler SUCCESS: {} bytes ===", bytes.len());
 
-    // Return the blob with proper content type
-    Ok(([(header::CONTENT_TYPE, blob.content_type)], bytes).into_response())
+    // Return the blob with proper content type and CORS headers
+    Ok((
+        [
+            (header::CONTENT_TYPE, blob.content_type),
+            (
+                header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "*".to_string()),
+            ),
+            (header::ACCESS_CONTROL_ALLOW_CREDENTIALS, "true".to_string()),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn list_documents_handler(
