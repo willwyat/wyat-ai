@@ -6,10 +6,13 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  subtitle?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "4xl" | "6xl";
   showCloseButton?: boolean;
+  contentClassName?: string;
+  fullHeight?: boolean;
 }
 
 const sizeClasses = {
@@ -19,16 +22,20 @@ const sizeClasses = {
   xl: "max-w-xl",
   "2xl": "max-w-2xl",
   "4xl": "max-w-4xl",
+  "6xl": "max-w-6xl",
 };
 
 export default function Modal({
   isOpen,
   onClose,
   title,
+  subtitle,
   children,
   footer,
   size = "2xl",
   showCloseButton = true,
+  contentClassName,
+  fullHeight = false,
 }: ModalProps) {
   if (!isOpen) return null;
 
@@ -44,16 +51,27 @@ export default function Modal({
       onClick={handleBackdropClick}
     >
       <div
-        className={`bg-white dark:bg-gray-800 rounded-xl shadow-xl ${sizeClasses[size]} w-full max-h-[90vh] overflow-hidden`}
+        className={`bg-white dark:bg-gray-800 rounded-xl shadow-xl ${
+          sizeClasses[size]
+        } w-full max-h-[90vh] overflow-hidden ${
+          fullHeight ? "flex flex-col" : ""
+        }`}
       >
         {/* Header */}
         {(title || showCloseButton) && (
           <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            {title && (
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                {title}
-              </h2>
-            )}
+            <div>
+              {title && (
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  {title}
+                </h2>
+              )}
+              {subtitle && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {subtitle}
+                </p>
+              )}
+            </div>
             {showCloseButton && (
               <button
                 onClick={onClose}
@@ -66,7 +84,14 @@ export default function Modal({
         )}
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+        <div
+          className={
+            contentClassName ||
+            (fullHeight
+              ? "flex-1 overflow-auto"
+              : "p-6 overflow-y-auto max-h-[calc(90vh-120px)]")
+          }
+        >
           {children}
         </div>
 

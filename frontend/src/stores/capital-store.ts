@@ -18,25 +18,38 @@ export interface ImportRequest {
   title?: string;
 }
 
+export interface DocumentInfo {
+  id: string;
+  doc_id: string;
+  namespace: string;
+  kind: string;
+  title: string;
+  blob_id: string | { $oid: string };
+  sha256: string;
+  size_bytes: number;
+  content_type: string;
+  status: { ingest: string; error?: string | null };
+  metadata?: Record<string, any>;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ImportResponse {
-  doc: {
-    id: string;
-    doc_id: string;
-    namespace: string;
-    kind: string;
-    title: string;
-    blob_id: string;
-    sha256: string;
-    size_bytes: number;
-    content_type: string;
-    status: { ingest: string; error?: string | null };
-    metadata?: Record<string, any>;
-    created_at: number;
-    updated_at: number;
-  };
+  doc: DocumentInfo;
   csv_blob_id: string;
   audit: Record<string, any>;
   rows_preview: Record<string, any>[];
+}
+
+export interface ListDocumentsQuery {
+  namespace?: string;
+  kind?: string;
+  limit?: number;
+}
+
+export interface ListDocumentsResponse {
+  documents: DocumentInfo[];
+  count: number;
 }
 
 interface CapitalState {
@@ -82,7 +95,10 @@ interface CapitalState {
   deleteTransaction: (transactionId: string, payee: string) => Promise<void>;
   createTransaction: (transactionData: any) => Promise<any>;
 
-  // Actions - Document Import
+  // Actions - Document Management
+  listDocuments: (query?: ListDocumentsQuery) => Promise<ListDocumentsResponse>;
+  getDocument: (docId: string) => Promise<DocumentInfo>;
+  createDocument: (request: ImportRequest) => Promise<{ doc: DocumentInfo }>;
   importBankStatement: (request: ImportRequest) => Promise<ImportResponse>;
 
   // Actions - UI
@@ -400,7 +416,89 @@ export const useCapitalStore = create<CapitalState>()(
         }
       },
 
-      // Document Import Actions
+      // Document Management Actions
+      listDocuments: async (query?: ListDocumentsQuery) => {
+        const params = new URLSearchParams();
+        if (query?.namespace) params.append("namespace", query.namespace);
+        if (query?.kind) params.append("kind", query.kind);
+        if (query?.limit) params.append("limit", query.limit.toString());
+
+        const url = `${API_CONFIG.BASE_URL}/capital/documents${
+          params.toString() ? `?${params.toString()}` : ""
+        }`;
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(
+            `List documents failed (${response.status}): ${text}`
+          );
+        }
+
+        const data: ListDocumentsResponse = await response.json();
+        return data;
+      },
+
+      getDocument: async (docId: string) => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/documents/${encodeURIComponent(
+            docId
+          )}`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Get document failed (${response.status}): ${text}`);
+        }
+
+        const data: DocumentInfo = await response.json();
+        return data;
+      },
+
+      createDocument: async (request: ImportRequest) => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/documents`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              blob_id: request.blob_id,
+              namespace: request.namespace || "capital",
+              kind: request.kind || "bank_statement",
+              title: request.title || "Bank Statement",
+            }),
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(
+            `Create document failed (${response.status}): ${text}`
+          );
+        }
+
+        const data: { doc: DocumentInfo } = await response.json();
+        return data;
+      },
+
       importBankStatement: async (request: ImportRequest) => {
         const response = await fetch(
           `${API_CONFIG.BASE_URL}/capital/documents/import`,

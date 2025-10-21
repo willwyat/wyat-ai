@@ -265,7 +265,7 @@ export default function TransactionRow({
     <tr
       key={tx.id}
       className="transition-colors duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 "
-      // onClick={() => onOpenModal(tx)}
+      onClick={() => onOpenModal(tx)}
     >
       {/* Date */}
       <td className="pl-6 pr-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">

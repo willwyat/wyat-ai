@@ -1,7 +1,19 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { useCapitalStore, type ImportResponse } from "@/stores/capital-store";
+import React, { useMemo, useState, useEffect } from "react";
+import {
+  useCapitalStore,
+  type ImportResponse,
+  type DocumentInfo,
+  type ListDocumentsResponse,
+} from "@/stores/capital-store";
+import { Document as PDFDocument, Page as PDFPage, pdfjs } from "react-pdf";
+import Modal from "@/components/Modal";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
+
+// Set up PDF.js worker - use a CDN that works better with modern bundlers
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type BlobResponse = {
   id?: string;
@@ -21,10 +33,27 @@ function classNames(...xs: (string | false | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
+function getBlobId(blobId: string | { $oid: string }): string {
+  return typeof blobId === "string" ? blobId : blobId.$oid;
+}
+
 export default function DocumentPage() {
-  const { importBankStatement } = useCapitalStore();
+  const { createDocument, listDocuments } = useCapitalStore();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+
+  // Document list state
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  // PDF viewer modal state
+  const [viewingDoc, setViewingDoc] = useState<DocumentInfo | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+
+  // Memoize PDF options to prevent unnecessary reloads
+  const pdfOptions = useMemo(() => ({ withCredentials: true }), []);
 
   // Step 1 – file upload
   const [file, setFile] = useState<File | null>(null);
@@ -37,8 +66,11 @@ export default function DocumentPage() {
   const [namespace, setNamespace] = useState("capital");
   const [kind, setKind] = useState("bank_statement");
   const [title, setTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [docId, setDocId] = useState<string | null>(null);
 
-  // Step 3 – import preview
+  // Step 3 – import preview (not used in refactored flow)
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importResp, setImportResp] = useState<ImportResp | null>(null);
@@ -47,6 +79,24 @@ export default function DocumentPage() {
     () => (blob?.id || (blob as any)?._id) as string | undefined,
     [blob]
   );
+
+  // Fetch documents on mount and after creation
+  async function fetchDocuments() {
+    setLoadingDocs(true);
+    setDocsError(null);
+    try {
+      const result = await listDocuments({ namespace: "capital" });
+      setDocuments(result.documents);
+    } catch (e: any) {
+      setDocsError(e?.message || "Failed to load documents");
+    } finally {
+      setLoadingDocs(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchDocuments();
+  }, []);
 
   function filenameBase(name: string) {
     const i = name.lastIndexOf(".");
@@ -99,27 +149,30 @@ export default function DocumentPage() {
     setStep(2);
   }
 
-  async function handleImport() {
+  async function handleCreateDocument() {
     if (!blobId) {
-      setImportError("Missing blob_id");
+      setCreateError("Missing blob_id");
       return;
     }
-    setImportError(null);
-    setImporting(true);
+    setCreateError(null);
+    setCreating(true);
     try {
-      const data = await importBankStatement({
+      const data = await createDocument({
         blob_id: blobId,
         namespace,
         kind,
         title: title || "Bank Statement",
       });
 
-      setImportResp(data);
+      setDocId(data.doc.doc_id);
       setStep(3);
+
+      // Refresh the documents list
+      await fetchDocuments();
     } catch (e: any) {
-      setImportError(e?.message || "Import failed");
+      setCreateError(e?.message || "Create document failed");
     } finally {
-      setImporting(false);
+      setCreating(false);
     }
   }
 
@@ -129,15 +182,17 @@ export default function DocumentPage() {
     setBlob(null);
     setManualBlobId("");
     setImportResp(null);
+    setDocId(null);
     setUploadError(null);
     setImportError(null);
+    setCreateError(null);
     setTitle("");
     setNamespace("capital");
     setKind("bank_statement");
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 py-8">
       <h1 className="text-2xl font-semibold mb-6">Documents</h1>
 
       <ol className="flex items-center w-full mb-8">
@@ -150,7 +205,7 @@ export default function DocumentPage() {
               )}
             />
             <div className="text-xs text-gray-600 mt-2 text-center">
-              {n === 1 ? "Upload PDF" : n === 2 ? "Details" : "Preview"}
+              {n === 1 ? "Upload PDF" : n === 2 ? "Details" : "Created"}
             </div>
           </li>
         ))}
@@ -262,7 +317,7 @@ export default function DocumentPage() {
             </div>
           </div>
 
-          {importError && <p className="text-red-600 text-sm">{importError}</p>}
+          {createError && <p className="text-red-600 text-sm">{createError}</p>}
 
           <div className="flex gap-3">
             <button
@@ -272,14 +327,14 @@ export default function DocumentPage() {
               Back
             </button>
             <button
-              onClick={handleImport}
-              disabled={!blobId || importing}
+              onClick={handleCreateDocument}
+              disabled={!blobId || creating}
               className={classNames(
                 "px-4 py-2 rounded text-white",
-                importing ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
+                creating ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
               )}
             >
-              {importing ? "Processing…" : "Next: Extract & Preview"}
+              {creating ? "Creating…" : "Create Document"}
             </button>
           </div>
 
@@ -291,41 +346,41 @@ export default function DocumentPage() {
         </div>
       )}
 
-      {step === 3 && importResp && (
+      {step === 3 && docId && (
         <div className="space-y-6">
           <div className="rounded border p-4">
-            <h2 className="font-medium mb-2">Document</h2>
+            <h2 className="font-medium mb-2">Document Created</h2>
             <div className="text-sm text-gray-700">
               <div>
-                <span className="font-semibold">doc_id:</span>{" "}
-                {importResp.doc.doc_id}
+                <span className="font-semibold">doc_id:</span> {docId}
               </div>
               <div>
-                <span className="font-semibold">status:</span>{" "}
-                {importResp.doc.status.ingest}
+                <span className="font-semibold">namespace:</span> {namespace}
               </div>
-              {importResp.doc.status.error && (
-                <div className="text-red-600">
-                  Error: {importResp.doc.status.error}
-                </div>
-              )}
+              <div>
+                <span className="font-semibold">kind:</span> {kind}
+              </div>
+              <div>
+                <span className="font-semibold">title:</span> {title}
+              </div>
+              <div>
+                <span className="font-semibold">status:</span> uploaded
+              </div>
             </div>
           </div>
 
-          <div className="rounded border p-4 overflow-x-auto">
-            <h2 className="font-medium mb-3">Preview (first rows)</h2>
-            {importResp.rows_preview.length === 0 ? (
-              <p className="text-sm text-gray-600">No rows returned.</p>
-            ) : (
-              <PreviewTable rows={importResp.rows_preview} />
-            )}
-          </div>
-
-          <div className="rounded border p-4">
-            <h2 className="font-medium mb-2">Audit</h2>
-            <pre className="text-xs bg-gray-50 p-3 rounded overflow-x-auto">
-              {JSON.stringify(importResp.audit, null, 2)}
-            </pre>
+          <div className="rounded border p-4 bg-blue-50 dark:bg-blue-900/20">
+            <h2 className="font-medium mb-2 text-blue-900 dark:text-blue-100">
+              Next Steps
+            </h2>
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              Document has been created successfully. To extract and import
+              transactions, you can now use the import endpoint separately with
+              doc_id:{" "}
+              <code className="font-mono bg-white dark:bg-gray-800 px-1 py-0.5 rounded">
+                {docId}
+              </code>
+            </p>
           </div>
 
           <div className="flex gap-3">
@@ -333,11 +388,210 @@ export default function DocumentPage() {
               onClick={resetFlow}
               className="px-4 py-2 rounded border border-gray-300"
             >
-              Upload another
+              Create another document
             </button>
           </div>
         </div>
       )}
+
+      {/* Document List */}
+      <div className="mt-12">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Documents</h2>
+          <button
+            onClick={fetchDocuments}
+            disabled={loadingDocs}
+            className="px-3 py-1 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loadingDocs ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+
+        {docsError && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {docsError}
+          </div>
+        )}
+
+        {loadingDocs && documents.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            Loading documents...
+          </div>
+        ) : documents.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 border border-gray-200 rounded">
+            No documents found. Upload a PDF above to get started.
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Title
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Kind
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Doc ID
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {documents.map((doc) => (
+                  <tr key={doc.doc_id || doc.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        {doc.title}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm text-gray-500">{doc.kind}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span
+                        className={classNames(
+                          "px-2 inline-flex text-xs leading-5 font-semibold rounded-full",
+                          doc.status.ingest === "parsed"
+                            ? "bg-green-100 text-green-800"
+                            : doc.status.ingest === "uploaded"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : doc.status.error
+                            ? "bg-red-100 text-red-800"
+                            : "bg-gray-100 text-gray-800"
+                        )}
+                      >
+                        {doc.status.ingest}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(doc.created_at * 1000).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-xs font-mono text-gray-500">
+                        {doc.doc_id}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setViewingDoc(doc);
+                            setPageNumber(1);
+                          }}
+                          className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                            />
+                          </svg>
+                          View
+                        </button>
+                        <a
+                          href={`${BACKEND_URL}/blobs/${getBlobId(
+                            doc.blob_id
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download={`${doc.title}.pdf`}
+                          className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-1"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                            />
+                          </svg>
+                          Download
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-4 text-sm text-gray-500">
+          Showing {documents.length} document{documents.length !== 1 ? "s" : ""}
+        </div>
+      </div>
+
+      {/* PDF Viewer Modal */}
+      <Modal
+        isOpen={!!viewingDoc}
+        onClose={() => setViewingDoc(null)}
+        title={viewingDoc?.title}
+        subtitle={
+          viewingDoc ? `${viewingDoc.kind} • ${viewingDoc.doc_id}` : undefined
+        }
+        size="4xl"
+        fullHeight
+        contentClassName="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900 p-4"
+      >
+        <div className="flex justify-center">
+          {viewingDoc && (
+            <PDFDocument
+              file={`${BACKEND_URL}/blobs/${getBlobId(viewingDoc.blob_id)}`}
+              options={pdfOptions}
+              onLoadSuccess={({ numPages }: { numPages: number }) =>
+                setNumPages(numPages)
+              }
+              loading={
+                <div className="text-center py-8 text-gray-500">
+                  Loading PDF...
+                </div>
+              }
+              error={
+                <div className="text-center py-8 text-red-600">
+                  Failed to load PDF. Please try again.
+                </div>
+              }
+            >
+              <PDFPage
+                pageNumber={pageNumber}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                className="shadow-lg"
+              />
+            </PDFDocument>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
