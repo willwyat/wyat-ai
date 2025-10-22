@@ -290,7 +290,7 @@ export default function ExtractionModal({
           >
             1
             <span
-              className={`absolute top-10 text-center font-medium text-xs ${
+              className={`absolute top-10 text-center font-medium text-sm ${
                 step >= 1
                   ? "text-blue-800 dark:text-blue-200"
                   : "text-gray-500 dark:text-gray-400"
@@ -313,7 +313,7 @@ export default function ExtractionModal({
           >
             2
             <span
-              className={`absolute top-10 text-center font-medium text-xs ${
+              className={`absolute top-10 text-center font-medium text-sm ${
                 step >= 2
                   ? "text-blue-800 dark:text-blue-200"
                   : "text-gray-500 dark:text-gray-400"
@@ -336,7 +336,7 @@ export default function ExtractionModal({
           >
             3
             <span
-              className={`absolute top-10 text-center font-medium text-xs ${
+              className={`absolute top-10 text-center font-medium text-sm ${
                 step >= 3
                   ? "text-blue-800 dark:text-blue-200"
                   : "text-gray-500 dark:text-gray-400"
@@ -359,7 +359,7 @@ export default function ExtractionModal({
           >
             4
             <span
-              className={`absolute top-10 text-center font-medium text-xs ${
+              className={`absolute top-10 text-center font-medium text-sm ${
                 step >= 4
                   ? "text-blue-800 dark:text-blue-200"
                   : "text-gray-500 dark:text-gray-400"
