@@ -7,6 +7,7 @@ import {
   type DocumentInfo,
   type AiPrompt,
 } from "@/stores";
+import Loader from "@/components/Loader";
 
 interface ExtractionModalProps {
   document: DocumentInfo | null;
@@ -20,13 +21,43 @@ export default function ExtractionModal({
   onExtract,
 }: ExtractionModalProps) {
   const { getAiPrompt } = useAiStore();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [prompt, setPrompt] = useState<AiPrompt | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extractionResult, setExtractionResult] = useState<string | null>(null);
+  const [extractionData, setExtractionData] = useState<any | null>(null);
+  const [editableRows, setEditableRows] = useState<Record<string, any>[]>([]);
   const [extracting, setExtracting] = useState(false);
+  const [progressMessage, setProgressMessage] = useState<string>("");
+
+  // Fake progress messages while extracting
+  const progressSteps = [
+    "Uploading document to analyzer…",
+    "Creating assistant…",
+    "Creating thread…",
+    "Sending message with prompt…",
+    "Running assistant…",
+    "Analyzing pages…",
+    "Parsing structured data…",
+    "Verifying totals…",
+    "Cleaning up resources…",
+  ];
+
+  useEffect(() => {
+    if (step === 2 && extracting) {
+      setProgressMessage(progressSteps[0]);
+      let idx = 0;
+      const id = window.setInterval(() => {
+        idx = (idx + 1) % progressSteps.length;
+        setProgressMessage(progressSteps[idx]);
+      }, 20000);
+      return () => window.clearInterval(id);
+    } else {
+      setProgressMessage("");
+    }
+  }, [step, extracting]);
 
   // Fetch prompt when document changes
   useEffect(() => {
@@ -78,6 +109,35 @@ export default function ExtractionModal({
   }, [document]);
 
   if (!document) return null;
+
+  // Build editable table columns from transactions
+  function inferColumns(rows: Record<string, any>[]): string[] {
+    const keys = new Set<string>();
+    for (const r of rows) {
+      Object.keys(r || {}).forEach((k) => keys.add(k));
+    }
+    return Array.from(keys);
+  }
+
+  function normalizeRows(rows: any[]): Record<string, any>[] {
+    return (rows || []).map((r) => {
+      const out: Record<string, any> = {};
+      if (r && typeof r === "object") {
+        for (const [k, v] of Object.entries(r)) {
+          out[k] = typeof v === "object" ? JSON.stringify(v) : v;
+        }
+      }
+      return out;
+    });
+  }
+
+  const handleCellChange = (rowIdx: number, key: string, value: string) => {
+    setEditableRows((prev) => {
+      const copy = prev.map((r) => ({ ...r }));
+      copy[rowIdx][key] = value;
+      return copy;
+    });
+  };
 
   function fillTemplateWithDBVars(
     template: string,
@@ -186,16 +246,24 @@ export default function ExtractionModal({
         throw new Error(`Extraction failed (${response.status}): ${text}`);
       }
 
-      const raw = await response.text();
-      // Try to pretty-print JSON if possible; otherwise show raw text
-      let display = raw;
+      // Prefer JSON response
+      let json: any | null = null;
       try {
-        const parsed = JSON.parse(raw);
-        display = JSON.stringify(parsed, null, 2);
+        json = await response.json();
       } catch {
-        // not JSON; keep raw
+        const raw = await response.text();
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          json = { raw };
+        }
       }
-      setExtractionResult(display);
+
+      setExtractionData(json);
+      setExtractionResult(JSON.stringify(json, null, 2));
+      // Prepare editable rows from transactions if present
+      const txns = Array.isArray(json?.transactions) ? json.transactions : [];
+      setEditableRows(normalizeRows(txns));
       setStep(3);
     } catch (err: any) {
       setError(err.message || "Extraction failed");
@@ -209,18 +277,27 @@ export default function ExtractionModal({
       isOpen={!!document}
       onClose={onClose}
       title="Extract from document"
-      subtitle={`${document.title} - Step ${step} of 3`}
+      subtitle={`${document.title} - Step ${step} of 4`}
       size="4xl"
     >
       <div className="space-y-4">
         {/* Step indicator */}
-        <div className="flex items-center gap-2 pb-4">
+        <div className="min-h-20 flex items-center gap-2 pb-8 max-w-2xl mx-auto">
           <div
-            className={`flex items-center justify-center w-8 h-8 rounded-full ${
+            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
               step >= 1 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
             }`}
           >
             1
+            <span
+              className={`absolute top-10 text-center font-medium text-xs ${
+                step >= 1
+                  ? "text-blue-800 dark:text-blue-200"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              Prompting
+            </span>
           </div>
           <div className="flex-1 h-1 bg-gray-200 rounded">
             <div
@@ -230,11 +307,20 @@ export default function ExtractionModal({
             />
           </div>
           <div
-            className={`flex items-center justify-center w-8 h-8 rounded-full ${
+            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
               step >= 2 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
             }`}
           >
             2
+            <span
+              className={`absolute top-10 text-center font-medium text-xs ${
+                step >= 2
+                  ? "text-blue-800 dark:text-blue-200"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              Extraction
+            </span>
           </div>
           <div className="flex-1 h-1 bg-gray-200 rounded">
             <div
@@ -244,11 +330,43 @@ export default function ExtractionModal({
             />
           </div>
           <div
-            className={`flex items-center justify-center w-8 h-8 rounded-full ${
+            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
               step >= 3 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
             }`}
           >
             3
+            <span
+              className={`absolute top-10 text-center font-medium text-xs ${
+                step >= 3
+                  ? "text-blue-800 dark:text-blue-200"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              Review
+            </span>
+          </div>
+          <div className="flex-1 h-1 bg-gray-200 rounded">
+            <div
+              className={`h-full rounded transition-all ${
+                step >= 4 ? "bg-blue-600 w-full" : "bg-gray-200 w-0"
+              }`}
+            />
+          </div>
+          <div
+            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
+              step >= 4 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
+            }`}
+          >
+            4
+            <span
+              className={`absolute top-10 text-center font-medium text-xs ${
+                step >= 4
+                  ? "text-blue-800 dark:text-blue-200"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}
+            >
+              Import
+            </span>
           </div>
         </div>
 
@@ -353,10 +471,11 @@ export default function ExtractionModal({
         {/* Step 2: Extraction in Progress */}
         {step === 2 && (
           <div className="space-y-4">
-            <div className="p-4 bg-blue-50 rounded border border-blue-200">
-              <p className="text-sm text-blue-800">
-                Extraction in progress... This may take a minute.
-              </p>
+            <div className="min-h-64 p-4 bg-blue-50 dark:bg-blue-900 rounded border border-blue-200 flex flex-col gap-4 items-center justify-center">
+              <Loader />
+              {progressMessage && (
+                <p className="text-sm text-blue-800">{progressMessage}</p>
+              )}
             </div>
           </div>
         )}
@@ -375,7 +494,7 @@ export default function ExtractionModal({
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-between gap-3 pt-4">
               <button
                 onClick={() => setStep(1)}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
@@ -383,10 +502,99 @@ export default function ExtractionModal({
                 Back to Prompt
               </button>
               <button
-                onClick={onClose}
+                onClick={() => setStep(4)}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                disabled={!editableRows.length}
               >
-                Done
+                Continue to Import
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Import (Editable Table) */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Review & Edit Transactions
+              </label>
+              <div className="font-mono border border-gray-300 rounded-lg overflow-auto max-h-[480px]">
+                {editableRows.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-600">
+                    No transactions to import.
+                  </div>
+                ) : (
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {inferColumns(editableRows).map((col) => (
+                          <th
+                            key={col}
+                            className={`px-4 py-2 ${
+                              col === "amount_or_qty" || col === "price"
+                                ? "text-right"
+                                : "text-left"
+                            } font-semibold text-gray-700 border-b border-gray-200 min-w-[160px]`}
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editableRows.map((row, rIdx) => (
+                        <tr
+                          key={rIdx}
+                          className={rIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                        >
+                          {inferColumns(editableRows).map((col) => (
+                            <td
+                              key={col}
+                              className={`px-0.5 py-1 border-b border-gray-200 align-top min-w-[160px] ${
+                                col === "amount_or_qty" || col === "price"
+                                  ? "text-right"
+                                  : ""
+                              }`}
+                            >
+                              <input
+                                className={`w-full min-w-[160px] px-2 py-1 bg-white ${
+                                  col === "amount_or_qty" || col === "price"
+                                    ? "text-right"
+                                    : ""
+                                }`}
+                                value={row[col] ?? ""}
+                                onChange={(e) =>
+                                  handleCellChange(rIdx, col, e.target.value)
+                                }
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setStep(3)}
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Back to JSON
+              </button>
+              <button
+                onClick={() => {
+                  // stub import; wire to backend later
+                  console.log("Importing transactions:", editableRows);
+                  onClose();
+                }}
+                disabled={!editableRows.length}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Import Transactions
               </button>
             </div>
           </div>

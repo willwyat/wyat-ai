@@ -2,11 +2,11 @@ export default function Loader() {
   // Rotating border around a square using an SVG stroke dash offset
   return (
     <div
-      className="w-full flex flex-col items-center justify-center select-none text-gray-800 dark:text-gray-200"
+      className="w-full flex flex-col items-center justify-center select-none text-blue-700 dark:text-blue-200"
       // Tweak size & speed here via CSS variables
       style={{
-        ["--size" as any]: "40px",
-        ["--duration" as any]: "1600ms",
+        ["--size" as any]: "32px",
+        ["--duration" as any]: "1200ms",
       }}
     >
       <div
@@ -18,7 +18,7 @@ export default function Loader() {
         }}
       >
         {/* Base square track */}
-        <div className="absolute inset-0 border-[4px] border-gray-300/20 dark:border-gray-700/20" />
+        <div className="absolute inset-0 border-[4px] border-blue-300/20 dark:border-blue-700/20" />
 
         {/* Animated border segment */}
         <svg
