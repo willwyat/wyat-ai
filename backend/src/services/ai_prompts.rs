@@ -14,6 +14,8 @@ pub struct AiPrompt {
     pub model: Option<String>,
     pub prompt_template: String,
     #[serde(default)]
+    pub prompt_variables: Option<Vec<String>>,
+    #[serde(default)]
     pub created_at: Option<mongodb::bson::DateTime>,
     #[serde(default)]
     pub updated_at: Option<mongodb::bson::DateTime>,

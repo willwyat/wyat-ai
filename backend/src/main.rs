@@ -181,7 +181,11 @@ struct ExtractBankStatementRequest {
 
 #[derive(Serialize)]
 struct ExtractBankStatementResponse {
-    raw_response: String,
+    transactions: Vec<serde_json::Value>,
+    audit: serde_json::Value,
+    inferred_meta: serde_json::Value,
+    quality: String,
+    confidence: f64,
 }
 
 async fn extract_bank_statement_handler(
@@ -212,9 +216,15 @@ async fn extract_bank_statement_handler(
 
     // Call extraction
     match extract_bank_statement(&req.prompt, &pdf_bytes, &req.model, &req.assistant_name).await {
-        Ok(raw_response) => {
+        Ok(result) => {
             println!("=== extract_bank_statement_handler SUCCESS ===");
-            Ok(Json(ExtractBankStatementResponse { raw_response }))
+            Ok(Json(ExtractBankStatementResponse {
+                transactions: result.transactions,
+                audit: result.audit,
+                inferred_meta: result.inferred_meta,
+                quality: result.quality,
+                confidence: result.confidence,
+            }))
         }
         Err(e) => {
             eprintln!("=== extract_bank_statement_handler ERROR ===");

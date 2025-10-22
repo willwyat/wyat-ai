@@ -45,6 +45,7 @@ export interface ImportRequest {
   kind?: string;
   title?: string;
   account_id?: string; // e.g., "acct.chase_w_checking"
+  metadata?: Record<string, any>; // Additional metadata to store with document
 }
 
 export interface ImportResponse {
@@ -158,6 +159,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
           namespace: request.namespace || "capital",
           kind: request.kind || "bank_statement",
           title: request.title || "Bank Statement",
+          metadata: request.metadata || {},
         }),
         credentials: "include",
       });

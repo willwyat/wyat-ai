@@ -56,6 +56,8 @@ struct CreateDocRequest {
     title: String,
     #[serde(default)]
     doc_id: Option<String>,
+    #[serde(default)]
+    metadata: Option<bson::Document>,
 }
 
 #[derive(Serialize)]
@@ -254,6 +256,9 @@ async fn create_doc_handler(
         .doc_id
         .unwrap_or_else(|| format!("doc_{}_{}", req.namespace, blob_id.to_hex()));
 
+    // Use provided metadata or empty document
+    let metadata = req.metadata.unwrap_or_else(|| bson::doc! {});
+
     match create_document(
         &db,
         &doc_id,
@@ -261,7 +266,7 @@ async fn create_doc_handler(
         &req.kind,
         &req.title,
         blob_id,
-        bson::doc! {},
+        metadata,
     )
     .await
     {

@@ -96,6 +96,7 @@ export interface AccountMetadata {
         account_number: string;
         routing_number?: string | null;
         color?: string;
+        txid_prefix?: string;
       }
     | {
         credit_card_name: string;
@@ -103,22 +104,26 @@ export interface AccountMetadata {
         account_number: string;
         routing_number?: string | null;
         color?: string;
+        txid_prefix?: string;
       }
     | {
         address: string;
         network: AccountNetwork;
         is_ledger: boolean;
         color?: string;
+        txid_prefix?: string;
       }
     | {
         cex_name: string;
         account_id: string;
         color?: string;
+        txid_prefix?: string;
       }
     | {
         trustee: string;
         jurisdiction: string;
         color?: string;
+        txid_prefix?: string;
       };
 }
 

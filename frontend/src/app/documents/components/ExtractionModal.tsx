@@ -19,11 +19,9 @@ export default function ExtractionModal({
   onExtract,
 }: ExtractionModalProps) {
   const { getAiPrompt } = useAiStore();
-  const { fetchAccounts, accounts } = useCapitalStore();
   const [step, setStep] = useState<1 | 2>(1);
   const [prompt, setPrompt] = useState<AiPrompt | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +37,23 @@ export default function ExtractionModal({
       .then((p) => {
         setPrompt(p);
         setEditedPrompt(p.prompt_template);
+        // Pre-fill the template with DB variables using fillTemplateWithDBVars
+        try {
+          const required = p.prompt_variables ?? [];
+          const vars = {
+            account_id: document.metadata?.account_id ?? "",
+            txid_prefix: document.metadata?.txid_prefix ?? "",
+          };
+          const filled = fillTemplateWithDBVars(
+            p.prompt_template,
+            vars,
+            required
+          );
+          setEditedPrompt(filled);
+        } catch (e) {
+          // If variables are missing, keep the raw template and show a gentle hint
+          console.warn("Prompt interpolation skipped:", (e as Error).message);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -47,35 +62,93 @@ export default function ExtractionModal({
       });
   }, [document, getAiPrompt]);
 
-  // Fetch accounts when modal opens for bank_statement
-  useEffect(() => {
-    if (document && document.kind === "bank_statement") {
-      fetchAccounts();
-    }
-  }, [document, fetchAccounts]);
-
   // Reset state when modal closes
   useEffect(() => {
     if (!document) {
       setStep(1);
       setPrompt(null);
       setEditedPrompt("");
-      setSelectedAccountId("");
       setError(null);
     }
   }, [document]);
 
   if (!document) return null;
 
-  const handleExtract = () => {
-    // TODO: Implement extraction
-    console.log(
-      "Extracting with prompt:",
-      editedPrompt,
-      "account:",
-      selectedAccountId
+  function fillTemplateWithDBVars(
+    template: string,
+    vars: Record<string, string>,
+    requiredVars: string[]
+  ): string {
+    // Normalize DB-declared variable names (store them without {{ }}, but support legacy)
+    const normalize = (s: string) => s.replace(/\{|\}/g, "").trim();
+    const required = new Set(requiredVars.map(normalize));
+
+    const found = new Set<string>();
+    const missingValues: string[] = [];
+    const unknownPlaceholders: string[] = [];
+
+    const filled = template.replace(
+      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+      (m, keyRaw) => {
+        const key = normalize(keyRaw);
+        found.add(key);
+
+        // If the template has a placeholder that's not declared in prompt_variables, flag it
+        if (!required.has(key)) {
+          unknownPlaceholders.push(key);
+          return m; // leave it as-is so it's obvious in the UI
+        }
+
+        const val = vars[key];
+        if (val == null || val === "") {
+          missingValues.push(key);
+          return m; // keep placeholder visible
+        }
+
+        return String(val);
+      }
     );
-    onExtract(document, editedPrompt, selectedAccountId || undefined);
+
+    // Any required vars missing from the template at all?
+    const missingInTemplate = [...required].filter((k) => !found.has(k));
+
+    const problems: string[] = [];
+    if (unknownPlaceholders.length) {
+      problems.push(
+        `Unknown placeholders in template: ${unknownPlaceholders.join(", ")}`
+      );
+    }
+    if (missingInTemplate.length) {
+      problems.push(
+        `Template is missing required variables: ${missingInTemplate.join(
+          ", "
+        )}`
+      );
+    }
+    if (missingValues.length) {
+      problems.push(`Missing values for: ${missingValues.join(", ")}`);
+    }
+    if (problems.length) {
+      throw new Error(problems.join(" | "));
+    }
+
+    return filled;
+  }
+
+  const handleExtract = () => {
+    if (!prompt || !document) return;
+
+    // Send whatever is currently in the textarea.
+    // We only prefill on load; we don't enforce variables at extract time.
+    const accountId = document.metadata?.account_id || undefined;
+
+    // Optional soft warning if placeholders remain (no blocking)
+    const leftover = editedPrompt.match(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g);
+    if (leftover && leftover.length) {
+      console.warn("Prompt still contains placeholders:", leftover);
+    }
+
+    onExtract(document, editedPrompt, accountId);
   };
 
   return (
@@ -83,7 +156,7 @@ export default function ExtractionModal({
       isOpen={!!document}
       onClose={onClose}
       title="Extract from document"
-      subtitle={`${document.title} • Step ${step} of 2`}
+      subtitle={`${document.title} - Step ${step} of 2`}
       size="4xl"
     >
       <div className="space-y-4">
@@ -149,33 +222,21 @@ export default function ExtractionModal({
                   </div>
                 </div>
 
-                {/* Account Selection - Only for bank_statement */}
-                {document.kind === "bank_statement" && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Account
-                      <span className="ml-1 text-red-500">*</span>
-                    </label>
-                    <select
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-                      required
-                    >
-                      <option value="">Select account...</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} ({account.id})
-                        </option>
-                      ))}
-                    </select>
-                    {!selectedAccountId && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Required for transaction extraction
+                {/* Show account info if it's a bank statement */}
+                {document.kind === "bank_statement" &&
+                  document.metadata?.account_id && (
+                    <div className="rounded-lg p-3 bg-blue-50 border border-blue-200">
+                      <p className="text-sm">
+                        <span className="font-semibold">Account:</span>{" "}
+                        {document.metadata.account_id}
+                        {document.metadata.txid_prefix && (
+                          <span className="ml-2 text-gray-600">
+                            (Prefix: {document.metadata.txid_prefix})
+                          </span>
+                        )}
                       </p>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
@@ -206,11 +267,7 @@ export default function ExtractionModal({
               </button>
               <button
                 onClick={handleExtract}
-                disabled={
-                  loading ||
-                  !prompt ||
-                  (document.kind === "bank_statement" && !selectedAccountId)
-                }
+                disabled={loading || !prompt}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Extract

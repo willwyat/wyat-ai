@@ -307,6 +307,7 @@ pub enum AccountMetadata {
         account_number: String,
         routing_number: Option<String>,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
     Savings {
         bank_name: String,  // e.g. "Chase"
@@ -314,6 +315,7 @@ pub enum AccountMetadata {
         account_number: String,
         routing_number: Option<String>,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
     Credit {
         credit_card_name: String, // e.g. "Chase Sapphire"
@@ -321,22 +323,26 @@ pub enum AccountMetadata {
         account_number: String,
         routing_number: Option<String>,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
     CryptoWallet {
         address: String,
         network: AccountNetwork,
         is_ledger: bool,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
     Cex {
         cex_name: String, // e.g. "Binance"
         account_id: String,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
     Trust {
         trustee: String,
         jurisdiction: String,
         color: Option<String>,
+        txid_prefix: Option<String>,
     },
 }
 

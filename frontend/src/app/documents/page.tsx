@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import {
   useDocumentStore,
+  useCapitalStore,
   type ImportResponse,
   type DocumentInfo,
   type ListDocumentsResponse,
@@ -41,6 +42,7 @@ function getBlobId(blobId: string | { $oid: string }): string {
 
 export default function DocumentPage() {
   const { createDocument, listDocuments } = useDocumentStore();
+  const { fetchAccounts, accounts } = useCapitalStore();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -71,6 +73,7 @@ export default function DocumentPage() {
   const [namespace, setNamespace] = useState("capital");
   const [kind, setKind] = useState("bank_statement");
   const [title, setTitle] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
@@ -98,7 +101,8 @@ export default function DocumentPage() {
 
   useEffect(() => {
     fetchDocuments();
-  }, []);
+    fetchAccounts();
+  }, [fetchAccounts]);
 
   function filenameBase(name: string) {
     const i = name.lastIndexOf(".");
@@ -165,14 +169,34 @@ export default function DocumentPage() {
       setCreateError("Missing blob_id");
       return;
     }
+
+    // Validate account selection for bank statements
+    if (kind === "bank_statement" && !selectedAccountId) {
+      setCreateError("Please select an account for bank statement");
+      return;
+    }
+
     setCreateError(null);
     setCreating(true);
     try {
+      // Get txid_prefix from selected account
+      const selectedAccount = accounts.find(
+        (acc) => acc.id === selectedAccountId
+      );
+      const txid_prefix = selectedAccount?.metadata?.data?.txid_prefix;
+
       const data = await createDocument({
         blob_id: blobId,
         namespace,
         kind,
         title: title || "Bank Statement",
+        metadata:
+          kind === "bank_statement"
+            ? {
+                account_id: selectedAccountId,
+                txid_prefix: txid_prefix || null,
+              }
+            : undefined,
       });
 
       setDocId(data.doc.doc_id);
@@ -200,6 +224,7 @@ export default function DocumentPage() {
     setTitle("");
     setNamespace("capital");
     setKind("bank_statement");
+    setSelectedAccountId("");
   }
 
   return (
@@ -326,6 +351,29 @@ export default function DocumentPage() {
                 className="w-full border border-gray-300 rounded p-2"
               />
             </div>
+
+            {kind === "bank_statement" && (
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Account <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full border border-gray-300 rounded p-2"
+                >
+                  <option value="">Select an account...</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} ({account.currency})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Select the account this statement belongs to
+                </p>
+              </div>
+            )}
           </div>
 
           {createError && <p className="text-red-600 text-sm">{createError}</p>}
@@ -588,7 +636,7 @@ export default function DocumentPage() {
         onClose={() => setViewingDoc(null)}
         title={viewingDoc?.title}
         subtitle={
-          viewingDoc ? `${viewingDoc.kind} • ${viewingDoc.doc_id}` : undefined
+          viewingDoc ? `${viewingDoc.kind} - ${viewingDoc.doc_id}` : undefined
         }
         size="4xl"
         fullHeight

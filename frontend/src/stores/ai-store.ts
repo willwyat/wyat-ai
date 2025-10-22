@@ -18,6 +18,7 @@ export interface AiPrompt {
   description?: string;
   model?: string;
   prompt_template: string;
+  prompt_variables?: string[];
   created_at?: { $date: { $numberLong: string } };
   updated_at?: { $date: { $numberLong: string } };
 }
