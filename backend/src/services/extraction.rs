@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::services::ai_prompts::get_prompt_by_id;
 use crate::services::openai::{ExtractResult, extract_bank_statement};
 use crate::services::storage as storage_svc;
-use crate::storage::{ExtractionRun, PromptRef};
+use crate::storage::ExtractionRun;
 
 /// Orchestrate the full bank statement extraction pipeline.
 ///
@@ -23,6 +23,7 @@ use crate::storage::{ExtractionRun, PromptRef};
 /// * `db` - MongoDB database reference
 /// * `doc_oid` - Document ObjectId to link extraction run
 /// * `blob_oid` - Blob ObjectId containing PDF bytes
+/// * `prompt_text` - Raw prompt content supplied by the client (falls back to stored template when empty)
 /// * `prompt_id` - AI prompt identifier (e.g., "capital.extract_bank_statement")
 /// * `prompt_version` - Prompt version for tracking
 /// * `model` - OpenAI model to use (e.g., "gpt-4o-mini")
@@ -35,6 +36,7 @@ pub async fn run_bank_statement_extraction(
     db: &Database,
     doc_oid: ObjectId,
     blob_oid: ObjectId,
+    prompt_text: &str,
     prompt_id: &str,
     prompt_version: &str,
     model: &str,
@@ -49,8 +51,13 @@ pub async fn run_bank_statement_extraction(
     // 1) Retrieve AI prompt from database
     println!("Fetching AI prompt...");
     let ai_prompt = get_prompt_by_id(db, prompt_id).await?;
-    let prompt_text = &ai_prompt.prompt_template;
-    println!("Prompt retrieved: {} chars", prompt_text.len());
+    let effective_prompt = if prompt_text.trim().is_empty() {
+        println!("Request prompt empty, using stored template");
+        ai_prompt.prompt_template.clone()
+    } else {
+        prompt_text.to_string()
+    };
+    println!("Prompt ready: {} chars", effective_prompt.len());
 
     // 2) Load blob bytes
     println!("Loading PDF bytes...");
@@ -59,28 +66,26 @@ pub async fn run_bank_statement_extraction(
 
     // 3) Call OpenAI extraction
     println!("Calling OpenAI extraction...");
-    let result = extract_bank_statement(prompt_text, &pdf_bytes, model, assistant_name).await?;
+    let result =
+        extract_bank_statement(&effective_prompt, &pdf_bytes, model, assistant_name).await?;
     println!(
         "Extraction succeeded: {} transactions, quality={}",
         result.transactions.len(),
         result.quality
     );
 
-    // 4) Construct PromptRef with content hash
-    let prompt_ref = PromptRef {
-        id: prompt_id.to_string(),
-        version: prompt_version.to_string(),
-        hash: format!("{:x}", Sha256::digest(prompt_text.as_bytes())),
-    };
-
-    // 5) Build metadata document
+    // 4) Build metadata document for the run
     let result_json = serde_json::to_string(&result).unwrap_or_default();
     let result_hash = format!("{:x}", Sha256::digest(result_json.as_bytes()));
+    let prompt_hash = format!("{:x}", Sha256::digest(effective_prompt.as_bytes()));
 
     let metadata = doc! {
         "model": model,
         "assistant_name": assistant_name,
         "blob_id": blob_oid.to_hex(),
+        "prompt_id": prompt_id,
+        "prompt_version": prompt_version,
+        "prompt_hash": &prompt_hash,
         "result_hash": result_hash,
         "transaction_count": result.transactions.len() as i32,
         "quality": &result.quality,
@@ -89,14 +94,14 @@ pub async fn run_bank_statement_extraction(
         "response_text": result_json,
     };
 
-    // 6) Create extraction run record
+    // 5) Create extraction run record (links document on success)
     println!("Creating extraction run record...");
     let run = crate::storage::create_extraction_run(
         db,
         doc_oid,
         "bank_statement",
         model,
-        prompt_ref,
+        effective_prompt,
         metadata,
     )
     .await?;

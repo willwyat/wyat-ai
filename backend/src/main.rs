@@ -175,6 +175,7 @@ async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::St
 struct ExtractBankStatementRequest {
     blob_id: String,
     doc_id: String,
+    prompt: String,
     prompt_id: String,
     prompt_version: String,
     model: String,
@@ -217,6 +218,7 @@ async fn extract_bank_statement_handler(
         &db,
         doc_oid,
         blob_oid,
+        &req.prompt,
         &req.prompt_id,
         &req.prompt_version,
         &req.model,
