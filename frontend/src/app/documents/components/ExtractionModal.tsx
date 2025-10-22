@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Modal from "@/components/Modal";
+import { API_URL } from "@/lib/config";
 import {
   useAiStore,
   useCapitalStore,
@@ -19,11 +20,13 @@ export default function ExtractionModal({
   onExtract,
 }: ExtractionModalProps) {
   const { getAiPrompt } = useAiStore();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [prompt, setPrompt] = useState<AiPrompt | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [extractionResult, setExtractionResult] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
 
   // Fetch prompt when document changes
   useEffect(() => {
@@ -69,6 +72,8 @@ export default function ExtractionModal({
       setPrompt(null);
       setEditedPrompt("");
       setError(null);
+      setExtractionResult(null);
+      setExtracting(false);
     }
   }, [document]);
 
@@ -135,12 +140,9 @@ export default function ExtractionModal({
     return filled;
   }
 
-  const handleExtract = () => {
+  const handleExtract = async () => {
     if (!prompt || !document) return;
-
-    // Send whatever is currently in the textarea.
-    // We only prefill on load; we don't enforce variables at extract time.
-    const accountId = document.metadata?.account_id || undefined;
+    setStep(2);
 
     // Optional soft warning if placeholders remain (no blocking)
     const leftover = editedPrompt.match(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g);
@@ -148,7 +150,52 @@ export default function ExtractionModal({
       console.warn("Prompt still contains placeholders:", leftover);
     }
 
-    onExtract(document, editedPrompt, accountId);
+    setExtracting(true);
+    setError(null);
+
+    try {
+      // Get blob_id from document
+      const blobId =
+        typeof document.blob_id === "string"
+          ? document.blob_id
+          : document.blob_id.$oid;
+
+      // Call the extraction endpoint
+      const response = await fetch(`${API_URL}/ai/extract/bank-statement`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          blob_id: blobId,
+          prompt: editedPrompt,
+          model: prompt.model || "gpt-4o-mini",
+          assistant_name: `${document.namespace}_${document.kind}_extractor`,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Extraction failed (${response.status}): ${text}`);
+      }
+
+      const raw = await response.text();
+      // Try to pretty-print JSON if possible; otherwise show raw text
+      let display = raw;
+      try {
+        const parsed = JSON.parse(raw);
+        display = JSON.stringify(parsed, null, 2);
+      } catch {
+        // not JSON; keep raw
+      }
+      setExtractionResult(display);
+      setStep(3);
+    } catch (err: any) {
+      setError(err.message || "Extraction failed");
+    } finally {
+      setExtracting(false);
+    }
   };
 
   return (
@@ -156,7 +203,7 @@ export default function ExtractionModal({
       isOpen={!!document}
       onClose={onClose}
       title="Extract from document"
-      subtitle={`${document.title} - Step ${step} of 2`}
+      subtitle={`${document.title} - Step ${step} of 3`}
       size="4xl"
     >
       <div className="space-y-4">
@@ -182,6 +229,20 @@ export default function ExtractionModal({
             }`}
           >
             2
+          </div>
+          <div className="flex-1 h-1 bg-gray-200 rounded">
+            <div
+              className={`h-full rounded transition-all ${
+                step >= 3 ? "bg-blue-600 w-full" : "bg-gray-200 w-0"
+              }`}
+            />
+          </div>
+          <div
+            className={`flex items-center justify-center w-8 h-8 rounded-full ${
+              step >= 3 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
+            }`}
+          >
+            3
           </div>
         </div>
 
@@ -258,31 +319,54 @@ export default function ExtractionModal({
               </>
             )}
 
+            {error && (
+              <div className="p-4 bg-red-50 rounded border border-red-200">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
+
             <div className="flex justify-end gap-3 pt-4">
               <button
                 onClick={onClose}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                disabled={extracting}
               >
                 Cancel
               </button>
               <button
                 onClick={handleExtract}
-                disabled={loading || !prompt}
+                disabled={loading || !prompt || extracting}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Extract
+                {extracting ? "Extracting..." : "Extract"}
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 2: TODO - Review & Confirm */}
+        {/* Step 2: Extraction in Progress */}
         {step === 2 && (
           <div className="space-y-4">
-            <div className="p-4 bg-yellow-50 rounded border border-yellow-200">
-              <p className="text-sm text-yellow-800">
-                TODO: Step 2 - Review extraction results
+            <div className="p-4 bg-blue-50 rounded border border-blue-200">
+              <p className="text-sm text-blue-800">
+                Extraction in progress... This may take a minute.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: View Results */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Extraction Result
+              </label>
+              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 overflow-auto max-h-96">
+                <pre className="text-xs font-mono whitespace-pre-wrap">
+                  {extractionResult || "No result"}
+                </pre>
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t">
@@ -290,7 +374,7 @@ export default function ExtractionModal({
                 onClick={() => setStep(1)}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
               >
-                Back
+                Back to Prompt
               </button>
               <button
                 onClick={onClose}
