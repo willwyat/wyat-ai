@@ -12,6 +12,7 @@ import {
 import Modal from "@/components/ui/Modal";
 import { API_URL } from "@/lib/config";
 import ExtractionModal from "./components/ExtractionModal";
+import Loader from "@/components/Loader";
 
 // Dynamically import PDF viewer with SSR disabled to avoid DOMMatrix errors
 const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
@@ -230,7 +231,7 @@ export default function DocumentPage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <h1 className="text-2xl font-semibold mb-6">Documents</h1>
-
+      <Loader />
       <ol className="flex items-center w-full mb-8">
         {[1, 2, 3].map((n) => (
           <li key={n} className="flex-1">
