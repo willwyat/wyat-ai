@@ -7,20 +7,13 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PromptRef {
-    pub id: String,
-    pub version: String,
-    pub hash: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionRun {
     #[serde(rename = "_id")]
     pub id: ObjectId,
     pub doc_id: ObjectId,
     pub kind: String,
     pub model: String,
-    pub prompt: PromptRef,
+    pub prompt: String,
     pub metadata: bson::Document,
     pub status: String,
     pub expires_at: Option<i64>,
@@ -32,7 +25,7 @@ pub async fn create_extraction_run(
     doc_id: ObjectId,
     kind: &str,
     model: &str,
-    prompt: PromptRef,
+    prompt: String,
     metadata: bson::Document,
 ) -> Result<ExtractionRun> {
     let runs = db.collection::<ExtractionRun>("doc_extraction_runs");
