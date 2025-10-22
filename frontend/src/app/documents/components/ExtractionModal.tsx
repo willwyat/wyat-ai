@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from "react";
 import Modal from "@/components/Modal";
-import { useAiStore, type DocumentInfo, type AiPrompt } from "@/stores";
+import {
+  useAiStore,
+  useCapitalStore,
+  type DocumentInfo,
+  type AiPrompt,
+} from "@/stores";
 
 interface ExtractionModalProps {
   document: DocumentInfo | null;
   onClose: () => void;
-  onExtract: (doc: DocumentInfo, prompt: string) => void;
+  onExtract: (doc: DocumentInfo, prompt: string, accountId?: string) => void;
 }
 
 export default function ExtractionModal({
@@ -14,9 +19,11 @@ export default function ExtractionModal({
   onExtract,
 }: ExtractionModalProps) {
   const { getAiPrompt } = useAiStore();
+  const { fetchAccounts, accounts } = useCapitalStore();
   const [step, setStep] = useState<1 | 2>(1);
   const [prompt, setPrompt] = useState<AiPrompt | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,12 +47,20 @@ export default function ExtractionModal({
       });
   }, [document, getAiPrompt]);
 
+  // Fetch accounts when modal opens for bank_statement
+  useEffect(() => {
+    if (document && document.kind === "bank_statement") {
+      fetchAccounts();
+    }
+  }, [document, fetchAccounts]);
+
   // Reset state when modal closes
   useEffect(() => {
     if (!document) {
       setStep(1);
       setPrompt(null);
       setEditedPrompt("");
+      setSelectedAccountId("");
       setError(null);
     }
   }, [document]);
@@ -54,8 +69,13 @@ export default function ExtractionModal({
 
   const handleExtract = () => {
     // TODO: Implement extraction
-    console.log("Extracting with prompt:", editedPrompt);
-    onExtract(document, editedPrompt);
+    console.log(
+      "Extracting with prompt:",
+      editedPrompt,
+      "account:",
+      selectedAccountId
+    );
+    onExtract(document, editedPrompt, selectedAccountId || undefined);
   };
 
   return (
@@ -129,6 +149,34 @@ export default function ExtractionModal({
                   </div>
                 </div>
 
+                {/* Account Selection - Only for bank_statement */}
+                {document.kind === "bank_statement" && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Account
+                      <span className="ml-1 text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedAccountId}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                      required
+                    >
+                      <option value="">Select account...</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name} ({account.id})
+                        </option>
+                      ))}
+                    </select>
+                    {!selectedAccountId && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Required for transaction extraction
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium mb-2">
                     AI Prompt Template
@@ -158,7 +206,11 @@ export default function ExtractionModal({
               </button>
               <button
                 onClick={handleExtract}
-                disabled={loading || !prompt}
+                disabled={
+                  loading ||
+                  !prompt ||
+                  (document.kind === "bank_statement" && !selectedAccountId)
+                }
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Extract

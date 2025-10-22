@@ -612,15 +612,17 @@ export default function DocumentPage() {
       <ExtractionModal
         document={extractingDoc}
         onClose={() => setExtractingDoc(null)}
-        onExtract={(doc, prompt) => {
+        onExtract={(doc, prompt, accountId) => {
           // TODO: Implement extraction logic - call extract_bank_statement
           console.log(
             "Extract:",
             doc.kind,
-            "with prompt:",
+            "account:",
+            accountId,
+            "prompt:",
             prompt.substring(0, 100)
           );
-          // Will call importBankStatement with document blob_id and prompt
+          // Will call importBankStatement with document blob_id, prompt, and accountId
           setExtractingDoc(null);
         }}
       />
