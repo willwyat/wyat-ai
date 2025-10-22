@@ -26,6 +26,7 @@ export interface DocumentInfo {
   };
   created_at: number;
   updated_at: number;
+  latest_extraction_run_id?: { $oid: string } | null;
 }
 
 export interface ListDocumentsQuery {

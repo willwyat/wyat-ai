@@ -48,6 +48,7 @@ export interface DocumentInfo {
   metadata?: Record<string, any>;
   created_at: number;
   updated_at: number;
+  latest_extraction_run_id?: { $oid: string } | null;
 }
 
 export interface ImportResponse {

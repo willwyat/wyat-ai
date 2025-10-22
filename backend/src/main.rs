@@ -65,10 +65,10 @@ async fn test_mongo() -> impl IntoResponse {
 }
 
 // AI Prompts handlers
-use axum::body::Bytes as AxumBytes;
+
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State as AxumState};
 use services::ai_prompts::{AiPrompt, get_prompt_by_id, list_prompts};
-use services::openai::extract_bank_statement;
+use services::extraction::run_bank_statement_extraction;
 
 async fn get_ai_prompt_handler(
     AxumState(state): AxumState<Arc<AppState>>,
@@ -174,7 +174,9 @@ async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::St
 #[derive(Deserialize)]
 struct ExtractBankStatementRequest {
     blob_id: String,
-    prompt: String,
+    doc_id: String,
+    prompt_id: String,
+    prompt_version: String,
     model: String,
     assistant_name: String,
 }
@@ -194,29 +196,35 @@ async fn extract_bank_statement_handler(
 ) -> Result<Json<ExtractBankStatementResponse>, axum::http::StatusCode> {
     println!("=== extract_bank_statement_handler START ===");
     println!("Blob ID: {}", req.blob_id);
+    println!("Doc ID: {}", req.doc_id);
     println!("Model: {}", req.model);
 
     let db = state.mongo_client.database("wyat");
 
-    // Parse blob_id to ObjectId
+    // Parse blob_id and doc_id to ObjectId
     let blob_oid = mongodb::bson::oid::ObjectId::parse_str(&req.blob_id).map_err(|e| {
         eprintln!("Invalid blob_id: {}", e);
         axum::http::StatusCode::BAD_REQUEST
     })?;
 
-    // Get PDF bytes from blob storage
-    let pdf_bytes = storage::get_blob_bytes_by_id(&db, blob_oid)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to get blob: {}", e);
-            axum::http::StatusCode::NOT_FOUND
-        })?;
+    let doc_oid = mongodb::bson::oid::ObjectId::parse_str(&req.doc_id).map_err(|e| {
+        eprintln!("Invalid doc_id: {}", e);
+        axum::http::StatusCode::BAD_REQUEST
+    })?;
 
-    println!("PDF bytes retrieved: {} bytes", pdf_bytes.len());
-
-    // Call extraction
-    match extract_bank_statement(&req.prompt, &pdf_bytes, &req.model, &req.assistant_name).await {
-        Ok(result) => {
+    // Delegate orchestration to service layer
+    match run_bank_statement_extraction(
+        &db,
+        doc_oid,
+        blob_oid,
+        &req.prompt_id,
+        &req.prompt_version,
+        &req.model,
+        &req.assistant_name,
+    )
+    .await
+    {
+        Ok((_run, result)) => {
             println!("=== extract_bank_statement_handler SUCCESS ===");
             Ok(Json(ExtractBankStatementResponse {
                 transactions: result.transactions,

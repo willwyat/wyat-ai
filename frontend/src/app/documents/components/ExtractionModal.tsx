@@ -154,11 +154,14 @@ export default function ExtractionModal({
     setError(null);
 
     try {
-      // Get blob_id from document
+      // Get blob_id and doc_id from document
       const blobId =
         typeof document.blob_id === "string"
           ? document.blob_id
           : document.blob_id.$oid;
+
+      const docId =
+        typeof document._id === "string" ? document._id : document._id.$oid;
 
       // Call the extraction endpoint
       const response = await fetch(`${API_URL}/ai/extract/bank-statement`, {
@@ -169,7 +172,10 @@ export default function ExtractionModal({
         credentials: "include",
         body: JSON.stringify({
           blob_id: blobId,
+          doc_id: docId,
           prompt: editedPrompt,
+          prompt_id: prompt.id,
+          prompt_version: String(prompt.version || "1"),
           model: prompt.model || "gpt-4o-mini",
           assistant_name: `${document.namespace}_${document.kind}_extractor`,
         }),

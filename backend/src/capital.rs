@@ -32,7 +32,7 @@ use thiserror::Error;
 // Import storage functions and types
 // TODO: Re-enable when implementing bank statement import
 // use crate::services::openai::extract_bank_statement;
-use crate::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
+use crate::services::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 
 // ------------------------- Money -------------------------
 

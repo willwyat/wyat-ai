@@ -1,4 +1,4 @@
-use crate::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
+use crate::services::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 use axum::{
     Json, Router,
     body::Bytes,
@@ -114,7 +114,7 @@ async fn get_blob_handler(
     })?;
 
     // Get the blob metadata first to determine content type
-    let blobs = db.collection::<crate::storage::Blob>("blobs");
+    let blobs = db.collection::<crate::services::storage::Blob>("blobs");
     let blob = blobs
         .find_one(doc! { "_id": &blob_id }, None)
         .await
