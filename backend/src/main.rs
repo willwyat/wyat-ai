@@ -64,6 +64,58 @@ async fn test_mongo() -> impl IntoResponse {
     Json(json!({"status": "MongoDB endpoint ready"}))
 }
 
+// AI Prompts handlers
+use axum::extract::{Path as AxumPath, Query as AxumQuery, State as AxumState};
+use services::ai_prompts::{AiPrompt, get_prompt_by_id, list_prompts};
+
+async fn get_ai_prompt_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumPath(prompt_id): AxumPath<String>,
+) -> Result<Json<AiPrompt>, axum::http::StatusCode> {
+    println!("=== get_ai_prompt_handler START ===");
+    println!("Prompt ID: {}", prompt_id);
+
+    let db = state.mongo_client.database("wyat");
+
+    match get_prompt_by_id(&db, &prompt_id).await {
+        Ok(prompt) => {
+            println!("=== get_ai_prompt_handler SUCCESS ===");
+            Ok(Json(prompt))
+        }
+        Err(e) => {
+            eprintln!("=== get_ai_prompt_handler ERROR ===");
+            eprintln!("Error: {}", e);
+            Err(axum::http::StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ListPromptsQuery {
+    namespace: Option<String>,
+}
+
+async fn list_ai_prompts_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumQuery(query): AxumQuery<ListPromptsQuery>,
+) -> Result<Json<Vec<AiPrompt>>, axum::http::StatusCode> {
+    println!("=== list_ai_prompts_handler START ===");
+
+    let db = state.mongo_client.database("wyat");
+
+    match list_prompts(&db, query.namespace.as_deref()).await {
+        Ok(prompts) => {
+            println!("=== list_ai_prompts_handler SUCCESS ===");
+            Ok(Json(prompts))
+        }
+        Err(e) => {
+            eprintln!("=== list_ai_prompts_handler ERROR ===");
+            eprintln!("Error: {}", e);
+            Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct PlaidLinkTokenRequest<'a> {
     client_id: &'a str,
@@ -307,6 +359,8 @@ async fn main() {
         .route("/api/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
         .route("/test-mongo", get(test_mongo))
+        .route("/ai/prompts", get(list_ai_prompts_handler))
+        .route("/ai/prompts/:prompt_id", get(get_ai_prompt_handler))
         .route("/meta/tag-taxonomy", get(get_tag_taxonomy))
         .route("/meta/person-registry", get(get_person_registry))
         .route("/meta/place-registry", get(get_place_registry))

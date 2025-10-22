@@ -13,24 +13,8 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::services::ai_prompts::AiPrompt;
 use crate::services::pdf::extract_text_from_pdf;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Prompt {
-    #[serde(rename = "_id")]
-    _id: ObjectId,
-    pub id: String,
-    pub namespace: String,
-    pub task: String,
-    pub version: i32,
-    pub description: Option<String>,
-    pub model: Option<String>,
-    pub prompt_template: String,
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default)]
-    pub calls: Vec<serde_json::Value>,
-}
 
 // ===================
 // * * * JOURNAL * * *
@@ -137,47 +121,37 @@ pub struct ExtractResult {
 // - if unsure about a field, leave it empty (do NOT invent values)
 // ACTION: tighten the stored prompt to include the above and sample rows; add a server-side CSV validator before saving.
 pub async fn extract_bank_statement(
-    db: Option<&Database>,
+    prompt_template: &str,
+    account_id: Option<&str>,
     pdf_bytes: &Bytes,
-    prompt_override: Option<String>,
 ) -> Result<ExtractResult> {
     println!("=== extract_bank_statement START ===");
     println!("PDF bytes length: {}", pdf_bytes.len());
+    println!("Prompt template length: {} chars", prompt_template.len());
 
-    // 1) bytes -> text
+    // 1) Extract text from PDF
     println!("Extracting text from PDF...");
-    let text = extract_text_from_pdf(pdf_bytes)?; // implement or call another helper
+    let text = extract_text_from_pdf(pdf_bytes)?;
     println!("PDF text extracted: {} chars", text.len());
     let text_preview = text.chars().take(8000).collect::<String>();
     println!("Text preview length: {} chars", text_preview.len());
 
-    // 2) load prompt template
-    println!("Loading prompt template...");
-    let prompt = if let Some(p) = prompt_override {
-        println!("Using prompt override");
-        if p.contains("{}") {
-            p.replace("{}", &text_preview)
-        } else {
-            format!("{p}\n\nTEXT:\n{text_preview}")
-        }
+    // 2) Build prompt with text
+    println!("Building prompt...");
+    let mut prompt = if prompt_template.contains("{}") {
+        prompt_template.replace("{}", &text_preview)
     } else {
-        println!("Loading prompt from database");
-        let db = db.ok_or_else(|| anyhow!("no prompt provided and no DB connection"))?;
-        let coll = db.collection::<Prompt>("ai_prompts");
-        let prompt_doc = coll
-            .find_one(doc! {"id": "capital.extract_bank_statement"}, None)
-            .await?
-            .ok_or_else(|| anyhow!("missing prompt capital.extract_bank_statement"))?;
-        println!(
-            "Prompt loaded from DB: {} chars",
-            prompt_doc.prompt_template.len()
-        );
-        let mut t = prompt_doc.prompt_template;
-        if !t.contains("{}") {
-            t.push_str("\n\nTEXT:\n{}");
-        }
-        t.replace("{}", &text_preview)
+        format!("{}\n\nTEXT:\n{}", prompt_template, text_preview)
     };
+
+    // Add account context if provided
+    if let Some(acct_id) = account_id {
+        println!("Adding account context: {}", acct_id);
+        prompt = format!(
+            "{}\n\nIMPORTANT: The account_id for ALL transactions in this statement is: {}\nUse this exact account_id in the account_id field for every transaction.",
+            prompt, acct_id
+        );
+    }
     println!("Final prompt length: {} chars", prompt.len());
 
     // 3) call OpenAI
@@ -219,8 +193,15 @@ pub async fn extract_bank_statement(
     })?;
     println!("JSON parsed successfully");
 
+    // Fix literal \n characters in CSV text (OpenAI sometimes returns them as strings)
+    let csv_text = v["csv_text"]
+        .as_str()
+        .unwrap_or_default()
+        .replace("\\n", "\n")
+        .to_string();
+
     let result = ExtractResult {
-        csv_text: v["csv_text"].as_str().unwrap_or_default().to_string(),
+        csv_text,
         audit_json: v["audit_json"].clone(),
         inferred_meta: v["inferred_meta"].clone(),
         rows_preview: v["rows_preview"].as_array().cloned().unwrap_or_default(),

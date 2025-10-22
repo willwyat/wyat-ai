@@ -1300,6 +1300,8 @@ pub struct ImportReq {
     pub namespace: String, // expect "capital"
     #[serde(default)]
     pub kind: String, // expect "bank_statement"
+    #[serde(default)]
+    pub account_id: Option<String>, // e.g., "acct.chase_w_checking"
 }
 
 #[derive(serde::Serialize)]
@@ -1341,13 +1343,19 @@ pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Res
     let pdf_bytes = get_blob_bytes_by_id(db, req.blob_id).await?;
     println!("PDF bytes fetched: {} bytes", pdf_bytes.len());
 
+    println!("Fetching AI prompt...");
+    use crate::services::ai_prompts::get_prompt_by_id;
+    let prompt = get_prompt_by_id(db, "capital.extract_bank_statement").await?;
+    println!("Prompt fetched: {}", prompt.id);
+
     println!("Extracting bank statement...");
+    let account_id_ref = req.account_id.as_deref();
     let ExtractResult {
         csv_text,
         audit_json,
         inferred_meta,
         rows_preview,
-    } = extract_bank_statement(Some(db), &pdf_bytes, None).await?;
+    } = extract_bank_statement(&prompt.prompt_template, account_id_ref, &pdf_bytes).await?;
     println!("Bank statement extracted successfully");
     println!("CSV text length: {} chars", csv_text.len());
     println!("Rows preview count: {}", rows_preview.len());

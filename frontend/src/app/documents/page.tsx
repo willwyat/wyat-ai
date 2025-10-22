@@ -3,13 +3,14 @@
 import React, { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import {
-  useCapitalStore,
+  useDocumentStore,
   type ImportResponse,
   type DocumentInfo,
   type ListDocumentsResponse,
-} from "@/stores/capital-store";
+} from "@/stores";
 import Modal from "@/components/Modal";
 import { API_URL } from "@/lib/config";
+import ExtractionModal from "./components/ExtractionModal";
 
 // Dynamically import PDF viewer with SSR disabled to avoid DOMMatrix errors
 const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
@@ -39,7 +40,7 @@ function getBlobId(blobId: string | { $oid: string }): string {
 }
 
 export default function DocumentPage() {
-  const { createDocument, listDocuments } = useCapitalStore();
+  const { createDocument, listDocuments } = useDocumentStore();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -52,6 +53,9 @@ export default function DocumentPage() {
   const [viewingDoc, setViewingDoc] = useState<DocumentInfo | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
+
+  // Extraction modal state
+  const [extractingDoc, setExtractingDoc] = useState<DocumentInfo | null>(null);
 
   // Memoize PDF options to prevent unnecessary reloads
   const pdfOptions = useMemo(() => ({ withCredentials: true }), []);
@@ -455,7 +459,10 @@ export default function DocumentPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {documents.map((doc) => (
-                  <tr key={doc.doc_id || doc.id} className="hover:bg-gray-50">
+                  <tr
+                    key={doc.doc_id || doc._id.$oid}
+                    className="hover:bg-gray-50"
+                  >
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
                         {doc.title}
@@ -495,10 +502,10 @@ export default function DocumentPage() {
                             setViewingDoc(doc);
                             setPageNumber(1);
                           }}
-                          className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                          className="inline-flex items-center h-7.5 w-7.5 flex justify-center items-center border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
                           <svg
-                            className="w-4 h-4 mr-1"
+                            className="w-4 h-4"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -517,7 +524,25 @@ export default function DocumentPage() {
                               d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                             />
                           </svg>
-                          View
+                        </button>
+                        <button
+                          onClick={() => setExtractingDoc(doc)}
+                          className="inline-flex items-center h-7.5 w-7.5 flex justify-center items-center border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
+                          </svg>
                         </button>
                         <a
                           href={`${BACKEND_URL}/blobs/${getBlobId(
@@ -526,10 +551,10 @@ export default function DocumentPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           download={`${doc.title}.pdf`}
-                          className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                          className="inline-flex items-center h-7.5 w-7.5 flex justify-center items-center border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
                           <svg
-                            className="w-4 h-4 mr-1"
+                            className="w-4 h-4"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -542,7 +567,6 @@ export default function DocumentPage() {
                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                             />
                           </svg>
-                          Download
                         </a>
                       </div>
                     </td>
@@ -583,6 +607,23 @@ export default function DocumentPage() {
           )}
         </div>
       </Modal>
+
+      {/* Extraction Preview Modal */}
+      <ExtractionModal
+        document={extractingDoc}
+        onClose={() => setExtractingDoc(null)}
+        onExtract={(doc, prompt) => {
+          // TODO: Implement extraction logic - call extract_bank_statement
+          console.log(
+            "Extract:",
+            doc.kind,
+            "with prompt:",
+            prompt.substring(0, 100)
+          );
+          // Will call importBankStatement with document blob_id and prompt
+          setExtractingDoc(null);
+        }}
+      />
     </div>
   );
 }

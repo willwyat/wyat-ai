@@ -1,3 +1,4 @@
+pub mod ai_prompts;
 pub mod openai;
 pub mod oura;
 pub mod pdf;
