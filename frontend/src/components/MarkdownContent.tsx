@@ -7,6 +7,7 @@ import {
   materialLight,
   materialDark,
 } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { ArrowDownIcon } from "./ui/icons";
 
 interface MarkdownContentProps {
   content: string;
@@ -166,15 +167,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="relative flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`absolute -left-8 pt-1.5 material-symbols-outlined transform transition-transform opacity-60 ${
+                        <ArrowDownIcon
+                          className={`absolute -left-8 w-6 h-6 transform transition-transform opacity-60 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         {children}
                       </button>
                     </h1>
@@ -193,15 +192,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="relative flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`absolute -left-8 pt-1 material-symbols-outlined transform transition-transform opacity-40 ${
+                        <ArrowDownIcon
+                          className={`absolute -left-8 w-6 h-6 transform transition-transform opacity-40 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         <span className="opacity-40">##</span> {children}
                       </button>
                     </h2>
@@ -220,15 +217,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="relative flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`absolute -left-8 pt-0.75 material-symbols-outlined transform transition-transform opacity-40 ${
+                        <ArrowDownIcon
+                          className={`absolute -left-8 w-5 h-5 transform transition-transform opacity-40 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         <span className="opacity-40">###</span> {children}
                       </button>
                     </h3>
@@ -247,15 +242,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`material-symbols-outlined transform transition-transform opacity-60 ${
+                        <ArrowDownIcon
+                          className={`w-5 h-5 transform transition-transform opacity-60 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         {children}
                       </button>
                     </h4>
@@ -274,15 +267,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`material-symbols-outlined transform transition-transform opacity-60 ${
+                        <ArrowDownIcon
+                          className={`w-5 h-5 transform transition-transform opacity-60 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         {children}
                       </button>
                     </h5>
@@ -301,15 +292,13 @@ export default function MarkdownContent({
                         onClick={() => toggleSection(id)}
                         className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                       >
-                        <span
-                          className={`material-symbols-outlined transform transition-transform opacity-60 ${
+                        <ArrowDownIcon
+                          className={`w-5 h-5 transform transition-transform opacity-60 ${
                             isSectionCollapsed(id)
                               ? "rotate-[-90deg]"
                               : "rotate-0"
                           }`}
-                        >
-                          keyboard_arrow_down
-                        </span>
+                        />
                         {children}
                       </button>
                     </h6>

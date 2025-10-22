@@ -9,7 +9,7 @@ import {
   type DocumentInfo,
   type ListDocumentsResponse,
 } from "@/stores";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 import { API_URL } from "@/lib/config";
 import ExtractionModal from "./components/ExtractionModal";
 
@@ -642,16 +642,24 @@ export default function DocumentPage() {
         fullHeight
         contentClassName="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900 p-4"
       >
-        <div className="flex justify-center">
+        <div className="w-full">
+          {/* PDF Viewer with Continuous Scroll */}
           {viewingDoc && (
             <PDFViewer
               fileUrl={`${BACKEND_URL}/blobs/${getBlobId(viewingDoc.blob_id)}`}
-              pageNumber={pageNumber}
               onLoadSuccess={({ numPages }: { numPages: number }) =>
                 setNumPages(numPages)
               }
               options={pdfOptions}
+              continuousScroll={true}
             />
+          )}
+
+          {/* Page count info */}
+          {numPages > 0 && (
+            <div className="text-center mt-4 text-sm text-gray-500 dark:text-gray-400">
+              {numPages} page{numPages !== 1 ? "s" : ""}
+            </div>
           )}
         </div>
       </Modal>

@@ -8,7 +8,7 @@ import {
   getAccountColorClasses,
 } from "@/app/capital/utils";
 import type { Transaction, Envelope } from "@/app/capital/types";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 
 interface TransactionModalProps {
   transaction: Transaction | null;

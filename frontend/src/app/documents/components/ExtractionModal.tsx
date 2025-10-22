@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 import { API_URL } from "@/lib/config";
 import {
   useAiStore,
@@ -369,7 +369,7 @@ export default function ExtractionModal({
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-3 pt-4">
               <button
                 onClick={() => setStep(1)}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"

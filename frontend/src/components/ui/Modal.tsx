@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { CloseIcon } from "./icons";
+import { Button } from "./Button";
 
 interface ModalProps {
   isOpen: boolean;
@@ -73,12 +75,14 @@ export default function Modal({
               )}
             </div>
             {showCloseButton && (
-              <button
+              <Button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold"
+                variant="ghost"
+                size="icon"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
-                ×
-              </button>
+                <CloseIcon className="w-6 h-6" />
+              </Button>
             )}
           </div>
         )}

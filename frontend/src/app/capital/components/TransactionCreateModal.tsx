@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useCapitalStore } from "@/stores";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 import type { LegAmount, Account } from "@/app/capital/types";
 import { getTimezoneIdentifier } from "@/lib/timezone-utils";
 
