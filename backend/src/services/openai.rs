@@ -205,10 +205,15 @@ async fn get_or_create_assistant(
     println!("  Name: {}", name);
     println!("  Instructions length: {} chars", instructions.len());
 
+    use async_openai::types::{AssistantTools, AssistantToolsFileSearch};
+
     let request = CreateAssistantRequestArgs::default()
         .model(model)
         .name(name)
         .instructions(instructions)
+        .tools(vec![AssistantTools::FileSearch(
+            AssistantToolsFileSearch::default(),
+        )])
         .build()?;
 
     let assistant = client.assistants().create(request).await?;
@@ -234,12 +239,14 @@ async fn add_message_to_thread(
     prompt: &str,
     file_id: &str,
 ) -> Result<()> {
+    use async_openai::types::MessageAttachmentTool;
+
     let request = CreateMessageRequestArgs::default()
         .role(MessageRole::User)
         .content(prompt.to_string())
         .attachments(vec![async_openai::types::MessageAttachment {
             file_id: file_id.to_string(),
-            tools: vec![],
+            tools: vec![MessageAttachmentTool::FileSearch],
         }])
         .build()?;
 

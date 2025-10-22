@@ -118,6 +118,58 @@ async fn list_ai_prompts_handler(
     }
 }
 
+// Simple OpenAI test handler
+async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    println!("=== test_openai_handler START ===");
+
+    use async_openai::types::{
+        ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
+        CreateChatCompletionRequestArgs,
+    };
+    use async_openai::{Client, config::OpenAIConfig};
+
+    let api_key = std::env::var("OPENAI_API_SECRET").map_err(|_| {
+        eprintln!("OPENAI_API_SECRET not found");
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    println!(
+        "API key found: {}...",
+        &api_key.chars().take(10).collect::<String>()
+    );
+
+    let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+
+    let request = CreateChatCompletionRequestArgs::default()
+        .model("gpt-3.5-turbo")
+        .messages(vec![ChatCompletionRequestMessage::User(
+            ChatCompletionRequestUserMessageArgs::default()
+                .content("Say 'Hello, World!' in JSON format with a single key 'message'.")
+                .build()
+                .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,
+        )])
+        .build()
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    println!("Calling OpenAI API...");
+    let response = client.chat().create(request).await.map_err(|e| {
+        eprintln!("OpenAI API error: {}", e);
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let content = response.choices[0]
+        .message
+        .content
+        .as_ref()
+        .ok_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    println!("=== test_openai_handler SUCCESS ===");
+    Ok(Json(json!({
+        "status": "ok",
+        "response": content
+    })))
+}
+
 // Extract bank statement handler
 #[derive(Deserialize)]
 struct ExtractBankStatementRequest {
@@ -417,6 +469,7 @@ async fn main() {
         .route("/test-mongo", get(test_mongo))
         .route("/ai/prompts", get(list_ai_prompts_handler))
         .route("/ai/prompts/:prompt_id", get(get_ai_prompt_handler))
+        .route("/ai/test-openai", get(test_openai_handler))
         .route(
             "/ai/extract/bank-statement",
             post(extract_bank_statement_handler),
