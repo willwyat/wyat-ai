@@ -65,8 +65,10 @@ async fn test_mongo() -> impl IntoResponse {
 }
 
 // AI Prompts handlers
+use axum::body::Bytes as AxumBytes;
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State as AxumState};
 use services::ai_prompts::{AiPrompt, get_prompt_by_id, list_prompts};
+use services::openai::extract_bank_statement;
 
 async fn get_ai_prompt_handler(
     AxumState(state): AxumState<Arc<AppState>>,
@@ -110,6 +112,60 @@ async fn list_ai_prompts_handler(
         }
         Err(e) => {
             eprintln!("=== list_ai_prompts_handler ERROR ===");
+            eprintln!("Error: {}", e);
+            Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Extract bank statement handler
+#[derive(Deserialize)]
+struct ExtractBankStatementRequest {
+    blob_id: String,
+    prompt: String,
+    model: String,
+    assistant_name: String,
+}
+
+#[derive(Serialize)]
+struct ExtractBankStatementResponse {
+    raw_response: String,
+}
+
+async fn extract_bank_statement_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    Json(req): Json<ExtractBankStatementRequest>,
+) -> Result<Json<ExtractBankStatementResponse>, axum::http::StatusCode> {
+    println!("=== extract_bank_statement_handler START ===");
+    println!("Blob ID: {}", req.blob_id);
+    println!("Model: {}", req.model);
+
+    let db = state.mongo_client.database("wyat");
+
+    // Parse blob_id to ObjectId
+    let blob_oid = mongodb::bson::oid::ObjectId::parse_str(&req.blob_id).map_err(|e| {
+        eprintln!("Invalid blob_id: {}", e);
+        axum::http::StatusCode::BAD_REQUEST
+    })?;
+
+    // Get PDF bytes from blob storage
+    let pdf_bytes = storage::get_blob_bytes_by_id(&db, blob_oid)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to get blob: {}", e);
+            axum::http::StatusCode::NOT_FOUND
+        })?;
+
+    println!("PDF bytes retrieved: {} bytes", pdf_bytes.len());
+
+    // Call extraction
+    match extract_bank_statement(&req.prompt, &pdf_bytes, &req.model, &req.assistant_name).await {
+        Ok(raw_response) => {
+            println!("=== extract_bank_statement_handler SUCCESS ===");
+            Ok(Json(ExtractBankStatementResponse { raw_response }))
+        }
+        Err(e) => {
+            eprintln!("=== extract_bank_statement_handler ERROR ===");
             eprintln!("Error: {}", e);
             Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -361,6 +417,10 @@ async fn main() {
         .route("/test-mongo", get(test_mongo))
         .route("/ai/prompts", get(list_ai_prompts_handler))
         .route("/ai/prompts/:prompt_id", get(get_ai_prompt_handler))
+        .route(
+            "/ai/extract/bank-statement",
+            post(extract_bank_statement_handler),
+        )
         .route("/meta/tag-taxonomy", get(get_tag_taxonomy))
         .route("/meta/person-registry", get(get_person_registry))
         .route("/meta/place-registry", get(get_place_registry))

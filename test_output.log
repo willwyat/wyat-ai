@@ -1,0 +1,17 @@
+=== Testing Bank Statement Extraction Endpoint ===
+Blob ID: 68f6d352ac980a8df0e34f03
+Prompt ID: capital.extract_bank_statement
+
+Step 1: Fetching AI prompt...
+Prompt fetched successfully
+
+Model: gpt-4o-mini
+Prompt template length: 1232 chars
+
+Step 2: Calling extraction endpoint...
+This may take 30-60 seconds...
+
+=== Extraction Response ===
+
+Saving response to extraction_result.json...
+Done! Check extraction_result.json for full response

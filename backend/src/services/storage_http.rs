@@ -1,4 +1,3 @@
-use crate::capital::{ImportReq, ImportResp, import_bank_statement};
 use crate::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 use axum::{
     Json, Router,
@@ -22,7 +21,6 @@ pub fn routes(state: Arc<crate::AppState>) -> Router {
             get(list_documents_handler).post(create_doc_handler),
         )
         .route("/capital/documents/:doc_id", get(get_document_handler))
-        .route("/capital/documents/import", post(import_doc_handler))
         .with_state(state)
 }
 
@@ -274,30 +272,6 @@ async fn create_doc_handler(
         Err(e) => {
             println!("=== create_doc_handler ERROR ===");
             eprintln!("Create document failed: {}", e);
-            Err(StatusCode::UNPROCESSABLE_ENTITY)
-        }
-    }
-}
-
-async fn import_doc_handler(
-    State(state): State<Arc<crate::AppState>>,
-    Json(req): Json<ImportReq>,
-) -> Result<Json<ImportResp>, StatusCode> {
-    println!("=== import_doc_handler START ===");
-    println!("Request received: {:?}", req);
-
-    let db = state.mongo_client.database("wyat");
-    println!("Database connection established");
-
-    match import_bank_statement(&db, req).await {
-        Ok(resp) => {
-            println!("=== import_doc_handler SUCCESS ===");
-            Ok(Json(resp))
-        }
-        Err(e) => {
-            println!("=== import_doc_handler ERROR ===");
-            println!("Import failed: {}", e);
-            eprintln!("Import failed: {}", e);
             Err(StatusCode::UNPROCESSABLE_ENTITY)
         }
     }

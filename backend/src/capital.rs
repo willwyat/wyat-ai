@@ -30,7 +30,8 @@ use std::sync::Arc;
 use thiserror::Error;
 
 // Import storage functions and types
-use crate::services::openai::{ExtractResult, extract_bank_statement};
+// TODO: Re-enable when implementing bank statement import
+// use crate::services::openai::extract_bank_statement;
 use crate::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 
 // ------------------------- Money -------------------------
@@ -1288,117 +1289,4 @@ pub async fn create_transaction(
             Err(format!("Database error: {}", e))
         }
     }
-}
-
-// POST /capital/documents/import
-#[derive(Debug, serde::Deserialize)]
-pub struct ImportReq {
-    pub blob_id: ObjectId,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub namespace: String, // expect "capital"
-    #[serde(default)]
-    pub kind: String, // expect "bank_statement"
-    #[serde(default)]
-    pub account_id: Option<String>, // e.g., "acct.chase_w_checking"
-}
-
-#[derive(serde::Serialize)]
-pub struct ImportResp {
-    pub doc: Document,
-    pub csv_blob_id: ObjectId,
-    pub audit: serde_json::Value,
-    pub rows_preview: Vec<serde_json::Value>,
-}
-
-pub async fn import_bank_statement(db: &Database, req: ImportReq) -> anyhow::Result<ImportResp> {
-    println!("=== import_bank_statement START ===");
-    println!(
-        "Request: blob_id={}, title={:?}, namespace={}, kind={}",
-        req.blob_id, req.title, req.namespace, req.kind
-    );
-
-    // 1) Create or reuse Document (status: "uploaded")
-    let title = req.title.unwrap_or_else(|| "Bank Statement".to_string());
-    // Generate a unique doc_id for this blob
-    let doc_id = format!("doc_capital_{}", req.blob_id.to_hex());
-    println!("Generated doc_id: {}", doc_id);
-
-    println!("Creating document...");
-    let doc = create_document(
-        db,
-        &doc_id,
-        "capital",
-        "bank_statement",
-        &title,
-        req.blob_id,
-        bson::doc! {}, // we'll add inferred fields after extraction
-    )
-    .await?;
-    println!("Document created successfully: {}", doc.id);
-
-    // 2) Extract text locally → call OpenAI once to produce transactions + balances/period
-    println!("Fetching PDF bytes...");
-    let pdf_bytes = get_blob_bytes_by_id(db, req.blob_id).await?;
-    println!("PDF bytes fetched: {} bytes", pdf_bytes.len());
-
-    println!("Fetching AI prompt...");
-    use crate::services::ai_prompts::get_prompt_by_id;
-    let prompt = get_prompt_by_id(db, "capital.extract_bank_statement").await?;
-    println!("Prompt fetched: {}", prompt.id);
-
-    println!("Extracting bank statement...");
-    let account_id_ref = req.account_id.as_deref();
-    let ExtractResult {
-        csv_text,
-        audit_json,
-        inferred_meta,
-        rows_preview,
-    } = extract_bank_statement(&prompt.prompt_template, account_id_ref, &pdf_bytes).await?;
-    println!("Bank statement extracted successfully");
-    println!("CSV text length: {} chars", csv_text.len());
-    println!("Rows preview count: {}", rows_preview.len());
-
-    // 3) Persist CSV + audit as blobs
-    println!("Persisting CSV blob...");
-    let csv_blob = insert_blob(db, Bytes::from(csv_text.into_bytes()), "text/csv").await?;
-    println!("CSV blob created: {}", csv_blob.id);
-
-    println!("Persisting audit blob...");
-    let audit_blob = insert_blob(
-        db,
-        Bytes::from(audit_json.to_string().into_bytes()),
-        "application/json",
-    )
-    .await?;
-    println!("Audit blob created: {}", audit_blob.id);
-
-    // 4) Update Document → "parsed", attach metadata & blob ids
-    println!("Updating document with parsed status...");
-    let docs = db.collection::<Document>("documents");
-    let now = chrono::Utc::now().timestamp();
-
-    // Convert serde_json::Value to bson::Bson
-    let inferred_bson = bson::to_bson(&inferred_meta)?;
-
-    let update = doc! {
-        "$set": {
-          "status.ingest": "parsed",
-          "updated_at": now,
-          "metadata.csv_blob_id": csv_blob.id,
-          "metadata.audit_blob_id": audit_blob.id,
-          "metadata.inferred": inferred_bson,   // institution, last4, period, balances
-        }
-    };
-    let result = docs.update_one(doc! {"_id": &doc.id}, update, None).await?;
-    println!("Document updated: modified_count={}", result.modified_count);
-
-    println!("=== import_bank_statement SUCCESS ===");
-    Ok(ImportResp {
-        doc,
-        csv_blob_id: csv_blob.id,
-        audit: audit_json,
-        rows_preview,
-    })
 }
