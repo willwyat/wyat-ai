@@ -8,7 +8,9 @@ use std::fs::File;
 use std::io::Read;
 use std::str::FromStr;
 use uuid::Uuid;
-use wyat_ai_backend::capital::{Currency, Leg, LegAmount, LegDirection, Money, Transaction};
+use wyat_ai_backend::capital::{
+    BalanceState, Currency, Leg, LegAmount, LegDirection, Money, Transaction,
+};
 
 const PNL_ACCOUNT_ID: &str = "__pnl__"; // virtual ledger account for expense/income balancing
 const ENV_UNCATEGORIZED: &str = "env_uncategorized";
@@ -87,7 +89,7 @@ async fn main() -> Result<()> {
             notes: Some("seed:auto-balance".into()),
         };
 
-        let txn = Transaction {
+        let mut txn = Transaction {
             id: Uuid::new_v4().to_string(),
             ts,
             posted_ts: Some(ts),
@@ -99,7 +101,10 @@ async fn main() -> Result<()> {
             tx_type: None,
             external_refs: vec![("statement".into(), "Chase6886_20250908_20251007".into())],
             legs: vec![account_leg, pnl_leg],
+            balance_state: BalanceState::Unknown,
         };
+
+        txn.recompute_balance_state();
 
         collection.insert_one(txn, None).await?;
         count += 1;

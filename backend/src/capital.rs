@@ -17,14 +17,14 @@
 //!   thiserror = "1"
 
 use axum::{
-    Json,
     extract::{Query, State},
+    Json,
 };
 use bytes::Bytes;
 use mongodb::bson::{doc, oid::ObjectId};
-use mongodb::{Database, bson};
-use rust_decimal::Decimal;
+use mongodb::{bson, Database};
 use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -32,7 +32,12 @@ use thiserror::Error;
 // Import storage functions and types
 // TODO: Re-enable when implementing bank statement import
 // use crate::services::openai::extract_bank_statement;
-use crate::services::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
+use crate::services::storage::{create_document, get_blob_bytes_by_id, insert_blob, Document};
+
+/// Virtual ledger account used to offset spending/income legs into P&L.
+pub const PNL_ACCOUNT_ID: &str = "__pnl__";
+/// Default envelope used when we cannot determine a more specific category.
+pub const DEFAULT_ENVELOPE_ID: &str = "env_uncategorized";
 
 // ------------------------- Money -------------------------
 
@@ -368,6 +373,15 @@ pub enum LegDirection {
     Credit,
 }
 
+impl LegDirection {
+    pub fn opposite(self) -> Self {
+        match self {
+            LegDirection::Debit => LegDirection::Credit,
+            LegDirection::Credit => LegDirection::Debit,
+        }
+    }
+}
+
 /// Snapshot used to value a leg in a chosen reporting currency (e.g., USD or BTC).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct FxSnapshot {
@@ -414,6 +428,21 @@ pub struct Leg {
     pub notes: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BalanceState {
+    Balanced,
+    NeedsEnvelopeOffset,
+    AwaitingTransferMatch,
+    Unknown,
+}
+
+impl Default for BalanceState {
+    fn default() -> Self {
+        BalanceState::Unknown
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,             // stable UUID/String
@@ -427,6 +456,8 @@ pub struct Transaction {
     pub external_refs: Vec<(String, String)>, // pairs of (kind, value) like ("tx_hash", "0x...")
     pub legs: Vec<Leg>,
     pub tx_type: Option<String>,
+    #[serde(default)]
+    pub balance_state: BalanceState,
 }
 
 impl Transaction {
@@ -468,6 +499,81 @@ impl Transaction {
             }
         }
         (net.is_zero(), Money::new(net, report_ccy))
+    }
+
+    fn apply_spending_autobalance(&mut self) {
+        if self.legs.len() != 1 {
+            return;
+        }
+        if self.is_transfer_type() {
+            return;
+        }
+
+        let primary_leg = self.legs.first_mut().expect("checked len");
+        let amount = match &primary_leg.amount {
+            LegAmount::Fiat(m) => *m,
+            _ => return,
+        };
+
+        let category_for_pnl = primary_leg
+            .category_id
+            .take()
+            .unwrap_or_else(|| DEFAULT_ENVELOPE_ID.to_string());
+
+        let balancing_leg = Leg {
+            account_id: PNL_ACCOUNT_ID.to_string(),
+            direction: primary_leg.direction.opposite(),
+            amount: LegAmount::Fiat(amount),
+            fx: primary_leg.fx,
+            category_id: Some(category_for_pnl),
+            fee_of_leg_idx: None,
+            notes: Some("auto-balance:pnl".to_string()),
+        };
+        self.legs.push(balancing_leg);
+    }
+
+    fn is_transfer_type(&self) -> bool {
+        if let Some(tx_type) = &self.tx_type {
+            if tx_type.eq_ignore_ascii_case("transfer")
+                || tx_type.eq_ignore_ascii_case("transfer_fx")
+            {
+                return true;
+            }
+        }
+
+        self.external_refs.iter().any(|(kind, _)| {
+            kind.eq_ignore_ascii_case("transfer_group")
+                || kind.eq_ignore_ascii_case("transfer_id")
+                || kind.eq_ignore_ascii_case("transfer_match")
+        })
+    }
+
+    pub fn recompute_balance_state(&mut self) -> BalanceState {
+        let state = self.infer_balance_state();
+        self.balance_state = state;
+        state
+    }
+
+    fn infer_balance_state(&self) -> BalanceState {
+        if self.legs.is_empty() {
+            return BalanceState::Unknown;
+        }
+
+        let (balanced, _) = self.is_balanced_in(Currency::USD);
+        if balanced {
+            return BalanceState::Balanced;
+        }
+
+        if self.legs.len() == 1 && !self.is_transfer_type() {
+            return BalanceState::NeedsEnvelopeOffset;
+        }
+
+        BalanceState::AwaitingTransferMatch
+    }
+
+    pub fn normalize(&mut self) {
+        self.apply_spending_autobalance();
+        self.recompute_balance_state();
     }
 }
 
@@ -540,7 +646,11 @@ fn active_cycle_bounds(now_utc: i64) -> (i64, i64, String) {
     let (start_y, start_m) = if d >= 10 {
         (y, m)
     } else {
-        if m == 1 { (y - 1, 12) } else { (y, m - 1) }
+        if m == 1 {
+            (y - 1, 12)
+        } else {
+            (y, m - 1)
+        }
     };
 
     // Start: 10th at 00:00:00
@@ -643,7 +753,7 @@ pub async fn get_envelope_usage(
     Query(q): Query<UsageQuery>,
 ) -> Result<Json<EnvelopeUsage>, String> {
     use futures::stream::TryStreamExt;
-    use mongodb::bson::{Bson, doc};
+    use mongodb::bson::{doc, Bson};
 
     // Determine cycle bounds based on optional label query parameter
     let (start_ts, end_ts, label) = match q.label.as_deref() {
@@ -1201,19 +1311,62 @@ pub async fn delete_transaction(
 }
 
 // POST /capital/transactions
+fn default_reconciled() -> bool {
+    false
+}
+
 #[derive(Debug, serde::Deserialize)]
-pub struct CreateTransactionReq {
+pub struct NewTransaction {
     pub id: String,
     pub ts: i64,
+    #[serde(default)]
     pub posted_ts: Option<i64>,
     pub source: String,
+    #[serde(default)]
     pub payee: Option<String>,
+    #[serde(default)]
     pub memo: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
+    #[serde(default = "default_reconciled")]
     pub reconciled: bool,
+    #[serde(default)]
     pub external_refs: Vec<(String, String)>,
+    #[serde(default)]
     pub legs: Vec<Leg>,
+    #[serde(default)]
     pub tx_type: Option<String>,
+}
+
+impl NewTransaction {
+    pub fn into_transaction(self) -> Result<Transaction, String> {
+        if self.id.trim().is_empty() {
+            return Err("transaction id cannot be empty".to_string());
+        }
+        if self.legs.is_empty() {
+            return Err(format!(
+                "transaction '{}' must include at least one leg",
+                self.id
+            ));
+        }
+
+        let mut tx = Transaction {
+            id: self.id,
+            ts: self.ts,
+            posted_ts: self.posted_ts,
+            source: self.source,
+            payee: self.payee,
+            memo: self.memo,
+            status: self.status,
+            reconciled: self.reconciled,
+            external_refs: self.external_refs,
+            legs: self.legs,
+            tx_type: self.tx_type,
+            balance_state: BalanceState::Unknown,
+        };
+        tx.normalize();
+        Ok(tx)
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1221,11 +1374,12 @@ pub struct CreateTransactionResp {
     pub success: bool,
     pub transaction_id: String,
     pub message: String,
+    pub balance_state: BalanceState,
 }
 
 pub async fn create_transaction(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<CreateTransactionReq>,
+    Json(req): Json<NewTransaction>,
 ) -> Result<Json<CreateTransactionResp>, String> {
     println!("=== create_transaction START ===");
     println!("Request: {:?}", req);
@@ -1233,61 +1387,41 @@ pub async fn create_transaction(
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Transaction>("capital_ledger");
 
+    let tx_id = req.id.clone();
+
     // Check if transaction already exists
     let existing = collection
-        .find_one(doc! { "id": &req.id }, None)
+        .find_one(doc! { "id": &tx_id }, None)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
     if existing.is_some() {
-        return Err(format!("Transaction with ID '{}' already exists", req.id));
+        return Err(format!("Transaction with ID '{}' already exists", tx_id));
     }
 
-    // Validate transaction balance (optional check)
-    let (is_balanced, net_amount) = Transaction {
-        id: req.id.clone(),
-        ts: req.ts,
-        posted_ts: req.posted_ts,
-        source: req.source.clone(),
-        payee: req.payee.clone(),
-        memo: req.memo.clone(),
-        status: req.status.clone(),
-        reconciled: req.reconciled,
-        external_refs: req.external_refs.clone(),
-        legs: req.legs.clone(),
-        tx_type: req.tx_type.clone(),
-    }
-    .is_balanced_in(Currency::USD);
+    // Build the normalized transaction
+    let transaction = req
+        .into_transaction()
+        .map_err(|err| format!("Validation error for '{}': {}", tx_id, err))?;
 
-    if !is_balanced {
+    if transaction.balance_state != BalanceState::Balanced {
         println!(
-            "Warning: Transaction is not balanced. Net amount: {:?}",
-            net_amount
+            "Warning: Transaction '{}' stored with balance_state={:?}",
+            transaction.id, transaction.balance_state
         );
     }
 
-    // Create the transaction
-    let transaction = Transaction {
-        id: req.id.clone(),
-        ts: req.ts,
-        posted_ts: req.posted_ts,
-        source: req.source,
-        payee: req.payee,
-        memo: req.memo,
-        status: req.status,
-        reconciled: req.reconciled,
-        external_refs: req.external_refs,
-        legs: req.legs,
-        tx_type: req.tx_type,
-    };
+    let tx_balance_state = transaction.balance_state;
+    let stored_id = transaction.id.clone();
 
     // Insert into database
     match collection.insert_one(&transaction, None).await {
         Ok(_) => {
-            println!("Transaction created successfully: {}", req.id);
+            println!("Transaction created successfully: {}", stored_id);
             Ok(Json(CreateTransactionResp {
                 success: true,
-                transaction_id: req.id,
+                transaction_id: stored_id,
                 message: "Transaction created successfully".to_string(),
+                balance_state: tx_balance_state,
             }))
         }
         Err(e) => {
@@ -1350,8 +1484,8 @@ pub async fn batch_import_transactions(
     Json(req): Json<BatchImportRequest>,
 ) -> Result<Json<BatchImportResponse>, String> {
     use mongodb::bson::doc;
-    use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
+    use rust_decimal::Decimal;
 
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Transaction>("capital_ledger");
@@ -1361,8 +1495,9 @@ pub async fn batch_import_transactions(
     let mut errors: Vec<String> = Vec::new();
 
     for itx in req.transactions {
+        let txid = itx.txid.clone();
         // Skip if already exists
-        if let Ok(Some(_existing)) = collection.find_one(doc! { "id": &itx.txid }, None).await {
+        if let Ok(Some(_existing)) = collection.find_one(doc! { "id": &txid }, None).await {
             skipped += 1;
             continue;
         }
@@ -1375,7 +1510,7 @@ pub async fn batch_import_transactions(
             )
             .timestamp(),
             Err(e) => {
-                errors.push(format!("{}: invalid date '{}': {}", itx.txid, itx.date, e));
+                errors.push(format!("{}: invalid date '{}': {}", txid, itx.date, e));
                 skipped += 1;
                 continue;
             }
@@ -1385,10 +1520,7 @@ pub async fn batch_import_transactions(
         let amount_dec = match Decimal::from_f64(itx.amount_or_qty) {
             Some(v) => v,
             None => {
-                errors.push(format!(
-                    "{}: invalid amount {}",
-                    itx.txid, itx.amount_or_qty
-                ));
+                errors.push(format!("{}: invalid amount {}", txid, itx.amount_or_qty));
                 skipped += 1;
                 continue;
             }
@@ -1400,7 +1532,7 @@ pub async fn batch_import_transactions(
                 "HKD" => Currency::HKD,
                 "BTC" => Currency::BTC,
                 other => {
-                    errors.push(format!("{}: unsupported fiat ccy '{}'", itx.txid, other));
+                    errors.push(format!("{}: unsupported fiat ccy '{}'", txid, other));
                     skipped += 1;
                     continue;
                 }
@@ -1418,7 +1550,7 @@ pub async fn batch_import_transactions(
             "Debit" => LegDirection::Debit,
             "Credit" => LegDirection::Credit,
             other => {
-                errors.push(format!("{}: invalid direction '{}'", itx.txid, other));
+                errors.push(format!("{}: invalid direction '{}'", txid, other));
                 skipped += 1;
                 continue;
             }
@@ -1439,11 +1571,17 @@ pub async fn batch_import_transactions(
             external_refs.push((k, v));
         }
 
-        let tx = Transaction {
-            id: itx.txid.clone(),
+        let source = if itx.source.trim().is_empty() {
+            "assistant_extraction".to_string()
+        } else {
+            itx.source.clone()
+        };
+
+        let new_tx = NewTransaction {
+            id: txid.clone(),
             ts,
             posted_ts: itx.posted_ts,
-            source: "assistant_extraction".to_string(),
+            source,
             payee: itx.payee.clone(),
             memo: itx.memo.clone(),
             status: itx.status.clone(),
@@ -1453,10 +1591,26 @@ pub async fn batch_import_transactions(
             tx_type: itx.tx_type.clone(),
         };
 
+        let tx = match new_tx.into_transaction() {
+            Ok(tx) => tx,
+            Err(err) => {
+                errors.push(format!("{}: {}", txid, err));
+                skipped += 1;
+                continue;
+            }
+        };
+
+        if tx.balance_state != BalanceState::Balanced {
+            println!(
+                "Batch import: '{}' stored with balance_state={:?}",
+                tx.id, tx.balance_state
+            );
+        }
+
         match collection.insert_one(&tx, None).await {
             Ok(_) => imported += 1,
             Err(e) => {
-                errors.push(format!("{}: insert error: {}", itx.txid, e));
+                errors.push(format!("{}: insert error: {}", txid, e));
                 skipped += 1;
             }
         }
