@@ -427,6 +427,10 @@ async fn main() {
         .route("/capital/transactions", get(capital::get_transactions))
         .route("/capital/transactions", post(capital::create_transaction))
         .route(
+            "/capital/transactions/batch-import",
+            post(capital::batch_import_transactions),
+        )
+        .route(
             "/capital/transactions/reclassify",
             put(capital::reclassify_transaction),
         )

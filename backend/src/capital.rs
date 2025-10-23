@@ -1296,3 +1296,175 @@ pub async fn create_transaction(
         }
     }
 }
+
+// ------------------------- Batch Import -------------------------
+
+#[derive(Debug, Deserialize)]
+struct ImportTransaction {
+    txid: String,
+    date: String,
+    #[serde(default)]
+    posted_ts: Option<i64>,
+    source: String,
+    #[serde(default)]
+    payee: Option<String>,
+    #[serde(default)]
+    memo: Option<String>,
+    account_id: String,
+    direction: String, // "Debit" | "Credit"
+    kind: String,      // "Fiat" | "Crypto"
+    ccy_or_asset: String,
+    amount_or_qty: f64,
+    #[serde(default)]
+    price: Option<f64>,
+    #[serde(default)]
+    price_ccy: Option<String>,
+    #[serde(default)]
+    category_id: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    tx_type: Option<String>,
+    #[serde(default)]
+    ext1_kind: Option<String>,
+    #[serde(default)]
+    ext1_val: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchImportRequest {
+    transactions: Vec<ImportTransaction>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchImportResponse {
+    imported: usize,
+    skipped: usize,
+    errors: Vec<String>,
+}
+
+/// POST /capital/transactions/batch-import
+/// Accepts extracted flat transactions and inserts Transaction rows with a single P&L leg.
+pub async fn batch_import_transactions(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BatchImportRequest>,
+) -> Result<Json<BatchImportResponse>, String> {
+    use mongodb::bson::doc;
+    use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
+
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for itx in req.transactions {
+        // Skip if already exists
+        if let Ok(Some(_existing)) = collection.find_one(doc! { "id": &itx.txid }, None).await {
+            skipped += 1;
+            continue;
+        }
+
+        // Parse date (YYYY-MM-DD) -> unix ts (00:00:00 UTC)
+        let ts = match chrono::NaiveDate::parse_from_str(&itx.date, "%Y-%m-%d") {
+            Ok(d) => chrono::DateTime::<chrono::Utc>::from_utc(
+                chrono::NaiveDateTime::new(d, chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
+                chrono::Utc,
+            )
+            .timestamp(),
+            Err(e) => {
+                errors.push(format!("{}: invalid date '{}': {}", itx.txid, itx.date, e));
+                skipped += 1;
+                continue;
+            }
+        };
+
+        // Build leg amount
+        let amount_dec = match Decimal::from_f64(itx.amount_or_qty) {
+            Some(v) => v,
+            None => {
+                errors.push(format!(
+                    "{}: invalid amount {}",
+                    itx.txid, itx.amount_or_qty
+                ));
+                skipped += 1;
+                continue;
+            }
+        };
+
+        let leg_amount = if itx.kind.eq_ignore_ascii_case("fiat") {
+            let ccy = match itx.ccy_or_asset.as_str() {
+                "USD" => Currency::USD,
+                "HKD" => Currency::HKD,
+                "BTC" => Currency::BTC,
+                other => {
+                    errors.push(format!("{}: unsupported fiat ccy '{}'", itx.txid, other));
+                    skipped += 1;
+                    continue;
+                }
+            };
+            LegAmount::Fiat(Money::new(amount_dec, ccy))
+        } else {
+            // Minimal crypto support: qty = amount_or_qty, price ignored for now
+            LegAmount::Crypto {
+                asset: itx.ccy_or_asset.clone(),
+                qty: amount_dec,
+            }
+        };
+
+        let direction = match itx.direction.as_str() {
+            "Debit" => LegDirection::Debit,
+            "Credit" => LegDirection::Credit,
+            other => {
+                errors.push(format!("{}: invalid direction '{}'", itx.txid, other));
+                skipped += 1;
+                continue;
+            }
+        };
+
+        let leg = Leg {
+            account_id: itx.account_id.clone(),
+            direction,
+            amount: leg_amount,
+            fx: None,
+            category_id: itx.category_id.clone(),
+            fee_of_leg_idx: None,
+            notes: None,
+        };
+
+        let mut external_refs: Vec<(String, String)> = Vec::new();
+        if let (Some(k), Some(v)) = (itx.ext1_kind.clone(), itx.ext1_val.clone()) {
+            external_refs.push((k, v));
+        }
+
+        let tx = Transaction {
+            id: itx.txid.clone(),
+            ts,
+            posted_ts: itx.posted_ts,
+            source: "assistant_extraction".to_string(),
+            payee: itx.payee.clone(),
+            memo: itx.memo.clone(),
+            status: itx.status.clone(),
+            reconciled: false,
+            external_refs,
+            legs: vec![leg],
+            tx_type: itx.tx_type.clone(),
+        };
+
+        match collection.insert_one(&tx, None).await {
+            Ok(_) => imported += 1,
+            Err(e) => {
+                errors.push(format!("{}: insert error: {}", itx.txid, e));
+                skipped += 1;
+            }
+        }
+    }
+
+    Ok(Json(BatchImportResponse {
+        imported,
+        skipped,
+        errors,
+    }))
+}
