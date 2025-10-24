@@ -1,3 +1,10 @@
+import type {
+  FlatTransaction,
+  BatchImportResponse,
+} from "@/stores/document-store";
+
+export type { FlatTransaction, BatchImportResponse };
+
 export type Currency = "USD" | "HKD" | "BTC";
 
 export interface Money {
@@ -41,33 +48,6 @@ export interface Transaction {
     fee_of_leg_idx?: number;
     notes?: string;
   }>;
-}
-
-export interface FlatTransaction {
-  txid: string;
-  date: string;
-  posted_ts?: number | null;
-  source: string;
-  payee?: string | null;
-  memo?: string | null;
-  account_id: string;
-  direction: "Debit" | "Credit" | string;
-  kind: "Fiat" | "Crypto" | string;
-  ccy_or_asset: string;
-  amount_or_qty: number;
-  price?: number | null;
-  price_ccy?: string | null;
-  category_id?: string | null;
-  status?: string | null;
-  tx_type?: string | null;
-  ext1_kind?: string | null;
-  ext1_val?: string | null;
-}
-
-export interface BatchImportResponse {
-  imported: number;
-  skipped: number;
-  errors: string[];
 }
 
 export interface Envelope {
