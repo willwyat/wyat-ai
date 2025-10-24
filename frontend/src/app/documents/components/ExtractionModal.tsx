@@ -91,6 +91,7 @@ export default function ExtractionModal({
 
   // Editable draft of transactions + live reconciliation
   const [draftRows, setDraftRows] = useState<FlatTransaction[]>([]);
+  const [confirmed, setConfirmed] = useState<boolean[]>([]);
   const [recon, setRecon] = useState<{
     sumCredits: number;
     sumDebits: number;
@@ -150,6 +151,10 @@ export default function ExtractionModal({
     }));
   }, [isOpen, defaultAccountId]);
 
+  // Bulk append input state
+  const [bulkText, setBulkText] = useState<string>("");
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
   // Fetch previous runs on open
   useEffect(() => {
     if (!isOpen) return;
@@ -172,6 +177,9 @@ export default function ExtractionModal({
             setPreview(normalized);
             setPreviewJson(JSON.stringify(parsed, null, 2));
             setDraftRows(normalized.transactions);
+            setConfirmed(
+              new Array((normalized.transactions || []).length).fill(false)
+            );
           } catch (err) {
             console.warn("Failed to load latest extraction run", err);
           }
@@ -295,6 +303,9 @@ export default function ExtractionModal({
       setPreviewJson(JSON.stringify(response, null, 2));
       setImportSummary(response.import_summary ?? null);
       setDraftRows(normalized.transactions);
+      setConfirmed(
+        new Array((normalized.transactions || []).length).fill(false)
+      );
 
       if (response.import_summary) {
         setToastMessage(
@@ -601,7 +612,11 @@ export default function ExtractionModal({
               </button>
               <button
                 className="rounded border border-gray-300 px-3 py-2 text-xs"
-                onClick={() => setDraftRows(preview?.transactions || [])}
+                onClick={() => {
+                  const rows = preview?.transactions || [];
+                  setDraftRows(rows);
+                  setConfirmed(new Array(rows.length).fill(false));
+                }}
                 disabled={!preview?.transactions?.length}
               >
                 Reset to extracted
@@ -629,6 +644,48 @@ export default function ExtractionModal({
                   </div>
                 )}
 
+                {/* Bulk append helper */}
+                <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Append transactions (JSON array or CSV)
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      className="w-full h-28 rounded border border-gray-300 bg-white p-2 font-mono text-xs"
+                      placeholder="CSV example: txid,date,account_id,direction,kind,ccy_or_asset,amount_or_qty\nTX-1,2025-09-01,acct.id,Debit,Fiat,USD,12.34"
+                      value={bulkText}
+                      onChange={(e) => setBulkText(e.target.value)}
+                    />
+                    {bulkError && (
+                      <div className="text-xs text-red-600">{bulkError}</div>
+                    )}
+                    <button
+                      className="rounded bg-gray-800 px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                      onClick={() => {
+                        try {
+                          setBulkError(null);
+                          const parsed = parseBulkTransactions(bulkText);
+                          if (!parsed.length) {
+                            setBulkError("No valid rows parsed");
+                            return;
+                          }
+                          setDraftRows((prev) => [...prev, ...parsed]);
+                          setConfirmed((prev) => [
+                            ...prev,
+                            ...new Array(parsed.length).fill(false),
+                          ]);
+                          setBulkText("");
+                        } catch (e: any) {
+                          setBulkError(e?.message || "Failed to parse input");
+                        }
+                      }}
+                      disabled={!bulkText.trim()}
+                    >
+                      Parse & Append
+                    </button>
+                  </div>
+                </details>
+
                 {/* Editable transactions + reconciliation */}
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-700">
                   <span>Credits: {recon.sumCredits.toFixed(2)}</span>
@@ -645,6 +702,7 @@ export default function ExtractionModal({
                 </div>
                 <EditableTransactionsTable
                   rows={draftRows}
+                  confirmed={confirmed}
                   onChange={(idx, patch) =>
                     setDraftRows((prev) => {
                       const next = [...prev];
@@ -652,7 +710,14 @@ export default function ExtractionModal({
                       return next;
                     })
                   }
-                  onAdd={() =>
+                  onToggleConfirmed={(idx, value) =>
+                    setConfirmed((prev) => {
+                      const next = [...prev];
+                      next[idx] = value;
+                      return next;
+                    })
+                  }
+                  onAdd={() => {
                     setDraftRows((prev) => [
                       ...prev,
                       {
@@ -666,11 +731,13 @@ export default function ExtractionModal({
                         kind: "Fiat",
                         ccy_or_asset: "USD",
                       } as FlatTransaction,
-                    ])
-                  }
-                  onDelete={(idx) =>
-                    setDraftRows((prev) => prev.filter((_, i) => i !== idx))
-                  }
+                    ]);
+                    setConfirmed((prev) => [...prev, false]);
+                  }}
+                  onDelete={(idx) => {
+                    setDraftRows((prev) => prev.filter((_, i) => i !== idx));
+                    setConfirmed((prev) => prev.filter((_, i) => i !== idx));
+                  }}
                 />
 
                 <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
@@ -764,12 +831,16 @@ function validateResponseShape(data: any) {
 
 function EditableTransactionsTable({
   rows,
+  confirmed,
   onChange,
+  onToggleConfirmed,
   onAdd,
   onDelete,
 }: {
   rows: FlatTransaction[];
+  confirmed: boolean[];
   onChange: (idx: number, patch: Partial<FlatTransaction>) => void;
+  onToggleConfirmed: (idx: number, value: boolean) => void;
   onAdd: () => void;
   onDelete: (idx: number) => void;
 }) {
@@ -790,6 +861,9 @@ function EditableTransactionsTable({
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
+            <th className="px-3 py-2 text-left font-medium uppercase tracking-wide text-xs text-gray-500 sticky left-0 bg-gray-50 z-10">
+              Confirmed
+            </th>
             {cols.map((c) => (
               <th
                 key={String(c.key)}
@@ -804,6 +878,13 @@ function EditableTransactionsTable({
         <tbody className="divide-y divide-gray-100 bg-white">
           {rows.map((r, i) => (
             <tr key={r.txid || i}>
+              <td className="px-3 py-2 sticky left-0 bg-white z-10">
+                <input
+                  type="checkbox"
+                  checked={!!confirmed[i]}
+                  onChange={(e) => onToggleConfirmed(i, e.target.checked)}
+                />
+              </td>
               {cols.map((c) => (
                 <td key={String(c.key)} className="px-3 py-2">
                   {c.type === "select" ? (
@@ -813,6 +894,7 @@ function EditableTransactionsTable({
                       onChange={(e) =>
                         onChange(i, { [c.key]: e.target.value } as any)
                       }
+                      disabled={!!confirmed[i]}
                     >
                       <option value="" />
                       {c.options?.map((o) => (
@@ -838,6 +920,7 @@ function EditableTransactionsTable({
                               : e.target.value,
                         } as any)
                       }
+                      disabled={!!confirmed[i]}
                     />
                   )}
                 </td>
@@ -846,6 +929,7 @@ function EditableTransactionsTable({
                 <button
                   className="text-red-600 text-xs"
                   onClick={() => onDelete(i)}
+                  disabled={!!confirmed[i]}
                 >
                   Delete
                 </button>
@@ -889,4 +973,134 @@ function renderAuditValue(value: any) {
   if (typeof value === "string") return value;
   if (typeof value === "number") return value.toLocaleString();
   return JSON.stringify(value);
+}
+
+// Accept JSON array of FlatTransaction or minimal CSV with header
+function parseBulkTransactions(input: string): FlatTransaction[] {
+  const text = input.trim();
+  if (!text) return [];
+  try {
+    const json = JSON.parse(text);
+    if (Array.isArray(json)) {
+      return json
+        .map((r: any) => sanitizeFlat(r))
+        .filter((r: any) => r && typeof r.txid === "string");
+    }
+  } catch {}
+
+  // CSV path
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return [];
+  const header = lines[0].split(",").map((h) => h.trim());
+  const required = [
+    "txid",
+    "date",
+    "account_id",
+    "direction",
+    "kind",
+    "ccy_or_asset",
+    "amount_or_qty",
+  ];
+  const hasAll = required.every((k) => header.includes(k));
+  if (!hasAll) {
+    throw new Error(`CSV header must include: ${required.join(", ")}`);
+  }
+  const idx = Object.fromEntries(header.map((h, i) => [h, i]));
+  const rows: FlatTransaction[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i]);
+    if (cols.length < header.length) continue;
+    const row = sanitizeFlat({
+      txid: cols[idx["txid"]] || "",
+      date: cols[idx["date"]] || "",
+      account_id: cols[idx["account_id"]] || "",
+      direction: cols[idx["direction"]] || "",
+      kind: cols[idx["kind"]] || "",
+      ccy_or_asset: cols[idx["ccy_or_asset"]] || "USD",
+      amount_or_qty: Number(cols[idx["amount_or_qty"]] || 0),
+      payee: cols[idx["payee"]] || undefined,
+      memo: cols[idx["memo"]] || undefined,
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function sanitizeFlat(anyRow: any): FlatTransaction {
+  return {
+    txid: String(anyRow.txid ?? ""),
+    date: String(anyRow.date ?? ""),
+    posted_ts:
+      typeof anyRow.posted_ts === "number" ? anyRow.posted_ts : undefined,
+    source: String(anyRow.source ?? "assistant_extraction"),
+    payee:
+      typeof anyRow.payee === "string" && anyRow.payee.trim() !== ""
+        ? anyRow.payee
+        : undefined,
+    memo:
+      typeof anyRow.memo === "string" && anyRow.memo.trim() !== ""
+        ? anyRow.memo
+        : undefined,
+    account_id: String(anyRow.account_id ?? ""),
+    direction:
+      String(anyRow.direction ?? "Debit").toLowerCase() === "credit"
+        ? "Credit"
+        : "Debit",
+    kind:
+      String(anyRow.kind ?? "Fiat").toLowerCase() === "crypto"
+        ? "Crypto"
+        : "Fiat",
+    ccy_or_asset: String(anyRow.ccy_or_asset ?? "USD"),
+    amount_or_qty: Number(anyRow.amount_or_qty ?? 0),
+    price: typeof anyRow.price === "number" ? Number(anyRow.price) : undefined,
+    price_ccy:
+      typeof anyRow.price_ccy === "string" && anyRow.price_ccy.trim() !== ""
+        ? anyRow.price_ccy
+        : undefined,
+    category_id:
+      typeof anyRow.category_id === "string" && anyRow.category_id.trim() !== ""
+        ? anyRow.category_id
+        : undefined,
+    status:
+      typeof anyRow.status === "string" && anyRow.status.trim() !== ""
+        ? anyRow.status
+        : undefined,
+    tx_type:
+      typeof anyRow.tx_type === "string" && anyRow.tx_type.trim() !== ""
+        ? anyRow.tx_type
+        : undefined,
+    ext1_kind:
+      typeof anyRow.ext1_kind === "string" && anyRow.ext1_kind.trim() !== ""
+        ? anyRow.ext1_kind
+        : undefined,
+    ext1_val:
+      typeof anyRow.ext1_val === "string" && anyRow.ext1_val.trim() !== ""
+        ? anyRow.ext1_val
+        : undefined,
+  } as FlatTransaction;
+}
+
+// Simple CSV splitter handling quoted commas
+function splitCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result.map((s) => s.trim());
 }

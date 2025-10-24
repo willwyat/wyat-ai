@@ -715,12 +715,25 @@ async fn list_extraction_runs_handler(
     let Some(doc_id_str) = q.get("doc_id") else {
         return Err(axum::http::StatusCode::BAD_REQUEST);
     };
-    let Ok(doc_oid) = ObjectId::parse_str(doc_id_str) else {
-        return Err(axum::http::StatusCode::BAD_REQUEST);
+    let db = state.mongo_client.database("wyat");
+    // Resolve doc_id: accept either a Mongo ObjectId (hex) or a human-readable doc_id string
+    let doc_oid = match ObjectId::parse_str(doc_id_str) {
+        Ok(oid) => oid,
+        Err(_) => {
+            // Lookup by string doc_id in documents collection
+            let docs = db.collection::<Document>("documents");
+            match docs
+                .find_one(mongodb::bson::doc! { "doc_id": doc_id_str.as_str() }, None)
+                .await
+                .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+            {
+                Some(doc) => doc.id,
+                None => return Err(axum::http::StatusCode::BAD_REQUEST),
+            }
+        }
     };
 
-    let db = state.mongo_client.database("wyat");
-    let coll = db.collection::<mongodb::bson::Document>("extraction_runs");
+    let coll = db.collection::<mongodb::bson::Document>("doc_extraction_runs");
 
     let mut cursor = coll
         .find(
@@ -793,7 +806,7 @@ async fn get_extraction_run_handler(
     };
 
     let db = state.mongo_client.database("wyat");
-    let coll = db.collection::<mongodb::bson::Document>("extraction_runs");
+    let coll = db.collection::<mongodb::bson::Document>("doc_extraction_runs");
 
     let doc = coll
         .find_one(
