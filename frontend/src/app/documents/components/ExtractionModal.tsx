@@ -290,7 +290,7 @@ export default function ExtractionModal({
       onClose={closeAndReset}
       title="Extract bank statement"
       subtitle={`doc ${docId}`}
-      size="5xl"
+      size="6xl"
     >
       <div className="space-y-6">
         {toastMessage && (
@@ -458,9 +458,7 @@ export default function ExtractionModal({
             {preview && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                  <span>
-                    Transactions: {preview.transactions.length}
-                  </span>
+                  <span>Transactions: {preview.transactions.length}</span>
                   <span>Quality: {preview.quality}</span>
                   <span>
                     Confidence: {Number(preview.confidence).toFixed(2)}
@@ -513,7 +511,8 @@ export default function ExtractionModal({
                   <div className="space-y-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                     <div className="font-semibold">Import summary</div>
                     <div>
-                      Imported {importSummary.imported}, skipped {importSummary.skipped}
+                      Imported {importSummary.imported}, skipped{" "}
+                      {importSummary.skipped}
                     </div>
                     {importSummary.errors.length > 0 && (
                       <details>
@@ -605,7 +604,10 @@ function TransactionsTable({ rows }: { rows: FlatTransaction[] }) {
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {rows.map((row, idx) => (
-            <tr key={row.txid || idx} className={idx % 2 ? "bg-gray-50" : "bg-white"}>
+            <tr
+              key={row.txid || idx}
+              className={idx % 2 ? "bg-gray-50" : "bg-white"}
+            >
               {columns.map((col) => (
                 <td
                   key={col}
@@ -625,7 +627,8 @@ function TransactionsTable({ rows }: { rows: FlatTransaction[] }) {
 }
 
 function renderValue(value: any) {
-  if (value == null || value === "") return <span className="text-gray-400">—</span>;
+  if (value == null || value === "")
+    return <span className="text-gray-400">—</span>;
   if (typeof value === "number") return value.toLocaleString();
   return String(value);
 }

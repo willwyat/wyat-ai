@@ -53,15 +53,18 @@ export async function extractBankStatement(payload: {
 export async function batchImportTransactions(
   transactions: FlatTransaction[]
 ): Promise<BatchImportResponse> {
-  const response = await fetch(`${BASE_URL}/capital/transactions/batch-import`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify({ transactions }),
-  });
+  const response = await fetch(
+    `${BASE_URL}/capital/transactions/batch-import`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ transactions }),
+    }
+  );
 
   if (!response.ok) {
     const message = await response.text();

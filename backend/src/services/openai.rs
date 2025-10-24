@@ -211,6 +211,8 @@ async fn get_or_create_assistant(
         .model(model)
         .name(name)
         .instructions(instructions)
+        .temperature(0.0)
+        .top_p(0.1)
         .tools(vec![AssistantTools::FileSearch(
             AssistantToolsFileSearch::default(),
         )])
@@ -262,6 +264,8 @@ async fn run_assistant(
 ) -> Result<String> {
     let request = CreateRunRequestArgs::default()
         .assistant_id(assistant_id)
+        .temperature(0.0)
+        .top_p(0.1)
         .build()?;
 
     let run = client.threads().runs(thread_id).create(request).await?;
@@ -274,13 +278,27 @@ async fn poll_run_completion(
     thread_id: &str,
     run_id: &str,
 ) -> Result<String> {
-    let max_attempts = 120; // 60 seconds max (500ms intervals)
-    let mut attempts = 0;
+    // Allow long-running extractions. Configure via env:
+    // OPENAI_ASSISTANT_RUN_TIMEOUT_SECS (default 180s), OPENAI_ASSISTANT_POLL_MS (default 1000ms)
+    let timeout_secs: u64 = std::env::var("OPENAI_ASSISTANT_RUN_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(180);
+    let poll_ms: u64 = std::env::var("OPENAI_ASSISTANT_POLL_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1000);
+    let max_attempts = ((timeout_secs * 1000) / poll_ms).max(1);
+    let mut attempts = 0u64;
 
     loop {
         attempts += 1;
         if attempts > max_attempts {
-            return Err(anyhow!("Run timed out after {} attempts", max_attempts));
+            return Err(anyhow!(
+                "Run timed out after {} attempts (~{}s). Consider increasing OPENAI_ASSISTANT_RUN_TIMEOUT_SECS or reducing prompt size.",
+                max_attempts,
+                timeout_secs
+            ));
         }
 
         let run = client.threads().runs(thread_id).retrieve(run_id).await?;
@@ -320,7 +338,7 @@ async fn poll_run_completion(
             _ => {
                 // Still running, wait and retry
                 println!("Run status: {:?}, waiting...", run.status);
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_millis(poll_ms)).await;
             }
         }
     }

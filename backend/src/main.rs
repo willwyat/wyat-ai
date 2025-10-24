@@ -6,7 +6,8 @@ mod meta;
 mod storage;
 mod vitals;
 mod workout;
-use capital::{process_batch_import, BatchImportResponse, FlatTransaction};
+use crate::services::storage::Document;
+use capital::{BatchImportResponse, FlatTransaction, process_batch_import};
 
 // AppState is now defined in the root module
 pub struct AppState {
@@ -30,13 +31,13 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use axum::{
+    Json, Router,
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
-    Json, Router,
 };
 use hyper;
 use mongodb::bson::doc;
-use mongodb::{options::ClientOptions, Client as MongoClient};
+use mongodb::{Client as MongoClient, options::ClientOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
@@ -68,10 +69,10 @@ async fn test_mongo() -> impl IntoResponse {
 // AI Prompts handlers
 
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State as AxumState};
-use services::ai_prompts::{get_prompt_by_id, list_prompts, AiPrompt};
+use services::ai_prompts::{AiPrompt, get_prompt_by_id, list_prompts};
 use services::extraction::{
-    prepare_batch_import_from_extract, run_bank_statement_extraction, ImportDefaults,
-    PreparedBatchImport,
+    ImportDefaults, PreparedBatchImport, prepare_batch_import_from_extract,
+    run_bank_statement_extraction,
 };
 
 async fn get_ai_prompt_handler(
@@ -130,7 +131,7 @@ async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::St
         ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
         CreateChatCompletionRequestArgs,
     };
-    use async_openai::{config::OpenAIConfig, Client};
+    use async_openai::{Client, config::OpenAIConfig};
 
     let api_key = std::env::var("OPENAI_API_SECRET").map_err(|_| {
         eprintln!("OPENAI_API_SECRET not found");
@@ -226,16 +227,33 @@ async fn extract_bank_statement_handler(
 
     let db = state.mongo_client.database("wyat");
 
-    // Parse blob_id and doc_id to ObjectId
+    // Parse blob_id to ObjectId
     let blob_oid = mongodb::bson::oid::ObjectId::parse_str(&req.blob_id).map_err(|e| {
         eprintln!("Invalid blob_id: {}", e);
         axum::http::StatusCode::BAD_REQUEST
     })?;
 
-    let doc_oid = mongodb::bson::oid::ObjectId::parse_str(&req.doc_id).map_err(|e| {
-        eprintln!("Invalid doc_id: {}", e);
-        axum::http::StatusCode::BAD_REQUEST
-    })?;
+    // Resolve doc_id: accept either a Mongo ObjectId (hex) or a human-readable doc_id string
+    let doc_oid = match mongodb::bson::oid::ObjectId::parse_str(&req.doc_id) {
+        Ok(oid) => oid,
+        Err(_) => {
+            // Lookup by string doc_id in documents collection
+            let docs = db.collection::<Document>("documents");
+            match docs
+                .find_one(mongodb::bson::doc! { "doc_id": &req.doc_id }, None)
+                .await
+                .map_err(|e| {
+                    eprintln!("Failed to resolve doc_id '{}': {}", req.doc_id, e);
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                })? {
+                Some(doc) => doc.id,
+                None => {
+                    eprintln!("Document with doc_id '{}' not found", req.doc_id);
+                    return Err(axum::http::StatusCode::BAD_REQUEST);
+                }
+            }
+        }
+    };
 
     // Delegate orchestration to service layer
     match run_bank_statement_extraction(
