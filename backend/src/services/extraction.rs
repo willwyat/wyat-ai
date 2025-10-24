@@ -1,13 +1,13 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use mongodb::{
-    bson::{doc, oid::ObjectId},
     Database,
+    bson::{doc, oid::ObjectId},
 };
 use sha2::{Digest, Sha256};
 
 use crate::capital::{BatchImportRequest, FlatTransaction};
 use crate::services::ai_prompts::get_prompt_by_id;
-use crate::services::openai::{extract_bank_statement, ExtractResult};
+use crate::services::openai::{ExtractResult, extract_bank_statement};
 use crate::services::storage as storage_svc;
 use crate::storage::ExtractionRun;
 use serde_json::Value;
@@ -92,8 +92,6 @@ pub async fn run_bank_statement_extraction(
         "transaction_count": result.transactions.len() as i32,
         "quality": &result.quality,
         "confidence": result.confidence,
-        // Store full response for audit trail
-        "response_text": result_json,
     };
 
     // 5) Create extraction run record (links document on success)
@@ -107,6 +105,12 @@ pub async fn run_bank_statement_extraction(
         metadata,
     )
     .await?;
+
+    // Store full response text separately after run creation
+    let update = doc! { "$set": { "response_text": result_json } };
+    db.collection::<mongodb::bson::Document>("extraction_runs")
+        .update_one(doc! { "_id": &run.id }, update, None)
+        .await?;
 
     println!("=== run_bank_statement_extraction SUCCESS ===");
     println!("ExtractionRun ID: {}", run.id);

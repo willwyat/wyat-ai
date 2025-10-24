@@ -87,6 +87,16 @@ export default function ExtractionModal({
     useState<BatchImportResponse | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Editable draft of transactions + live reconciliation
+  const [draftRows, setDraftRows] = useState<FlatTransaction[]>([]);
+  const [recon, setRecon] = useState<{
+    sumCredits: number;
+    sumDebits: number;
+    net: number;
+    expected: number;
+    diff: number;
+  }>({ sumCredits: 0, sumDebits: 0, net: 0, expected: 0, diff: 0 });
+
   useEffect(() => {
     if (!isOpen) {
       resetState();
@@ -183,6 +193,8 @@ export default function ExtractionModal({
     setPreviewJson("");
     setImportSummary(null);
     setToastMessage(null);
+    setDraftRows([]);
+    setRecon({ sumCredits: 0, sumDebits: 0, net: 0, expected: 0, diff: 0 });
   }
 
   async function handleExtract(submit: boolean) {
@@ -237,6 +249,7 @@ export default function ExtractionModal({
       setPreview(normalized);
       setPreviewJson(JSON.stringify(response, null, 2));
       setImportSummary(response.import_summary ?? null);
+      setDraftRows(normalized.transactions);
 
       if (response.import_summary) {
         setToastMessage(
@@ -254,8 +267,32 @@ export default function ExtractionModal({
     }
   }
 
+  // Recompute reconciliation whenever draftRows or inferred_meta change
+  useEffect(() => {
+    if (!preview) return;
+    const opening = Number(preview.inferred_meta?.opening_balance ?? 0);
+    const closing = Number(preview.inferred_meta?.closing_balance ?? 0);
+    const expected = closing - opening;
+    let sumCredits = 0;
+    let sumDebits = 0;
+    for (const r of draftRows) {
+      const amt = Number((r as any)?.amount_or_qty ?? 0);
+      const dir = String((r as any)?.direction ?? "").toLowerCase();
+      if (dir === "credit") sumCredits += amt;
+      if (dir === "debit") sumDebits += amt;
+    }
+    const net = sumCredits - sumDebits;
+    setRecon({
+      sumCredits,
+      sumDebits,
+      net,
+      expected,
+      diff: Math.abs(net - expected),
+    });
+  }, [draftRows, preview]);
+
   async function handleManualImport() {
-    if (!preview?.transactions?.length) return;
+    if (!draftRows?.length) return;
 
     setIsImporting(true);
     setError(null);
@@ -263,7 +300,7 @@ export default function ExtractionModal({
     setImportSummary(null);
 
     try {
-      const result = await batchImportTransactions(preview.transactions);
+      const result = await batchImportTransactions(draftRows);
       setImportSummary(result);
       setToastMessage(
         `Imported ${result.imported} transactions, skipped ${result.skipped}`
@@ -448,10 +485,18 @@ export default function ExtractionModal({
                   isImporting ||
                   isExtracting ||
                   isSubmitting ||
-                  !preview?.transactions?.length
+                  !draftRows?.length ||
+                  recon.diff > 0.01
                 }
               >
-                {isImporting ? "Importing…" : "Import to ledger"}
+                {isImporting ? "Importing…" : "Import edited rows"}
+              </button>
+              <button
+                className="rounded border border-gray-300 px-3 py-2 text-xs"
+                onClick={() => setDraftRows(preview?.transactions || [])}
+                disabled={!preview?.transactions?.length}
+              >
+                Reset to extracted
               </button>
             </div>
 
@@ -476,7 +521,49 @@ export default function ExtractionModal({
                   </div>
                 )}
 
-                <TransactionsTable rows={preview.transactions} />
+                {/* Editable transactions + reconciliation */}
+                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-700">
+                  <span>Credits: {recon.sumCredits.toFixed(2)}</span>
+                  <span>Debits: {recon.sumDebits.toFixed(2)}</span>
+                  <span>Net: {recon.net.toFixed(2)}</span>
+                  <span>Expected: {recon.expected.toFixed(2)}</span>
+                  <span
+                    className={
+                      recon.diff <= 0.01 ? "text-green-600" : "text-red-600"
+                    }
+                  >
+                    Difference: {recon.diff.toFixed(2)}
+                  </span>
+                </div>
+                <EditableTransactionsTable
+                  rows={draftRows}
+                  onChange={(idx, patch) =>
+                    setDraftRows((prev) => {
+                      const next = [...prev];
+                      next[idx] = { ...next[idx], ...patch } as FlatTransaction;
+                      return next;
+                    })
+                  }
+                  onAdd={() =>
+                    setDraftRows((prev) => [
+                      ...prev,
+                      {
+                        txid: "",
+                        date: "",
+                        payee: "",
+                        memo: "",
+                        amount_or_qty: 0,
+                        direction: "Debit",
+                        account_id: preview?.inferred_meta?.account_id || "",
+                        kind: "Fiat",
+                        ccy_or_asset: "USD",
+                      } as FlatTransaction,
+                    ])
+                  }
+                  onDelete={(idx) =>
+                    setDraftRows((prev) => prev.filter((_, i) => i !== idx))
+                  }
+                />
 
                 <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
                   <summary className="cursor-pointer font-medium">
@@ -567,24 +654,27 @@ function validateResponseShape(data: any) {
   }
 }
 
-function TransactionsTable({ rows }: { rows: FlatTransaction[] }) {
-  if (!rows.length) {
-    return (
-      <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-        No transactions returned.
-      </div>
-    );
-  }
-
-  const columns = [
-    "txid",
-    "date",
-    "payee",
-    "memo",
-    "amount_or_qty",
-    "direction",
-    "account_id",
-    "ccy_or_asset",
+function EditableTransactionsTable({
+  rows,
+  onChange,
+  onAdd,
+  onDelete,
+}: {
+  rows: FlatTransaction[];
+  onChange: (idx: number, patch: Partial<FlatTransaction>) => void;
+  onAdd: () => void;
+  onDelete: (idx: number) => void;
+}) {
+  const cols = [
+    { key: "txid", type: "text" },
+    { key: "date", type: "text" },
+    { key: "payee", type: "text" },
+    { key: "memo", type: "text" },
+    { key: "amount_or_qty", type: "number" },
+    { key: "direction", type: "select", options: ["Debit", "Credit"] },
+    { key: "account_id", type: "text" },
+    { key: "ccy_or_asset", type: "text" },
+    { key: "tx_type", type: "text" },
   ] as const;
 
   return (
@@ -592,45 +682,77 @@ function TransactionsTable({ rows }: { rows: FlatTransaction[] }) {
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
-            {columns.map((col) => (
+            {cols.map((c) => (
               <th
-                key={col}
+                key={String(c.key)}
                 className="px-3 py-2 text-left font-medium uppercase tracking-wide text-xs text-gray-500"
               >
-                {col}
+                {String(c.key)}
               </th>
             ))}
+            <th className="px-3 py-2" />
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
-          {rows.map((row, idx) => (
-            <tr
-              key={row.txid || idx}
-              className={idx % 2 ? "bg-gray-50" : "bg-white"}
-            >
-              {columns.map((col) => (
-                <td
-                  key={col}
-                  className={`px-3 py-2 ${
-                    col === "amount_or_qty" ? "text-right" : "text-left"
-                  }`}
-                >
-                  {renderValue(row[col])}
+          {rows.map((r, i) => (
+            <tr key={r.txid || i}>
+              {cols.map((c) => (
+                <td key={String(c.key)} className="px-3 py-2">
+                  {c.type === "select" ? (
+                    <select
+                      className="border rounded px-2 py-1 text-xs"
+                      value={(r as any)[c.key] ?? ""}
+                      onChange={(e) =>
+                        onChange(i, { [c.key]: e.target.value } as any)
+                      }
+                    >
+                      <option value="" />
+                      {c.options?.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="border rounded px-2 py-1 text-xs w-40"
+                      type={c.type}
+                      value={
+                        c.type === "number"
+                          ? String((r as any)[c.key] ?? "")
+                          : (r as any)[c.key] ?? ""
+                      }
+                      onChange={(e) =>
+                        onChange(i, {
+                          [c.key]:
+                            c.type === "number"
+                              ? Number(e.target.value || 0)
+                              : e.target.value,
+                        } as any)
+                      }
+                    />
+                  )}
                 </td>
               ))}
+              <td className="px-3 py-2">
+                <button
+                  className="text-red-600 text-xs"
+                  onClick={() => onDelete(i)}
+                >
+                  Delete
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+      <div className="mt-2">
+        <button className="text-blue-600 text-xs" onClick={onAdd}>
+          + Add row
+        </button>
+      </div>
     </div>
   );
-}
-
-function renderValue(value: any) {
-  if (value == null || value === "")
-    return <span className="text-gray-400">—</span>;
-  if (typeof value === "number") return value.toLocaleString();
-  return String(value);
 }
 
 function AuditList({ title, items }: { title: string; items: any[] }) {
