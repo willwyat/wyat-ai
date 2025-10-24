@@ -29,15 +29,20 @@ export type LegAmount =
   | { kind: "Crypto"; data: { qty: string; asset: string } };
 
 export interface Transaction {
-    id: string;
-    ts: number;
-    posted_ts?: number;
-    source: string;
+  id: string;
+  ts: number;
+  posted_ts?: number;
+  source: string;
   payee?: string;
   memo?: string;
   status?: string;
   reconciled: boolean;
   tx_type?: string;
+  balance_state?:
+    | "balanced"
+    | "needs_envelope_offset"
+    | "awaiting_transfer_match"
+    | "unknown";
   external_refs: Array<[string, string]>;
   legs: Array<{
     account_id: string;

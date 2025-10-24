@@ -440,6 +440,8 @@ export default function TransactionsPage() {
           onClose={handleCloseModal}
           accountMap={accountMap}
           envelopes={envelopes}
+          onDelete={handleDelete}
+          deleting={deleting}
         />
 
         {/* Transaction Create Modal */}

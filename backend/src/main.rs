@@ -535,6 +535,7 @@ async fn main() {
         )
         .route("/capital/cycles", get(capital::get_cycles))
         .route("/capital/accounts", get(capital::get_all_accounts))
+        .route("/capital/funds", get(capital::get_all_funds))
         .route("/capital/transactions", get(capital::get_transactions))
         .route("/capital/transactions", post(capital::create_transaction))
         .route(

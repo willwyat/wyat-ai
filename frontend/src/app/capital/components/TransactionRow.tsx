@@ -260,15 +260,40 @@ export default function TransactionRow({
   const currentCategory =
     pnlLegIdx >= 0 ? tx.legs[pnlLegIdx]?.category_id ?? "" : "";
 
+  // Reconciled rules:
+  // - balanced
+  // - and if spending/refund, must have category
+  const isBalanced =
+    (tx.balance_state || "unknown").toLowerCase() === "balanced";
+  const needsCategory =
+    (tx.tx_type === "spending" || tx.tx_type === "refund") &&
+    (!currentCategory || currentCategory === "env_uncategorized");
+  const needsAction = !isBalanced || needsCategory;
+  const reasonTooltip = needsCategory
+    ? "Uncategorized spending"
+    : (tx.balance_state || "").toLowerCase() === "awaiting_transfer_match"
+    ? "Awaiting transfer match"
+    : (tx.balance_state || "").toLowerCase() === "needs_envelope_offset"
+    ? "Needs envelope offset"
+    : "Unreconciled";
+
   // if (tx.tx_type == "spending" || tx.tx_type == "refund")
   return (
     <tr
       key={tx.id}
-      className="transition-colors duration-200 hover:bg-gray-50 dark:hover:bg-gray-700 "
+      className={`transition-colors duration-200 overflow-hidden ${
+        needsAction
+          ? "bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40"
+          : "hover:bg-gray-50 dark:hover:bg-gray-700"
+      }`}
       onClick={() => onOpenModal(tx)}
     >
       {/* Date */}
-      <td className="pl-6 pr-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+      <td
+        className={`pl-6 pr-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white ${
+          needsAction && "border-l-3 border-red-600"
+        }`}
+      >
         {formatDate(tx.ts)}
       </td>
       {/* Account / Transfer merged cell */}
@@ -653,36 +678,27 @@ export default function TransactionRow({
           )}
         </div>
       </td>
-      {/* Actions */}
+      {/* Actions (Delete moved to TransactionModal) */}
       <td className="px-3 py-4 whitespace-nowrap text-base">
-        <button
-          onClick={() => onDelete(tx.id, tx.payee || "Unknown")}
-          disabled={deleting.has(tx.id)}
-          className={styles.button.danger}
-          title="Delete transaction"
-        >
-          {deleting.has(tx.id) ? (
-            <div className={styles.spinner.medium}></div>
-          ) : (
-            <>
-              <svg
-                className="w-4 h-4 mr-1"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-              Delete
-            </>
-          )}
-        </button>
+        {needsAction && (
+          <span
+            className="inline-flex items-center gap-1 text-red-700"
+            title={reasonTooltip}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-4 h-4 text-red-600"
+            >
+              <path
+                fillRule="evenodd"
+                d="M9.401 1.592c.866-1.5 3.332-1.5 4.198 0l8.924 15.463c.866 1.5-.217 3.375-2.099 3.375H2.576c-1.882 0-2.965-1.875-2.099-3.375L9.401 1.592zM12 7.5a.75.75 0 00-.75.75v5.25a.75.75 0 001.5 0V8.25A.75.75 0 0012 7.5zm0 9a1.125 1.125 0 100-2.25 1.125 1.125 0 000 2.25z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+        )}
       </td>
     </tr>
   );

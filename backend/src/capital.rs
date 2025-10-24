@@ -17,14 +17,14 @@
 //!   thiserror = "1"
 
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use bytes::Bytes;
 use mongodb::bson::{doc, oid::ObjectId};
-use mongodb::{bson, Database};
-use rust_decimal::prelude::ToPrimitive;
+use mongodb::{Database, bson};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -32,7 +32,7 @@ use thiserror::Error;
 // Import storage functions and types
 // TODO: Re-enable when implementing bank statement import
 // use crate::services::openai::extract_bank_statement;
-use crate::services::storage::{create_document, get_blob_bytes_by_id, insert_blob, Document};
+use crate::services::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 
 /// Virtual ledger account used to offset spending/income legs into P&L.
 pub const PNL_ACCOUNT_ID: &str = "__pnl__";
@@ -593,10 +593,57 @@ pub struct Statement {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Fund {
+    #[serde(rename = "_id")]
+    pub id: mongodb::bson::oid::ObjectId,
+    pub name: String,
+    pub symbol: String,
+    pub assets: Vec<String>,
+    pub purpose: String,
+    pub horizon_years: i32,
+    pub discretionary_sales: bool,
+    #[serde(default)]
+    pub acquisition_policy: Option<String>,
+    #[serde(default)]
+    pub yield_policy: Option<String>,
+    pub denominated_in: Currency,
+    #[serde(default)]
+    pub balancing_policy: Option<mongodb::bson::Document>,
+    #[serde(default)]
+    pub multiplier_rules: Option<Vec<String>>,
+    pub max_pct_networth: f64,
+    pub max_pct_liquid: f64,
+    pub liquid: bool,
+    pub review_cadence: String,
+    pub status: String,
+    #[serde(default)]
+    pub created_at: Option<mongodb::bson::DateTime>,
+    #[serde(default)]
+    pub updated_at: Option<mongodb::bson::DateTime>,
+    pub fund_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PublicFund {
     pub id: String,
-    pub name: String,       // e.g. "Altcoin Fund"
-    pub base_ccy: Currency, // BTC
-    pub charter: String,    // e.g. "High-beta meme coin exposure."
+    pub fund_id: String,
+    pub name: String,
+    pub symbol: String,
+    pub assets: Vec<String>,
+    pub purpose: String,
+    pub horizon_years: i32,
+    pub discretionary_sales: bool,
+    pub acquisition_policy: Option<String>,
+    pub yield_policy: Option<String>,
+    pub denominated_in: Currency,
+    pub balancing_policy: Option<mongodb::bson::Document>,
+    pub multiplier_rules: Option<Vec<String>>,
+    pub max_pct_networth: f64,
+    pub max_pct_liquid: f64,
+    pub liquid: bool,
+    pub review_cadence: String,
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -646,11 +693,7 @@ fn active_cycle_bounds(now_utc: i64) -> (i64, i64, String) {
     let (start_y, start_m) = if d >= 10 {
         (y, m)
     } else {
-        if m == 1 {
-            (y - 1, 12)
-        } else {
-            (y, m - 1)
-        }
+        if m == 1 { (y - 1, 12) } else { (y, m - 1) }
     };
 
     // Start: 10th at 00:00:00
@@ -753,7 +796,7 @@ pub async fn get_envelope_usage(
     Query(q): Query<UsageQuery>,
 ) -> Result<Json<EnvelopeUsage>, String> {
     use futures::stream::TryStreamExt;
-    use mongodb::bson::{doc, Bson};
+    use mongodb::bson::{Bson, doc};
 
     // Determine cycle bounds based on optional label query parameter
     let (start_ts, end_ts, label) = match q.label.as_deref() {
@@ -999,6 +1042,60 @@ pub async fn get_cycles(State(_state): State<Arc<AppState>>) -> Json<CycleList> 
     let labels = list_cycle_labels(now);
     let (_, _, active) = active_cycle_bounds(now);
     Json(CycleList { labels, active })
+}
+
+/// GET /capital/funds - Fetch all funds from MongoDB (capital_funds collection)
+pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<PublicFund>> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Fund>("capital_funds");
+
+    use futures::stream::TryStreamExt;
+
+    match collection.find(None, None).await {
+        Ok(cursor) => match cursor.try_collect::<Vec<Fund>>().await {
+            Ok(funds) => Json(
+                funds
+                    .into_iter()
+                    .map(|f| PublicFund {
+                        id: f.id.to_hex(),
+                        fund_id: f.fund_id,
+                        name: f.name,
+                        symbol: f.symbol,
+                        assets: f.assets,
+                        purpose: f.purpose,
+                        horizon_years: f.horizon_years,
+                        discretionary_sales: f.discretionary_sales,
+                        acquisition_policy: f.acquisition_policy,
+                        yield_policy: f.yield_policy,
+                        denominated_in: f.denominated_in,
+                        balancing_policy: f.balancing_policy,
+                        multiplier_rules: f.multiplier_rules,
+                        max_pct_networth: f.max_pct_networth,
+                        max_pct_liquid: f.max_pct_liquid,
+                        liquid: f.liquid,
+                        review_cadence: f.review_cadence,
+                        status: f.status,
+                        created_at: f
+                            .created_at
+                            .map(|d| d.timestamp_millis() / 1000)
+                            .unwrap_or(0),
+                        updated_at: f
+                            .updated_at
+                            .map(|d| d.timestamp_millis() / 1000)
+                            .unwrap_or(0),
+                    })
+                    .collect(),
+            ),
+            Err(e) => {
+                eprintln!("Error collecting funds: {}", e);
+                Json(Vec::new())
+            }
+        },
+        Err(e) => {
+            eprintln!("Error fetching funds: {}", e);
+            Json(Vec::new())
+        }
+    }
 }
 
 /// GET /capital/accounts - Fetch all accounts from MongoDB
@@ -1518,8 +1615,8 @@ pub async fn process_batch_import(
     transactions: Vec<FlatTransaction>,
 ) -> Result<BatchImportResponse, String> {
     use mongodb::bson::doc;
-    use rust_decimal::prelude::FromPrimitive;
     use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
 
     let collection = db.collection::<Transaction>("capital_ledger");
 
