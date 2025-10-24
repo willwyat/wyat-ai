@@ -1,852 +1,658 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Modal from "@/components/ui/Modal";
-import { API_URL } from "@/lib/config";
-import { useAiStore, type DocumentInfo, type AiPrompt } from "@/stores";
-import type {
-  BatchImportResponse,
-  FlatTransaction,
-} from "@/app/capital/types";
 import Loader from "@/components/Loader";
+import { useAiStore, useCapitalStore } from "@/stores";
+import type {
+  FlatTransaction,
+  BatchImportResponse,
+} from "@/stores/document-store";
+import {
+  batchImportTransactions,
+  extractBankStatement,
+} from "@/app/services/extraction";
 
 interface ExtractionModalProps {
-  document: DocumentInfo | null;
+  isOpen: boolean;
   onClose: () => void;
-  onExtract: (doc: DocumentInfo, prompt: string, accountId?: string) => void;
+  docId: string;
+  blobId: string;
+  promptId: string;
+  promptVersion: string;
+  defaultAccountId: string;
+  defaultTxidPrefix: string;
 }
 
+type ImportOptions = {
+  source?: string;
+  status?: string | null;
+  debit_tx_type?: string;
+  credit_tx_type?: string;
+  fallback_account_id?: string;
+};
+
+type ExtractionPreview = {
+  transactions: FlatTransaction[];
+  audit: any;
+  inferred_meta: any;
+  quality: string;
+  confidence: number;
+  import_summary?: BatchImportResponse;
+};
+
+const DEFAULT_MODEL = "gpt-4o-mini";
+
 export default function ExtractionModal({
-  document,
+  isOpen,
   onClose,
-  onExtract,
+  docId,
+  blobId,
+  promptId,
+  promptVersion,
+  defaultAccountId,
+  defaultTxidPrefix,
 }: ExtractionModalProps) {
-  const { getAiPrompt } = useAiStore();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [prompt, setPrompt] = useState<AiPrompt | null>(null);
-  const [editedPrompt, setEditedPrompt] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [extractionResult, setExtractionResult] = useState<string | null>(null);
-  const [extractionData, setExtractionData] = useState<any | null>(null);
-  const [flatTransactions, setFlatTransactions] = useState<FlatTransaction[]>([]);
-  const [editableRows, setEditableRows] = useState<Record<string, string>[]>([]);
-  const [extracting, setExtracting] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<BatchImportResponse | null>(
-    null
+  const router = useRouter();
+  const getAiPrompt = useAiStore((state) => state.getAiPrompt);
+  const fetchTransactions = useCapitalStore((state) => state.fetchTransactions);
+
+  const [promptTemplate, setPromptTemplate] = useState<string>("");
+  const [prompt, setPrompt] = useState<string>("");
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  const [assistantName, setAssistantName] = useState<string>(
+    promptId ? `${promptId.replace(/\./g, "_")}_assistant` : ""
   );
-  const [importError, setImportError] = useState<string | null>(null);
-  const [progressMessage, setProgressMessage] = useState<string>("");
+  const [resolvedPromptVersion, setResolvedPromptVersion] =
+    useState<string>(promptVersion);
+  const [submitNow, setSubmitNow] = useState<boolean>(false);
+  const [importOptions, setImportOptions] = useState<ImportOptions>({
+    source: undefined,
+    status: null,
+    debit_tx_type: undefined,
+    credit_tx_type: undefined,
+    fallback_account_id: defaultAccountId || undefined,
+  });
 
-  // Fake progress messages while extracting
-  const progressSteps = [
-    "Uploading document to analyzer…",
-    "Creating assistant…",
-    "Creating thread…",
-    "Sending message with prompt…",
-    "Running assistant…",
-    "Analyzing pages…",
-    "Parsing structured data…",
-    "Verifying totals…",
-    "Cleaning up resources…",
-  ];
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const [preview, setPreview] = useState<ExtractionPreview | null>(null);
+  const [previewJson, setPreviewJson] = useState<string>("");
+  const [importSummary, setImportSummary] =
+    useState<BatchImportResponse | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (step === 2 && extracting) {
-      setProgressMessage(progressSteps[0]);
-      let idx = 0;
-      const id = window.setInterval(() => {
-        idx = (idx + 1) % progressSteps.length;
-        setProgressMessage(progressSteps[idx]);
-      }, 20000);
-      return () => window.clearInterval(id);
-    } else {
-      setProgressMessage("");
+    if (!isOpen) {
+      resetState();
+      return;
     }
-  }, [step, extracting]);
 
-  // Fetch prompt when document changes
-  useEffect(() => {
-    if (!document) return;
-
-    const promptId = `${document.namespace}.extract_${document.kind}`;
-    setLoading(true);
+    resetState();
+    setLoadingTemplate(true);
     setError(null);
 
     getAiPrompt(promptId)
       .then((p) => {
-        setPrompt(p);
-        setEditedPrompt(p.prompt_template);
-        // Pre-fill the template with DB variables using fillTemplateWithDBVars
-        try {
-          const required = p.prompt_variables ?? [];
-          const vars = {
-            account_id: document.metadata?.account_id ?? "",
-            txid_prefix: document.metadata?.txid_prefix ?? "",
-          };
-          const filled = fillTemplateWithDBVars(
-            p.prompt_template,
-            vars,
-            required
-          );
-          setEditedPrompt(filled);
-        } catch (e) {
-          // If variables are missing, keep the raw template and show a gentle hint
-          console.warn("Prompt interpolation skipped:", (e as Error).message);
-        }
-        setLoading(false);
+        setPromptTemplate(p.prompt_template);
+        setPrompt(applyTemplate(p.prompt_template));
+        setModel(p.model || DEFAULT_MODEL);
+        setAssistantName(`${p.namespace}_${p.task}_assistant`);
+        setResolvedPromptVersion(String(p.version ?? promptVersion));
       })
-      .catch((err) => {
-        setError(err.message || "Failed to load prompt");
-        setLoading(false);
+      .catch((err: Error) => {
+        console.error(err);
+        setPromptTemplate("");
+        setPrompt("");
+        setError(err.message || "Failed to load prompt template");
+      })
+      .finally(() => {
+        setLoadingTemplate(false);
       });
-  }, [document, getAiPrompt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, promptId]);
 
-  // Reset state when modal closes
   useEffect(() => {
-    if (!document) {
-      setStep(1);
-      setPrompt(null);
-      setEditedPrompt("");
-      setError(null);
-      setExtractionResult(null);
-      setExtractionData(null);
-      setFlatTransactions([]);
-      setEditableRows([]);
-      setExtracting(false);
-      setImporting(false);
-      setImportResult(null);
-      setImportError(null);
-    }
-  }, [document]);
+    if (!isOpen) return;
+    setImportOptions((prev) => ({
+      ...prev,
+      fallback_account_id: defaultAccountId || prev.fallback_account_id,
+    }));
+  }, [isOpen, defaultAccountId]);
 
-  if (!document) return null;
+  const warnings = useMemo(() => {
+    if (!preview?.transactions?.length) return [] as string[];
 
-  // Build editable table columns from transactions
-  function inferColumns(rows: Record<string, any>[]): string[] {
-    const keys = new Set<string>();
-    for (const r of rows) {
-      Object.keys(r || {}).forEach((k) => keys.add(k));
-    }
-    return Array.from(keys);
-  }
-
-  const optionalString = (value: any): string | null => {
-    if (value === null || value === undefined) return null;
-    const text = String(value).trim();
-    return text.length ? text : null;
-  };
-
-  const optionalNumber = (value: any): number | null => {
-    if (value === null || value === undefined || value === "") return null;
-    const num = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(num) ? num : null;
-  };
-
-  const optionalInteger = (value: any): number | null => {
-    const num = optionalNumber(value);
-    return num === null ? null : Math.trunc(num);
-  };
-
-  function coerceFlatTransaction(row: any): FlatTransaction {
-    const amountRaw =
-      typeof row?.amount_or_qty === "number"
-        ? row.amount_or_qty
-        : Number(row?.amount_or_qty ?? 0);
-    const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
-
-    return {
-      txid: String(row?.txid ?? ""),
-      date: String(row?.date ?? ""),
-      posted_ts: optionalNumber(row?.posted_ts),
-      source: String(row?.source ?? "assistant_extraction"),
-      payee: optionalString(row?.payee),
-      memo: optionalString(row?.memo),
-      account_id: String(row?.account_id ?? ""),
-      direction: String(row?.direction ?? "Debit"),
-      kind: String(row?.kind ?? "Fiat"),
-      ccy_or_asset: String(row?.ccy_or_asset ?? ""),
-      amount_or_qty: amount,
-      price: optionalNumber(row?.price),
-      price_ccy: optionalString(row?.price_ccy),
-      category_id: optionalString(row?.category_id),
-      status: optionalString(row?.status),
-      tx_type: optionalString(row?.tx_type),
-      ext1_kind: optionalString(row?.ext1_kind),
-      ext1_val: optionalString(row?.ext1_val),
-    };
-  }
-
-  function rowsToFlatTransactions(
-    rows: Record<string, string>[]
-  ): FlatTransaction[] {
-    return rows.map((row) => {
-      const amount = optionalNumber(row.amount_or_qty) ?? 0;
-
-      return {
-        txid: row.txid?.trim() ?? "",
-        date: row.date?.trim() ?? "",
-        posted_ts: optionalInteger(row.posted_ts),
-        source:
-          row.source && row.source.trim().length
-            ? row.source.trim()
-            : "assistant_extraction",
-        payee: optionalString(row.payee),
-        memo: optionalString(row.memo),
-        account_id: row.account_id?.trim() ?? "",
-        direction: row.direction?.trim() || "Debit",
-        kind: row.kind?.trim() || "Fiat",
-        ccy_or_asset: row.ccy_or_asset?.trim() ?? "",
-        amount_or_qty: amount,
-        price: optionalNumber(row.price),
-        price_ccy: optionalString(row.price_ccy),
-        category_id: optionalString(row.category_id),
-        status: optionalString(row.status),
-        tx_type: optionalString(row.tx_type),
-        ext1_kind: optionalString(row.ext1_kind),
-        ext1_val: optionalString(row.ext1_val),
-      };
-    });
-  }
-
-  function normalizeRows(rows: FlatTransaction[]): Record<string, string>[] {
-    return (rows || []).map((r) => {
-      const out: Record<string, string> = {};
-      if (r && typeof r === "object") {
-        for (const [k, v] of Object.entries(r as Record<string, any>)) {
-          if (v === null || v === undefined) {
-            out[k] = "";
-          } else if (typeof v === "number") {
-            out[k] = Number.isFinite(v) ? v.toString() : "";
-          } else {
-            out[k] = String(v);
-          }
-        }
+    const counts = new Map<string, number>();
+    preview.transactions.forEach((txn) => {
+      if (defaultTxidPrefix && !txn.txid.startsWith(defaultTxidPrefix)) {
+        increment(counts, "Transaction txid does not match expected prefix");
       }
-      return out;
-    });
-  }
-
-  const handleCellChange = (rowIdx: number, key: string, value: string) => {
-    setEditableRows((prev) => {
-      const copy = prev.map((r) => ({ ...r }));
-      copy[rowIdx][key] = value;
-      return copy;
-    });
-    setImportResult(null);
-    setImportError(null);
-  };
-
-  const previewRows = editableRows.slice(0, 10);
-  const previewColumns = inferColumns(previewRows);
-
-  function fillTemplateWithDBVars(
-    template: string,
-    vars: Record<string, string>,
-    requiredVars: string[]
-  ): string {
-    // Normalize DB-declared variable names (store them without {{ }}, but support legacy)
-    const normalize = (s: string) => s.replace(/\{|\}/g, "").trim();
-    const required = new Set(requiredVars.map(normalize));
-
-    const found = new Set<string>();
-    const missingValues: string[] = [];
-    const unknownPlaceholders: string[] = [];
-
-    const filled = template.replace(
-      /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
-      (m, keyRaw) => {
-        const key = normalize(keyRaw);
-        found.add(key);
-
-        // If the template has a placeholder that's not declared in prompt_variables, flag it
-        if (!required.has(key)) {
-          unknownPlaceholders.push(key);
-          return m; // leave it as-is so it's obvious in the UI
-        }
-
-        const val = vars[key];
-        if (val == null || val === "") {
-          missingValues.push(key);
-          return m; // keep placeholder visible
-        }
-
-        return String(val);
+      if (txn.account_id !== defaultAccountId) {
+        increment(counts, "Account ID differs from statement default");
       }
+      if (txn.direction !== "Debit" && txn.direction !== "Credit") {
+        increment(counts, "Direction must be either Debit or Credit");
+      }
+      if (typeof txn.amount_or_qty !== "number" || txn.amount_or_qty <= 0) {
+        increment(counts, "Amount must be a positive number");
+      }
+    });
+
+    return Array.from(counts.entries()).map(([message, count]) =>
+      count > 1 ? `${message} (${count})` : message
     );
+  }, [preview, defaultAccountId, defaultTxidPrefix]);
 
-    // Any required vars missing from the template at all?
-    const missingInTemplate = [...required].filter((k) => !found.has(k));
+  const auditIssues = preview?.audit?.issues ?? [];
+  const auditAssumptions = preview?.audit?.assumptions ?? [];
+  const auditSkipped = preview?.audit?.skipped_lines ?? [];
 
-    const problems: string[] = [];
-    if (unknownPlaceholders.length) {
-      problems.push(
-        `Unknown placeholders in template: ${unknownPlaceholders.join(", ")}`
-      );
-    }
-    if (missingInTemplate.length) {
-      problems.push(
-        `Template is missing required variables: ${missingInTemplate.join(
-          ", "
-        )}`
-      );
-    }
-    if (missingValues.length) {
-      problems.push(`Missing values for: ${missingValues.join(", ")}`);
-    }
-    if (problems.length) {
-      throw new Error(problems.join(" | "));
-    }
-
-    return filled;
+  function applyTemplate(template: string): string {
+    return template
+      .replace(/\{\{\s*account_id\s*\}\}/g, defaultAccountId || "")
+      .replace(/\{\{\s*txid_prefix\s*\}\}/g, defaultTxidPrefix || "");
   }
 
-  const handleExtract = async () => {
-    if (!prompt || !document) return;
-    setStep(2);
+  function resetState() {
+    setPromptTemplate("");
+    setPrompt("");
+    setModel(DEFAULT_MODEL);
+    setAssistantName(
+      promptId ? `${promptId.replace(/\./g, "_")}_assistant` : ""
+    );
+    setResolvedPromptVersion(promptVersion);
+    setSubmitNow(false);
+    setImportOptions({
+      source: undefined,
+      status: null,
+      debit_tx_type: undefined,
+      credit_tx_type: undefined,
+      fallback_account_id: defaultAccountId || undefined,
+    });
+    setError(null);
+    setIsExtracting(false);
+    setIsSubmitting(false);
+    setIsImporting(false);
+    setPreview(null);
+    setPreviewJson("");
+    setImportSummary(null);
+    setToastMessage(null);
+  }
 
-    // Optional soft warning if placeholders remain (no blocking)
-    const leftover = editedPrompt.match(/\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g);
-    if (leftover && leftover.length) {
-      console.warn("Prompt still contains placeholders:", leftover);
+  async function handleExtract(submit: boolean) {
+    if (!prompt.trim()) {
+      setError("Prompt cannot be empty");
+      return;
     }
 
-    setExtracting(true);
     setError(null);
+    setImportSummary(null);
+    setToastMessage(null);
 
     try {
-      // Get blob_id and doc_id from document
-      const blobId =
-        typeof document.blob_id === "string"
-          ? document.blob_id
-          : document.blob_id.$oid;
+      submit ? setIsSubmitting(true) : setIsExtracting(true);
 
-      const docId =
-        typeof document._id === "string" ? document._id : document._id.$oid;
-
-      // Call the extraction endpoint
-      const response = await fetch(`${API_URL}/ai/extract/bank-statement`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          blob_id: blobId,
-          doc_id: docId,
-          prompt: editedPrompt,
-          prompt_id: prompt.id,
-          prompt_version: String(prompt.version || "1"),
-          model: prompt.model || "gpt-4o-mini",
-          assistant_name: `${document.namespace}_${document.kind}_extractor`,
-        }),
+      const response = await extractBankStatement({
+        blob_id: blobId,
+        doc_id: docId,
+        prompt,
+        prompt_id: promptId,
+        prompt_version: resolvedPromptVersion,
+        model,
+        assistant_name: assistantName,
+        import: submit
+          ? {
+              submit: true,
+              source: importOptions.source,
+              status:
+                importOptions.status === ""
+                  ? null
+                  : importOptions.status ?? null,
+              debit_tx_type: importOptions.debit_tx_type,
+              credit_tx_type: importOptions.credit_tx_type,
+              fallback_account_id: importOptions.fallback_account_id,
+            }
+          : undefined,
       });
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Extraction failed (${response.status}): ${text}`);
-      }
+      validateResponseShape(response);
 
-      // Prefer JSON response
-      let json: any | null = null;
-      try {
-        json = await response.json();
-      } catch {
-        const raw = await response.text();
-        try {
-          json = JSON.parse(raw);
-        } catch {
-          json = { raw };
-        }
-      }
+      const normalized: ExtractionPreview = {
+        transactions: Array.isArray(response.transactions)
+          ? response.transactions
+          : [],
+        audit: response.audit,
+        inferred_meta: response.inferred_meta,
+        quality: response.quality,
+        confidence: response.confidence,
+        import_summary: response.import_summary,
+      };
 
-      setExtractionData(json);
-      setExtractionResult(JSON.stringify(json, null, 2));
-      // Prepare editable rows from transactions if present
-      const txns = Array.isArray(json?.transactions)
-        ? (json.transactions as any[]).map(coerceFlatTransaction)
-        : [];
-      setFlatTransactions(txns);
-      setEditableRows(normalizeRows(txns));
-      setImportResult(null);
-      setImportError(null);
-      setStep(3);
+      setPreview(normalized);
+      setPreviewJson(JSON.stringify(response, null, 2));
+      setImportSummary(response.import_summary ?? null);
+
+      if (response.import_summary) {
+        setToastMessage(
+          `Imported ${response.import_summary.imported} transactions, skipped ${response.import_summary.skipped}`
+        );
+        void fetchTransactions().catch((err) => {
+          console.warn("Failed to refresh transactions", err);
+        });
+      }
     } catch (err: any) {
-      setError(err.message || "Extraction failed");
+      console.error(err);
+      setError(err?.message || "Extraction failed");
     } finally {
-      setExtracting(false);
+      submit ? setIsSubmitting(false) : setIsExtracting(false);
     }
-  };
+  }
 
-  const handleImport = async () => {
-    if (!editableRows.length) return;
-    setImporting(true);
-    setImportError(null);
+  async function handleManualImport() {
+    if (!preview?.transactions?.length) return;
+
+    setIsImporting(true);
+    setError(null);
+    setToastMessage(null);
+    setImportSummary(null);
 
     try {
-      const transactions = rowsToFlatTransactions(editableRows);
-      if (!transactions.length) {
-        throw new Error("No transactions to import");
-      }
-
-      const response = await fetch(
-        `${API_URL}/capital/transactions/batch-import`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({ transactions }),
-        }
+      const result = await batchImportTransactions(preview.transactions);
+      setImportSummary(result);
+      setToastMessage(
+        `Imported ${result.imported} transactions, skipped ${result.skipped}`
       );
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
-          text || `Import failed with status ${response.status}`
-        );
-      }
-
-      const summary: BatchImportResponse = await response.json();
-      setImportResult(summary);
+      void fetchTransactions().catch((err) => {
+        console.warn("Failed to refresh transactions", err);
+      });
     } catch (err: any) {
-      setImportResult(null);
-      setImportError(err?.message || "Import failed");
+      console.error(err);
+      setError(err?.message || "Import failed");
     } finally {
-      setImporting(false);
+      setIsImporting(false);
     }
-  };
+  }
+
+  function closeAndReset() {
+    resetState();
+    onClose();
+  }
 
   return (
     <Modal
-      isOpen={!!document}
-      onClose={onClose}
-      title="Extract from document"
-      subtitle={`${document.title} - Step ${step} of 4`}
-      size="4xl"
+      isOpen={isOpen}
+      onClose={closeAndReset}
+      title="Extract bank statement"
+      subtitle={`doc ${docId}`}
+      size="5xl"
     >
-      <div className="space-y-4">
-        {/* Step indicator */}
-        <div className="min-h-20 flex items-center gap-2 pb-8 max-w-2xl mx-auto">
-          <div
-            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
-              step >= 1 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            1
-            <span
-              className={`absolute top-10 text-center font-medium text-sm ${
-                step >= 1
-                  ? "text-blue-800 dark:text-blue-200"
-                  : "text-gray-500 dark:text-gray-400"
-              }`}
+      <div className="space-y-6">
+        {toastMessage && (
+          <div className="rounded border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
+            {toastMessage}
+            <button
+              className="ml-4 text-blue-600 underline"
+              onClick={() => router.push("/capital")}
             >
-              Prompting
-            </span>
+              Open Capital
+            </button>
           </div>
-          <div className="flex-1 h-1 bg-gray-200 rounded">
-            <div
-              className={`h-full rounded transition-all ${
-                step >= 2 ? "bg-blue-600 w-full" : "bg-gray-200 w-0"
-              }`}
-            />
-          </div>
-          <div
-            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
-              step >= 2 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            2
-            <span
-              className={`absolute top-10 text-center font-medium text-sm ${
-                step >= 2
-                  ? "text-blue-800 dark:text-blue-200"
-                  : "text-gray-500 dark:text-gray-400"
-              }`}
-            >
-              Extraction
-            </span>
-          </div>
-          <div className="flex-1 h-1 bg-gray-200 rounded">
-            <div
-              className={`h-full rounded transition-all ${
-                step >= 3 ? "bg-blue-600 w-full" : "bg-gray-200 w-0"
-              }`}
-            />
-          </div>
-          <div
-            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
-              step >= 3 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            3
-            <span
-              className={`absolute top-10 text-center font-medium text-sm ${
-                step >= 3
-                  ? "text-blue-800 dark:text-blue-200"
-                  : "text-gray-500 dark:text-gray-400"
-              }`}
-            >
-              Review
-            </span>
-          </div>
-          <div className="flex-1 h-1 bg-gray-200 rounded">
-            <div
-              className={`h-full rounded transition-all ${
-                step >= 4 ? "bg-blue-600 w-full" : "bg-gray-200 w-0"
-              }`}
-            />
-          </div>
-          <div
-            className={`relative flex items-center justify-center w-8 h-8 rounded-full font-medium ${
-              step >= 4 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"
-            }`}
-          >
-            4
-            <span
-              className={`absolute top-10 text-center font-medium text-sm ${
-                step >= 4
-                  ? "text-blue-800 dark:text-blue-200"
-                  : "text-gray-500 dark:text-gray-400"
-              }`}
-            >
-              Import
-            </span>
-          </div>
-        </div>
+        )}
 
-        {/* Step 1: Configure Prompt */}
-        {step === 1 && (
+        {error && (
+          <div className="rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {loadingTemplate ? (
+          <div className="flex justify-center py-10">
+            <Loader />
+          </div>
+        ) : (
           <div className="space-y-4">
-            {loading && (
-              <div className="p-4 bg-blue-50 rounded border border-blue-200">
-                <p className="text-sm text-blue-800">Loading AI prompt...</p>
-              </div>
-            )}
-
-            {error && (
-              <div className="p-4 bg-red-50 rounded border border-red-200">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            )}
-
-            {prompt && !loading && (
-              <>
-                <div className="rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
-                  <div className="text-sm space-y-2">
-                    <div>
-                      <span className="font-semibold">Document:</span>{" "}
-                      {document.title}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Type:</span>{" "}
-                      {document.kind}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Task:</span> {prompt.task}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Model:</span>{" "}
-                      {prompt.model || "default"}
-                    </div>
-                  </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Prompt</span>
+                <textarea
+                  className="h-48 w-full rounded border border-gray-300 bg-white p-3 font-mono text-xs"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline"
+                    onClick={() => setPrompt(applyTemplate(promptTemplate))}
+                    disabled={!promptTemplate}
+                  >
+                    Reset to template
+                  </button>
+                  <span>{prompt.length} chars</span>
                 </div>
+              </label>
 
-                {/* Show account info if it's a bank statement */}
-                {document.kind === "bank_statement" &&
-                  document.metadata?.account_id && (
-                    <div className="rounded-lg p-3 bg-blue-50 border border-blue-200">
-                      <p className="text-sm">
-                        <span className="font-semibold">Account:</span>{" "}
-                        {document.metadata.account_id}
-                        {document.metadata.txid_prefix && (
-                          <span className="ml-2 text-gray-600">
-                            (Prefix: {document.metadata.txid_prefix})
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  )}
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    AI Prompt Template
-                    <span className="ml-2 text-xs text-gray-500">
-                      (editable)
-                    </span>
-                  </label>
-                  <textarea
-                    value={editedPrompt}
-                    onChange={(e) => setEditedPrompt(e.target.value)}
-                    rows={12}
-                    className="w-full border border-gray-300 rounded-lg p-4 font-mono text-xs resize-y"
+              <div className="space-y-4">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">Model</span>
+                  <input
+                    className="rounded border border-gray-300 p-2"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {editedPrompt.length} characters
-                  </p>
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">Assistant name</span>
+                  <input
+                    className="rounded border border-gray-300 p-2"
+                    value={assistantName}
+                    onChange={(e) => setAssistantName(e.target.value)}
+                  />
+                </label>
+                <div className="space-y-2 rounded border border-gray-200 p-3 text-sm">
+                  <div className="font-medium">Import options</div>
+                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={submitNow}
+                      onChange={(e) => setSubmitNow(e.target.checked)}
+                    />
+                    Submit immediately after extraction
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    <input
+                      placeholder="source"
+                      className="rounded border border-gray-300 p-2 text-xs"
+                      value={importOptions.source ?? ""}
+                      onChange={(e) =>
+                        setImportOptions((prev) => ({
+                          ...prev,
+                          source: e.target.value || undefined,
+                        }))
+                      }
+                    />
+                    <input
+                      placeholder="status"
+                      className="rounded border border-gray-300 p-2 text-xs"
+                      value={importOptions.status ?? ""}
+                      onChange={(e) =>
+                        setImportOptions((prev) => ({
+                          ...prev,
+                          status: e.target.value,
+                        }))
+                      }
+                    />
+                    <input
+                      placeholder="debit_tx_type"
+                      className="rounded border border-gray-300 p-2 text-xs"
+                      value={importOptions.debit_tx_type ?? ""}
+                      onChange={(e) =>
+                        setImportOptions((prev) => ({
+                          ...prev,
+                          debit_tx_type: e.target.value || undefined,
+                        }))
+                      }
+                    />
+                    <input
+                      placeholder="credit_tx_type"
+                      className="rounded border border-gray-300 p-2 text-xs"
+                      value={importOptions.credit_tx_type ?? ""}
+                      onChange={(e) =>
+                        setImportOptions((prev) => ({
+                          ...prev,
+                          credit_tx_type: e.target.value || undefined,
+                        }))
+                      }
+                    />
+                    <input
+                      placeholder="fallback_account_id"
+                      className="rounded border border-gray-300 p-2 text-xs"
+                      value={importOptions.fallback_account_id ?? ""}
+                      onChange={(e) =>
+                        setImportOptions((prev) => ({
+                          ...prev,
+                          fallback_account_id: e.target.value || undefined,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
-              </>
-            )}
-
-            {error && (
-              <div className="p-4 bg-red-50 rounded border border-red-200">
-                <p className="text-sm text-red-800">{error}</p>
               </div>
-            )}
+            </div>
 
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex flex-wrap gap-3">
               <button
-                onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                disabled={extracting}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                onClick={() => handleExtract(false)}
+                disabled={isExtracting || isSubmitting}
               >
-                Cancel
+                {isExtracting ? "Extracting…" : "Extract"}
               </button>
               <button
-                onClick={handleExtract}
-                disabled={loading || !prompt || extracting}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                onClick={() => handleExtract(true)}
+                disabled={isExtracting || isSubmitting || !submitNow}
               >
-                {extracting ? "Extracting..." : "Extract"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Extraction in Progress */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <div className="min-h-64 p-4 bg-blue-50 dark:bg-blue-900 rounded border border-blue-200 flex flex-col gap-4 items-center justify-center">
-              <Loader />
-              {progressMessage && (
-                <p className="text-sm text-blue-800">{progressMessage}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: View Results */}
-        {step === 3 && (
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded border border-gray-200 bg-white p-3">
-                <p className="text-xs uppercase text-gray-500">Transactions</p>
-                <p className="text-lg font-semibold">{flatTransactions.length}</p>
-              </div>
-              <div className="rounded border border-gray-200 bg-white p-3">
-                <p className="text-xs uppercase text-gray-500">Quality</p>
-                <p className="text-lg font-semibold">
-                  {extractionData?.quality ?? "unknown"}
-                </p>
-              </div>
-              <div className="rounded border border-gray-200 bg-white p-3">
-                <p className="text-xs uppercase text-gray-500">Confidence</p>
-                <p className="text-lg font-semibold">
-                  {typeof extractionData?.confidence === "number"
-                    ? `${(extractionData.confidence * 100).toFixed(1)}%`
-                    : "—"}
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Flat Transaction Preview
-              </label>
-              <div className="font-mono border border-gray-300 rounded-lg overflow-auto max-h-[320px]">
-                {previewRows.length === 0 ? (
-                  <div className="p-4 text-sm text-gray-600">
-                    No transactions parsed.
-                  </div>
-                ) : (
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        {previewColumns.map((col) => (
-                          <th
-                            key={col}
-                            className={`px-4 py-2 ${
-                              col === "amount_or_qty" || col === "price"
-                                ? "text-right"
-                                : "text-left"
-                            } font-semibold text-gray-700 border-b border-gray-200`}
-                          >
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((row, idx) => (
-                        <tr
-                          key={idx}
-                          className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                        >
-                          {previewColumns.map((col) => (
-                            <td
-                              key={col}
-                              className={`px-4 py-2 border-b border-gray-200 align-top ${
-                                col === "amount_or_qty" || col === "price"
-                                  ? "text-right"
-                                  : "text-left"
-                              }`}
-                            >
-                              {row[col] ?? ""}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-              {flatTransactions.length > previewRows.length && previewRows.length > 0 && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Showing first {previewRows.length} of {flatTransactions.length} rows.
-                </p>
-              )}
-            </div>
-
-            <details className="rounded border border-gray-200 bg-gray-50 p-4">
-              <summary className="cursor-pointer text-sm font-medium">
-                Raw extraction payload
-              </summary>
-              <div className="mt-2 max-h-64 overflow-auto border border-gray-200 bg-white p-3">
-                <pre className="text-xs font-mono whitespace-pre-wrap">
-                  {extractionResult || "No result"}
-                </pre>
-              </div>
-            </details>
-
-            <div className="flex justify-between gap-3 pt-4">
-              <button
-                onClick={() => setStep(1)}
-                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-              >
-                Back to Prompt
+                {isSubmitting ? "Submitting…" : "Submit now"}
               </button>
               <button
-                onClick={() => setStep(4)}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                disabled={!editableRows.length}
+                className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                onClick={handleManualImport}
+                disabled={
+                  isImporting ||
+                  isExtracting ||
+                  isSubmitting ||
+                  !preview?.transactions?.length
+                }
               >
-                Continue to Import
+                {isImporting ? "Importing…" : "Import to ledger"}
               </button>
             </div>
-          </div>
-        )}
 
-        {/* Step 4: Import (Editable Table) */}
-        {step === 4 && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Review & Edit Transactions
-              </label>
-              <div className="font-mono border border-gray-300 rounded-lg overflow-auto max-h-[480px]">
-                {editableRows.length === 0 ? (
-                  <div className="p-4 text-sm text-gray-600">
-                    No transactions to import.
-                  </div>
-                ) : (
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        {inferColumns(editableRows).map((col) => (
-                          <th
-                            key={col}
-                            className={`px-4 py-2 ${
-                              col === "amount_or_qty" || col === "price"
-                                ? "text-right"
-                                : "text-left"
-                            } font-semibold text-gray-700 border-b border-gray-200 min-w-[160px]`}
-                          >
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {editableRows.map((row, rIdx) => (
-                        <tr
-                          key={rIdx}
-                          className={rIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                        >
-                          {inferColumns(editableRows).map((col) => (
-                            <td
-                              key={col}
-                              className={`px-0.5 py-1 border-b border-gray-200 align-top min-w-[160px] ${
-                                col === "amount_or_qty" || col === "price"
-                                  ? "text-right"
-                                  : ""
-                              }`}
-                            >
-                              <input
-                                className={`w-full min-w-[160px] px-2 py-1 bg-white ${
-                                  col === "amount_or_qty" || col === "price"
-                                    ? "text-right"
-                                    : ""
-                                }`}
-                                value={row[col] ?? ""}
-                                onChange={(e) =>
-                                  handleCellChange(rIdx, col, e.target.value)
-                                }
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+            {preview && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                  <span>
+                    Transactions: {preview.transactions.length}
+                  </span>
+                  <span>Quality: {preview.quality}</span>
+                  <span>
+                    Confidence: {Number(preview.confidence).toFixed(2)}
+                  </span>
+                </div>
 
-            {importError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-sm text-red-800">
-                {importError}
-              </div>
-            )}
-
-            {importResult && (
-              <div className="space-y-2 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                <p>
-                  Imported <span className="font-semibold">{importResult.imported}</span>{" "}
-                  transaction{importResult.imported === 1 ? "" : "s"} and skipped{" "}
-                  <span className="font-semibold">{importResult.skipped}</span>.
-                </p>
-                {importResult.errors.length > 0 && (
-                  <div>
-                    <p className="font-medium text-red-700">Warnings:</p>
-                    <ul className="list-disc list-inside text-red-700">
-                      {importResult.errors.map((err, idx) => (
-                        <li key={`${err}-${idx}`}>{err}</li>
+                {warnings.length > 0 && (
+                  <div className="rounded border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+                    <div className="font-semibold">Schema warnings</div>
+                    <ul className="list-disc pl-5">
+                      {warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
                       ))}
                     </ul>
                   </div>
                 )}
+
+                <TransactionsTable rows={preview.transactions} />
+
+                <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Audit details
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <AuditList title="Issues" items={auditIssues} />
+                    <AuditList title="Assumptions" items={auditAssumptions} />
+                    <AuditList title="Skipped lines" items={auditSkipped} />
+                  </div>
+                </details>
+
+                <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Inferred metadata
+                  </summary>
+                  <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-3 font-mono text-xs">
+                    {JSON.stringify(preview.inferred_meta, null, 2)}
+                  </pre>
+                </details>
+
+                <details className="rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Raw response
+                  </summary>
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-3 font-mono text-xs">
+                    {previewJson}
+                  </pre>
+                </details>
+
+                {importSummary && (
+                  <div className="space-y-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                    <div className="font-semibold">Import summary</div>
+                    <div>
+                      Imported {importSummary.imported}, skipped {importSummary.skipped}
+                    </div>
+                    {importSummary.errors.length > 0 && (
+                      <details>
+                        <summary className="cursor-pointer underline">
+                          View errors ({importSummary.errors.length})
+                        </summary>
+                        <ul className="mt-2 list-disc pl-5">
+                          {importSummary.errors.map((err) => (
+                            <li key={err}>{err}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setStep(3)}
-                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-              >
-                Back to JSON
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={!editableRows.length || importing}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {importing ? "Importing..." : "Import Transactions"}
-              </button>
-            </div>
           </div>
         )}
+
+        <div className="flex justify-end">
+          <button
+            className="rounded border border-gray-300 px-4 py-2 text-sm"
+            onClick={closeAndReset}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </Modal>
   );
+}
+
+function increment(map: Map<string, number>, key: string) {
+  map.set(key, (map.get(key) || 0) + 1);
+}
+
+function validateResponseShape(data: any) {
+  if (!data || typeof data !== "object") {
+    throw new Error("Extraction response missing body");
+  }
+  if (!Array.isArray(data.transactions)) {
+    throw new Error("Extraction response missing transactions array");
+  }
+  if (
+    typeof data.audit === "undefined" ||
+    typeof data.inferred_meta === "undefined" ||
+    typeof data.quality === "undefined" ||
+    typeof data.confidence === "undefined"
+  ) {
+    throw new Error("Extraction response missing required fields");
+  }
+}
+
+function TransactionsTable({ rows }: { rows: FlatTransaction[] }) {
+  if (!rows.length) {
+    return (
+      <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+        No transactions returned.
+      </div>
+    );
+  }
+
+  const columns = [
+    "txid",
+    "date",
+    "payee",
+    "memo",
+    "amount_or_qty",
+    "direction",
+    "account_id",
+    "ccy_or_asset",
+  ] as const;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={col}
+                className="px-3 py-2 text-left font-medium uppercase tracking-wide text-xs text-gray-500"
+              >
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {rows.map((row, idx) => (
+            <tr key={row.txid || idx} className={idx % 2 ? "bg-gray-50" : "bg-white"}>
+              {columns.map((col) => (
+                <td
+                  key={col}
+                  className={`px-3 py-2 ${
+                    col === "amount_or_qty" ? "text-right" : "text-left"
+                  }`}
+                >
+                  {renderValue(row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function renderValue(value: any) {
+  if (value == null || value === "") return <span className="text-gray-400">—</span>;
+  if (typeof value === "number") return value.toLocaleString();
+  return String(value);
+}
+
+function AuditList({ title, items }: { title: string; items: any[] }) {
+  if (!items || items.length === 0) {
+    return (
+      <div>
+        <div className="font-semibold">{title}</div>
+        <div className="text-xs text-gray-500">None</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="font-semibold">{title}</div>
+      <ul className="list-disc pl-5 text-xs text-gray-600">
+        {items.map((item, idx) => (
+          <li key={`${title}-${idx}`}>{renderAuditValue(item)}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function renderAuditValue(value: any) {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
 }

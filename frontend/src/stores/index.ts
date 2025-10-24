@@ -61,6 +61,8 @@ export type {
   ImportResponse,
   ListDocumentsQuery,
   ListDocumentsResponse,
+  FlatTransaction,
+  BatchImportResponse,
 } from "./document-store";
 
 // Export helper functions

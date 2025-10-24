@@ -41,6 +41,11 @@ function getBlobId(blobId: string | { $oid: string }): string {
   return typeof blobId === "string" ? blobId : blobId.$oid;
 }
 
+function getPromptVersion(doc: DocumentInfo): string {
+  const version = (doc.metadata as any)?.prompt_version;
+  return version != null ? String(version) : "1";
+}
+
 export default function DocumentPage() {
   const { createDocument, listDocuments } = useDocumentStore();
   const { fetchAccounts, accounts } = useCapitalStore();
@@ -58,7 +63,15 @@ export default function DocumentPage() {
   const [pageNumber, setPageNumber] = useState<number>(1);
 
   // Extraction modal state
-  const [extractingDoc, setExtractingDoc] = useState<DocumentInfo | null>(null);
+  const [isExtractionOpen, setIsExtractionOpen] = useState(false);
+  const [extractionContext, setExtractionContext] = useState<{
+    docId: string;
+    blobId: string;
+    promptId: string;
+    promptVersion: string;
+    defaultAccountId: string;
+    defaultTxidPrefix: string;
+  } | null>(null);
 
   // Memoize PDF options to prevent unnecessary reloads
   const pdfOptions = useMemo(() => ({ withCredentials: true }), []);
@@ -85,6 +98,24 @@ export default function DocumentPage() {
   const [importResp, setImportResp] = useState<ImportResp | null>(null);
 
   const blobId = useMemo(() => blob?.blob_id, [blob]);
+
+  function openExtractionModal(doc: DocumentInfo) {
+    const blobIdValue = getBlobId(doc.blob_id);
+    const accountId = (doc.metadata as any)?.account_id ?? "";
+    const txidPrefix = (doc.metadata as any)?.txid_prefix ?? "";
+    const promptIdValue = `${doc.namespace}.extract_${doc.kind}`;
+    const promptVersionValue = getPromptVersion(doc);
+
+    setExtractionContext({
+      docId: doc.doc_id,
+      blobId: blobIdValue,
+      promptId: promptIdValue,
+      promptVersion: promptVersionValue,
+      defaultAccountId: accountId ?? "",
+      defaultTxidPrefix: txidPrefix ?? "",
+    });
+    setIsExtractionOpen(true);
+  }
 
   // Fetch documents on mount and after creation
   async function fetchDocuments() {
@@ -574,7 +605,7 @@ export default function DocumentPage() {
                           </svg>
                         </button>
                         <button
-                          onClick={() => setExtractingDoc(doc)}
+                          onClick={() => openExtractionModal(doc)}
                           className="inline-flex items-center h-7.5 w-7.5 flex justify-center items-center border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
                           <svg
@@ -666,66 +697,17 @@ export default function DocumentPage() {
 
       {/* Extraction Preview Modal */}
       <ExtractionModal
-        document={extractingDoc}
-        onClose={() => setExtractingDoc(null)}
-        onExtract={(doc, prompt, accountId) => {
-          // TODO: Implement extraction logic - call extract_bank_statement
-          console.log(
-            "Extract:",
-            doc.kind,
-            "account:",
-            accountId,
-            "prompt:",
-            prompt.substring(0, 100)
-          );
-          // Will call importBankStatement with document blob_id, prompt, and accountId
-          setExtractingDoc(null);
+        isOpen={isExtractionOpen && !!extractionContext}
+        onClose={() => {
+          setIsExtractionOpen(false);
+          setExtractionContext(null);
         }}
+        docId={extractionContext?.docId ?? ""}
+        blobId={extractionContext?.blobId ?? ""}
+        promptId={extractionContext?.promptId ?? ""}
+        promptVersion={extractionContext?.promptVersion ?? "1"}
+        defaultAccountId={extractionContext?.defaultAccountId ?? ""}
+        defaultTxidPrefix={extractionContext?.defaultTxidPrefix ?? ""}
       />
     </div>
   );
-}
-
-function PreviewTable({ rows }: { rows: Record<string, any>[] }) {
-  // Build dynamic columns from union of keys in the first few rows
-  const cols = useMemo(() => {
-    const set = new Set<string>();
-    rows.slice(0, 5).forEach((r) => Object.keys(r).forEach((k) => set.add(k)));
-    return Array.from(set);
-  }, [rows]);
-
-  return (
-    <table className="min-w-full text-sm">
-      <thead>
-        <tr className="bg-gray-50 text-left">
-          {cols.map((c) => (
-            <th
-              key={c}
-              className="px-3 py-2 font-medium text-gray-700 border-b"
-            >
-              {c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className={i % 2 ? "bg-white" : "bg-gray-50"}>
-            {cols.map((c) => (
-              <td key={c} className="px-3 py-2 border-b align-top">
-                {renderCell(r[c])}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function renderCell(v: any) {
-  if (v == null) return <span className="text-gray-400">—</span>;
-  if (typeof v === "object")
-    return <code className="text-xs">{JSON.stringify(v)}</code>;
-  return String(v);
-}
