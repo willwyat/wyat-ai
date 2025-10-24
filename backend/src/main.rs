@@ -6,6 +6,7 @@ mod meta;
 mod storage;
 mod vitals;
 mod workout;
+use capital::{process_batch_import, BatchImportResponse, FlatTransaction};
 
 // AppState is now defined in the root module
 pub struct AppState {
@@ -29,13 +30,13 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use axum::{
-    Json, Router,
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
+    Json, Router,
 };
 use hyper;
 use mongodb::bson::doc;
-use mongodb::{Client as MongoClient, options::ClientOptions};
+use mongodb::{options::ClientOptions, Client as MongoClient};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
@@ -67,8 +68,11 @@ async fn test_mongo() -> impl IntoResponse {
 // AI Prompts handlers
 
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State as AxumState};
-use services::ai_prompts::{AiPrompt, get_prompt_by_id, list_prompts};
-use services::extraction::run_bank_statement_extraction;
+use services::ai_prompts::{get_prompt_by_id, list_prompts, AiPrompt};
+use services::extraction::{
+    prepare_batch_import_from_extract, run_bank_statement_extraction, ImportDefaults,
+    PreparedBatchImport,
+};
 
 async fn get_ai_prompt_handler(
     AxumState(state): AxumState<Arc<AppState>>,
@@ -126,7 +130,7 @@ async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::St
         ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
         CreateChatCompletionRequestArgs,
     };
-    use async_openai::{Client, config::OpenAIConfig};
+    use async_openai::{config::OpenAIConfig, Client};
 
     let api_key = std::env::var("OPENAI_API_SECRET").map_err(|_| {
         eprintln!("OPENAI_API_SECRET not found");
@@ -171,6 +175,22 @@ async fn test_openai_handler() -> Result<Json<serde_json::Value>, axum::http::St
 }
 
 // Extract bank statement handler
+#[derive(Clone, Debug, Deserialize, Default)]
+struct ImportOptionsPayload {
+    #[serde(default)]
+    submit: bool,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    debit_tx_type: Option<String>,
+    #[serde(default)]
+    credit_tx_type: Option<String>,
+    #[serde(default)]
+    fallback_account_id: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct ExtractBankStatementRequest {
     blob_id: String,
@@ -180,15 +200,19 @@ struct ExtractBankStatementRequest {
     prompt_version: String,
     model: String,
     assistant_name: String,
+    #[serde(default)]
+    import: Option<ImportOptionsPayload>,
 }
 
 #[derive(Serialize)]
 struct ExtractBankStatementResponse {
-    transactions: Vec<serde_json::Value>,
+    transactions: Vec<FlatTransaction>,
     audit: serde_json::Value,
     inferred_meta: serde_json::Value,
     quality: String,
     confidence: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    import_summary: Option<BatchImportResponse>,
 }
 
 async fn extract_bank_statement_handler(
@@ -228,12 +252,78 @@ async fn extract_bank_statement_handler(
     {
         Ok((_run, result)) => {
             println!("=== extract_bank_statement_handler SUCCESS ===");
+
+            let import_opts = req.import.unwrap_or_default();
+            let normalize = |value: Option<String>| -> Option<String> {
+                value.and_then(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+            };
+
+            let ImportOptionsPayload {
+                submit,
+                source,
+                status,
+                debit_tx_type,
+                credit_tx_type,
+                fallback_account_id,
+            } = import_opts;
+
+            let mut defaults = ImportDefaults::new();
+            if let Some(source_value) = normalize(source) {
+                defaults.source = source_value;
+            }
+            if let Some(status_value) = status {
+                defaults.status = normalize(Some(status_value));
+            }
+            if let Some(debit_value) = debit_tx_type {
+                defaults.debit_tx_type = normalize(Some(debit_value));
+            }
+            if let Some(credit_value) = credit_tx_type {
+                defaults.credit_tx_type = normalize(Some(credit_value));
+            }
+            if let Some(account_id_value) = fallback_account_id {
+                defaults.fallback_account_id = normalize(Some(account_id_value));
+            }
+
+            let prepared =
+                prepare_batch_import_from_extract(&result, &defaults).map_err(|err| {
+                    eprintln!(
+                        "Failed to prepare batch import payload from extraction: {}",
+                        err
+                    );
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            let mut import_summary: Option<BatchImportResponse> = None;
+            let PreparedBatchImport {
+                mut request,
+                preview,
+            } = prepared;
+
+            if submit {
+                let transactions = std::mem::take(&mut request.transactions);
+                match process_batch_import(&db, transactions).await {
+                    Ok(summary) => import_summary = Some(summary),
+                    Err(err) => {
+                        eprintln!("Batch import during extraction failed: {}", err);
+                        return Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                }
+            }
+
             Ok(Json(ExtractBankStatementResponse {
-                transactions: result.transactions,
-                audit: result.audit,
-                inferred_meta: result.inferred_meta,
-                quality: result.quality,
+                transactions: preview,
+                audit: result.audit.clone(),
+                inferred_meta: result.inferred_meta.clone(),
+                quality: result.quality.clone(),
                 confidence: result.confidence,
+                import_summary,
             }))
         }
         Err(e) => {

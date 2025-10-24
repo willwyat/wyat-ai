@@ -1433,68 +1433,101 @@ pub async fn create_transaction(
 
 // ------------------------- Batch Import -------------------------
 
-#[derive(Debug, Deserialize)]
-struct ImportTransaction {
-    txid: String,
-    date: String,
-    #[serde(default)]
-    posted_ts: Option<i64>,
-    source: String,
-    #[serde(default)]
-    payee: Option<String>,
-    #[serde(default)]
-    memo: Option<String>,
-    account_id: String,
-    direction: String, // "Debit" | "Credit"
-    kind: String,      // "Fiat" | "Crypto"
-    ccy_or_asset: String,
-    amount_or_qty: f64,
-    #[serde(default)]
-    price: Option<f64>,
-    #[serde(default)]
-    price_ccy: Option<String>,
-    #[serde(default)]
-    category_id: Option<String>,
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    tx_type: Option<String>,
-    #[serde(default)]
-    ext1_kind: Option<String>,
-    #[serde(default)]
-    ext1_val: Option<String>,
+fn default_source() -> String {
+    "assistant_extraction".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+fn default_status() -> Option<String> {
+    Some("imported".to_string())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FlatTransaction {
+    pub txid: String,
+    pub date: String,
+    #[serde(default)]
+    pub posted_ts: Option<i64>,
+    #[serde(default = "default_source")]
+    pub source: String,
+    #[serde(default)]
+    pub payee: Option<String>,
+    #[serde(default)]
+    pub memo: Option<String>,
+    pub account_id: String,
+    pub direction: String,
+    pub kind: String,
+    pub ccy_or_asset: String,
+    pub amount_or_qty: f64,
+    #[serde(default)]
+    pub price: Option<f64>,
+    #[serde(default)]
+    pub price_ccy: Option<String>,
+    #[serde(default)]
+    pub category_id: Option<String>,
+    #[serde(default = "default_status")]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub tx_type: Option<String>,
+    #[serde(default)]
+    pub ext1_kind: Option<String>,
+    #[serde(default)]
+    pub ext1_val: Option<String>,
+}
+
+impl FlatTransaction {
+    pub fn ensure_defaults(&mut self, debit_tx_type: Option<&str>, credit_tx_type: Option<&str>) {
+        if self.source.trim().is_empty() {
+            self.source = default_source();
+        }
+
+        if self.status.as_ref().is_some_and(|s| s.trim().is_empty()) {
+            self.status = default_status();
+        }
+
+        if self.tx_type.as_ref().is_some_and(|s| s.trim().is_empty()) {
+            self.tx_type = None;
+        }
+
+        if self.tx_type.is_none() {
+            let fallback = match self.direction.to_ascii_lowercase().as_str() {
+                "debit" => debit_tx_type,
+                "credit" => credit_tx_type,
+                _ => None,
+            };
+            if let Some(value) = fallback {
+                self.tx_type = Some(value.to_string());
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BatchImportRequest {
-    transactions: Vec<ImportTransaction>,
+    pub transactions: Vec<FlatTransaction>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BatchImportResponse {
     imported: usize,
     skipped: usize,
     errors: Vec<String>,
 }
 
-/// POST /capital/transactions/batch-import
-/// Accepts extracted flat transactions and inserts Transaction rows with a single P&L leg.
-pub async fn batch_import_transactions(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<BatchImportRequest>,
-) -> Result<Json<BatchImportResponse>, String> {
+pub async fn process_batch_import(
+    db: &Database,
+    transactions: Vec<FlatTransaction>,
+) -> Result<BatchImportResponse, String> {
     use mongodb::bson::doc;
     use rust_decimal::prelude::FromPrimitive;
     use rust_decimal::Decimal;
 
-    let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Transaction>("capital_ledger");
 
     let mut imported = 0usize;
     let mut skipped = 0usize;
     let mut errors: Vec<String> = Vec::new();
 
-    for itx in req.transactions {
+    for itx in transactions {
         let txid = itx.txid.clone();
         // Skip if already exists
         if let Ok(Some(_existing)) = collection.find_one(doc! { "id": &txid }, None).await {
@@ -1572,7 +1605,7 @@ pub async fn batch_import_transactions(
         }
 
         let source = if itx.source.trim().is_empty() {
-            "assistant_extraction".to_string()
+            default_source()
         } else {
             itx.source.clone()
         };
@@ -1616,9 +1649,20 @@ pub async fn batch_import_transactions(
         }
     }
 
-    Ok(Json(BatchImportResponse {
+    Ok(BatchImportResponse {
         imported,
         skipped,
         errors,
-    }))
+    })
+}
+
+/// POST /capital/transactions/batch-import
+/// Accepts extracted flat transactions and inserts Transaction rows with a single P&L leg.
+pub async fn batch_import_transactions(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<BatchImportRequest>,
+) -> Result<Json<BatchImportResponse>, String> {
+    let db = state.mongo_client.database("wyat");
+    let summary = process_batch_import(&db, req.transactions).await?;
+    Ok(Json(summary))
 }
