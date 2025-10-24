@@ -12,6 +12,8 @@ import type {
 import {
   batchImportTransactions,
   extractBankStatement,
+  listExtractionRuns,
+  getExtractionRun,
 } from "@/app/services/extraction";
 
 interface ExtractionModalProps {
@@ -97,6 +99,19 @@ export default function ExtractionModal({
     diff: number;
   }>({ sumCredits: 0, sumDebits: 0, net: 0, expected: 0, diff: 0 });
 
+  // Previous extraction runs
+  const [runs, setRuns] = useState<
+    Array<{
+      _id: string;
+      created_at: number;
+      status: string;
+      quality?: string;
+      confidence?: number;
+    }>
+  >([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!isOpen) {
       resetState();
@@ -134,6 +149,36 @@ export default function ExtractionModal({
       fallback_account_id: defaultAccountId || prev.fallback_account_id,
     }));
   }, [isOpen, defaultAccountId]);
+
+  // Fetch previous runs on open
+  useEffect(() => {
+    if (!isOpen) return;
+    setRunsLoading(true);
+    listExtractionRuns(docId)
+      .then(async (r) => {
+        setRuns(r || []);
+        if (r && r.length > 0) {
+          setSelectedRunId(r[0]._id);
+          try {
+            const detail = await getExtractionRun(r[0]._id);
+            const parsed = JSON.parse(detail.response_text || "{}");
+            const normalized: ExtractionPreview = {
+              transactions: parsed.transactions ?? [],
+              audit: parsed.audit ?? {},
+              inferred_meta: parsed.inferred_meta ?? {},
+              quality: detail.quality ?? "unknown",
+              confidence: detail.confidence ?? 0,
+            };
+            setPreview(normalized);
+            setPreviewJson(JSON.stringify(parsed, null, 2));
+            setDraftRows(normalized.transactions);
+          } catch (err) {
+            console.warn("Failed to load latest extraction run", err);
+          }
+        }
+      })
+      .finally(() => setRunsLoading(false));
+  }, [isOpen, docId]);
 
   const warnings = useMemo(() => {
     if (!preview?.transactions?.length) return [] as string[];
@@ -463,6 +508,69 @@ export default function ExtractionModal({
               </div>
             </div>
 
+            {/* Previous runs */}
+            <div className="rounded border border-gray-200 p-3">
+              <div className="mb-2 text-sm font-medium">Previous runs</div>
+              {runsLoading ? (
+                <div className="text-sm text-gray-500">Loading runs…</div>
+              ) : runs.length === 0 ? (
+                <div className="text-sm text-gray-500">No previous runs</div>
+              ) : (
+                <div className="max-h-40 overflow-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Created</th>
+                        <th className="px-2 py-1 text-left">Quality</th>
+                        <th className="px-2 py-1 text-left">Conf.</th>
+                        <th className="px-2 py-1 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {runs.map((r) => (
+                        <tr
+                          key={r._id}
+                          className={`cursor-pointer ${
+                            selectedRunId === r._id ? "bg-blue-50" : ""
+                          }`}
+                          onClick={async () => {
+                            setSelectedRunId(r._id);
+                            const detail = await getExtractionRun(r._id);
+                            const parsed = JSON.parse(
+                              detail.response_text || "{}"
+                            );
+                            const normalized: ExtractionPreview = {
+                              transactions: parsed.transactions ?? [],
+                              audit: parsed.audit ?? {},
+                              inferred_meta: parsed.inferred_meta ?? {},
+                              quality: detail.quality ?? "unknown",
+                              confidence: detail.confidence ?? 0,
+                            };
+                            setPreview(normalized);
+                            setPreviewJson(JSON.stringify(parsed, null, 2));
+                            setDraftRows(normalized.transactions);
+                          }}
+                        >
+                          <td>
+                            {new Date(
+                              (r.created_at || 0) * 1000
+                            ).toLocaleString()}
+                          </td>
+                          <td>{r.quality ?? "—"}</td>
+                          <td>
+                            {typeof r.confidence === "number"
+                              ? r.confidence.toFixed(2)
+                              : "—"}
+                          </td>
+                          <td>{r.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-wrap gap-3">
               <button
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
@@ -779,5 +887,6 @@ function AuditList({ title, items }: { title: string; items: any[] }) {
 
 function renderAuditValue(value: any) {
   if (typeof value === "string") return value;
+  if (typeof value === "number") return value.toLocaleString();
   return JSON.stringify(value);
 }

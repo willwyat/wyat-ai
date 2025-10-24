@@ -73,3 +73,45 @@ export async function batchImportTransactions(
 
   return response.json();
 }
+
+export async function listExtractionRuns(docId: string) {
+  const response = await fetch(
+    `${BASE_URL}/ai/extraction-runs?doc_id=${encodeURIComponent(docId)}`,
+    {
+      credentials: "include",
+    }
+  );
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Failed to list extraction runs (${response.status})`
+    );
+  }
+  return (await response.json()) as Array<{
+    _id: string;
+    created_at: number;
+    status: string;
+    quality?: string;
+    confidence?: number;
+  }>;
+}
+
+export async function getExtractionRun(runId: string) {
+  const response = await fetch(`${BASE_URL}/ai/extraction-runs/${runId}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Failed to fetch extraction run (${response.status})`
+    );
+  }
+  return (await response.json()) as {
+    _id: string;
+    created_at: number;
+    status: string;
+    quality?: string;
+    confidence?: number;
+    response_text: string;
+  };
+}

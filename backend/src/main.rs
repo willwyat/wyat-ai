@@ -35,8 +35,11 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
 };
+use futures::stream::TryStreamExt;
 use hyper;
 use mongodb::bson::doc;
+use mongodb::bson::oid::ObjectId;
+use mongodb::options::{FindOneOptions, FindOptions};
 use mongodb::{Client as MongoClient, options::ClientOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -606,6 +609,11 @@ async fn main() {
             "/ai/extract/bank-statement",
             post(extract_bank_statement_handler),
         )
+        .route("/ai/extraction-runs", get(list_extraction_runs_handler))
+        .route(
+            "/ai/extraction-runs/:run_id",
+            get(get_extraction_run_handler),
+        )
         .route("/meta/tag-taxonomy", get(get_tag_taxonomy))
         .route("/meta/person-registry", get(get_person_registry))
         .route("/meta/place-registry", get(get_place_registry))
@@ -689,4 +697,138 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[derive(Serialize)]
+struct PublicRunListItem {
+    _id: String,
+    created_at: i64,
+    status: String,
+    quality: Option<String>,
+    confidence: Option<f64>,
+}
+
+async fn list_extraction_runs_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumQuery(q): AxumQuery<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<PublicRunListItem>>, axum::http::StatusCode> {
+    let Some(doc_id_str) = q.get("doc_id") else {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    };
+    let Ok(doc_oid) = ObjectId::parse_str(doc_id_str) else {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    };
+
+    let db = state.mongo_client.database("wyat");
+    let coll = db.collection::<mongodb::bson::Document>("extraction_runs");
+
+    let mut cursor = coll
+        .find(
+            doc! { "doc_id": doc_oid },
+            FindOptions::builder()
+                .sort(doc! { "created_at": -1 })
+                .projection(doc! {
+                    "_id": 1,
+                    "created_at": 1,
+                    "status": 1,
+                    "metadata.quality": 1,
+                    "metadata.confidence": 1,
+                })
+                .limit(50)
+                .build(),
+        )
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut out = Vec::new();
+    while let Some(doc) = cursor
+        .try_next()
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        let id = doc
+            .get_object_id("_id")
+            .map(|o| o.to_hex())
+            .unwrap_or_default();
+        let created_at = doc.get_i64("created_at").unwrap_or_default();
+        let status = doc.get_str("status").unwrap_or("unknown").to_string();
+        let quality = doc
+            .get_document("metadata")
+            .ok()
+            .and_then(|m| m.get_str("quality").ok())
+            .map(|s| s.to_string());
+        let confidence = doc
+            .get_document("metadata")
+            .ok()
+            .and_then(|m| m.get_f64("confidence").ok());
+
+        out.push(PublicRunListItem {
+            _id: id,
+            created_at,
+            status,
+            quality,
+            confidence,
+        });
+    }
+
+    Ok(Json(out))
+}
+
+#[derive(Serialize)]
+struct PublicRunDetail {
+    _id: String,
+    created_at: i64,
+    status: String,
+    quality: Option<String>,
+    confidence: Option<f64>,
+    response_text: String,
+}
+
+async fn get_extraction_run_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumPath(run_id): AxumPath<String>,
+) -> Result<Json<PublicRunDetail>, axum::http::StatusCode> {
+    let Ok(run_oid) = ObjectId::parse_str(&run_id) else {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    };
+
+    let db = state.mongo_client.database("wyat");
+    let coll = db.collection::<mongodb::bson::Document>("extraction_runs");
+
+    let doc = coll
+        .find_one(
+            doc! { "_id": run_oid },
+            FindOneOptions::builder()
+                .projection(doc! {
+                    "_id": 1, "created_at": 1, "status": 1,
+                    "metadata.quality": 1, "metadata.confidence": 1,
+                    "response_text": 1
+                })
+                .build(),
+        )
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(axum::http::StatusCode::NOT_FOUND)?;
+
+    let id = doc
+        .get_object_id("_id")
+        .map(|o| o.to_hex())
+        .unwrap_or_default();
+    let created_at = doc.get_i64("created_at").unwrap_or_default();
+    let status = doc.get_str("status").unwrap_or("unknown").to_string();
+    let md = doc.get_document("metadata").ok();
+    let quality = md
+        .and_then(|m| m.get_str("quality").ok())
+        .map(|s| s.to_string());
+    let confidence = md.and_then(|m| m.get_f64("confidence").ok());
+    let response_text = doc.get_str("response_text").unwrap_or("{}").to_string();
+
+    Ok(Json(PublicRunDetail {
+        _id: id,
+        created_at,
+        status,
+        quality,
+        confidence,
+        response_text,
+    }))
 }
