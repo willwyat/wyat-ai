@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
 import Modal from "@/components/ui/Modal";
 import { API_URL } from "@/lib/config";
-import {
-  useAiStore,
-  useCapitalStore,
-  type DocumentInfo,
-  type AiPrompt,
-} from "@/stores";
+import { useAiStore, type DocumentInfo, type AiPrompt } from "@/stores";
+import type {
+  BatchImportResponse,
+  FlatTransaction,
+} from "@/app/capital/types";
 import Loader from "@/components/Loader";
 
 interface ExtractionModalProps {
@@ -28,8 +27,14 @@ export default function ExtractionModal({
   const [error, setError] = useState<string | null>(null);
   const [extractionResult, setExtractionResult] = useState<string | null>(null);
   const [extractionData, setExtractionData] = useState<any | null>(null);
-  const [editableRows, setEditableRows] = useState<Record<string, any>[]>([]);
+  const [flatTransactions, setFlatTransactions] = useState<FlatTransaction[]>([]);
+  const [editableRows, setEditableRows] = useState<Record<string, string>[]>([]);
   const [extracting, setExtracting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<BatchImportResponse | null>(
+    null
+  );
+  const [importError, setImportError] = useState<string | null>(null);
   const [progressMessage, setProgressMessage] = useState<string>("");
 
   // Fake progress messages while extracting
@@ -104,7 +109,13 @@ export default function ExtractionModal({
       setEditedPrompt("");
       setError(null);
       setExtractionResult(null);
+      setExtractionData(null);
+      setFlatTransactions([]);
+      setEditableRows([]);
       setExtracting(false);
+      setImporting(false);
+      setImportResult(null);
+      setImportError(null);
     }
   }, [document]);
 
@@ -119,12 +130,96 @@ export default function ExtractionModal({
     return Array.from(keys);
   }
 
-  function normalizeRows(rows: any[]): Record<string, any>[] {
+  const optionalString = (value: any): string | null => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text.length ? text : null;
+  };
+
+  const optionalNumber = (value: any): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const num = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const optionalInteger = (value: any): number | null => {
+    const num = optionalNumber(value);
+    return num === null ? null : Math.trunc(num);
+  };
+
+  function coerceFlatTransaction(row: any): FlatTransaction {
+    const amountRaw =
+      typeof row?.amount_or_qty === "number"
+        ? row.amount_or_qty
+        : Number(row?.amount_or_qty ?? 0);
+    const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
+
+    return {
+      txid: String(row?.txid ?? ""),
+      date: String(row?.date ?? ""),
+      posted_ts: optionalNumber(row?.posted_ts),
+      source: String(row?.source ?? "assistant_extraction"),
+      payee: optionalString(row?.payee),
+      memo: optionalString(row?.memo),
+      account_id: String(row?.account_id ?? ""),
+      direction: String(row?.direction ?? "Debit"),
+      kind: String(row?.kind ?? "Fiat"),
+      ccy_or_asset: String(row?.ccy_or_asset ?? ""),
+      amount_or_qty: amount,
+      price: optionalNumber(row?.price),
+      price_ccy: optionalString(row?.price_ccy),
+      category_id: optionalString(row?.category_id),
+      status: optionalString(row?.status),
+      tx_type: optionalString(row?.tx_type),
+      ext1_kind: optionalString(row?.ext1_kind),
+      ext1_val: optionalString(row?.ext1_val),
+    };
+  }
+
+  function rowsToFlatTransactions(
+    rows: Record<string, string>[]
+  ): FlatTransaction[] {
+    return rows.map((row) => {
+      const amount = optionalNumber(row.amount_or_qty) ?? 0;
+
+      return {
+        txid: row.txid?.trim() ?? "",
+        date: row.date?.trim() ?? "",
+        posted_ts: optionalInteger(row.posted_ts),
+        source:
+          row.source && row.source.trim().length
+            ? row.source.trim()
+            : "assistant_extraction",
+        payee: optionalString(row.payee),
+        memo: optionalString(row.memo),
+        account_id: row.account_id?.trim() ?? "",
+        direction: row.direction?.trim() || "Debit",
+        kind: row.kind?.trim() || "Fiat",
+        ccy_or_asset: row.ccy_or_asset?.trim() ?? "",
+        amount_or_qty: amount,
+        price: optionalNumber(row.price),
+        price_ccy: optionalString(row.price_ccy),
+        category_id: optionalString(row.category_id),
+        status: optionalString(row.status),
+        tx_type: optionalString(row.tx_type),
+        ext1_kind: optionalString(row.ext1_kind),
+        ext1_val: optionalString(row.ext1_val),
+      };
+    });
+  }
+
+  function normalizeRows(rows: FlatTransaction[]): Record<string, string>[] {
     return (rows || []).map((r) => {
-      const out: Record<string, any> = {};
+      const out: Record<string, string> = {};
       if (r && typeof r === "object") {
-        for (const [k, v] of Object.entries(r)) {
-          out[k] = typeof v === "object" ? JSON.stringify(v) : v;
+        for (const [k, v] of Object.entries(r as Record<string, any>)) {
+          if (v === null || v === undefined) {
+            out[k] = "";
+          } else if (typeof v === "number") {
+            out[k] = Number.isFinite(v) ? v.toString() : "";
+          } else {
+            out[k] = String(v);
+          }
         }
       }
       return out;
@@ -137,7 +232,12 @@ export default function ExtractionModal({
       copy[rowIdx][key] = value;
       return copy;
     });
+    setImportResult(null);
+    setImportError(null);
   };
+
+  const previewRows = editableRows.slice(0, 10);
+  const previewColumns = inferColumns(previewRows);
 
   function fillTemplateWithDBVars(
     template: string,
@@ -262,13 +362,59 @@ export default function ExtractionModal({
       setExtractionData(json);
       setExtractionResult(JSON.stringify(json, null, 2));
       // Prepare editable rows from transactions if present
-      const txns = Array.isArray(json?.transactions) ? json.transactions : [];
+      const txns = Array.isArray(json?.transactions)
+        ? (json.transactions as any[]).map(coerceFlatTransaction)
+        : [];
+      setFlatTransactions(txns);
       setEditableRows(normalizeRows(txns));
+      setImportResult(null);
+      setImportError(null);
       setStep(3);
     } catch (err: any) {
       setError(err.message || "Extraction failed");
     } finally {
       setExtracting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!editableRows.length) return;
+    setImporting(true);
+    setImportError(null);
+
+    try {
+      const transactions = rowsToFlatTransactions(editableRows);
+      if (!transactions.length) {
+        throw new Error("No transactions to import");
+      }
+
+      const response = await fetch(
+        `${API_URL}/capital/transactions/batch-import`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ transactions }),
+        }
+      );
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(
+          text || `Import failed with status ${response.status}`
+        );
+      }
+
+      const summary: BatchImportResponse = await response.json();
+      setImportResult(summary);
+    } catch (err: any) {
+      setImportResult(null);
+      setImportError(err?.message || "Import failed");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -483,16 +629,95 @@ export default function ExtractionModal({
         {/* Step 3: View Results */}
         {step === 3 && (
           <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded border border-gray-200 bg-white p-3">
+                <p className="text-xs uppercase text-gray-500">Transactions</p>
+                <p className="text-lg font-semibold">{flatTransactions.length}</p>
+              </div>
+              <div className="rounded border border-gray-200 bg-white p-3">
+                <p className="text-xs uppercase text-gray-500">Quality</p>
+                <p className="text-lg font-semibold">
+                  {extractionData?.quality ?? "unknown"}
+                </p>
+              </div>
+              <div className="rounded border border-gray-200 bg-white p-3">
+                <p className="text-xs uppercase text-gray-500">Confidence</p>
+                <p className="text-lg font-semibold">
+                  {typeof extractionData?.confidence === "number"
+                    ? `${(extractionData.confidence * 100).toFixed(1)}%`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-2">
-                Extraction Result
+                Flat Transaction Preview
               </label>
-              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 overflow-auto max-h-96">
+              <div className="font-mono border border-gray-300 rounded-lg overflow-auto max-h-[320px]">
+                {previewRows.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-600">
+                    No transactions parsed.
+                  </div>
+                ) : (
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {previewColumns.map((col) => (
+                          <th
+                            key={col}
+                            className={`px-4 py-2 ${
+                              col === "amount_or_qty" || col === "price"
+                                ? "text-right"
+                                : "text-left"
+                            } font-semibold text-gray-700 border-b border-gray-200`}
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, idx) => (
+                        <tr
+                          key={idx}
+                          className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                        >
+                          {previewColumns.map((col) => (
+                            <td
+                              key={col}
+                              className={`px-4 py-2 border-b border-gray-200 align-top ${
+                                col === "amount_or_qty" || col === "price"
+                                  ? "text-right"
+                                  : "text-left"
+                              }`}
+                            >
+                              {row[col] ?? ""}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              {flatTransactions.length > previewRows.length && previewRows.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Showing first {previewRows.length} of {flatTransactions.length} rows.
+                </p>
+              )}
+            </div>
+
+            <details className="rounded border border-gray-200 bg-gray-50 p-4">
+              <summary className="cursor-pointer text-sm font-medium">
+                Raw extraction payload
+              </summary>
+              <div className="mt-2 max-h-64 overflow-auto border border-gray-200 bg-white p-3">
                 <pre className="text-xs font-mono whitespace-pre-wrap">
                   {extractionResult || "No result"}
                 </pre>
               </div>
-            </div>
+            </details>
 
             <div className="flex justify-between gap-3 pt-4">
               <button
@@ -578,6 +803,32 @@ export default function ExtractionModal({
               </div>
             </div>
 
+            {importError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-sm text-red-800">
+                {importError}
+              </div>
+            )}
+
+            {importResult && (
+              <div className="space-y-2 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+                <p>
+                  Imported <span className="font-semibold">{importResult.imported}</span>{" "}
+                  transaction{importResult.imported === 1 ? "" : "s"} and skipped{" "}
+                  <span className="font-semibold">{importResult.skipped}</span>.
+                </p>
+                {importResult.errors.length > 0 && (
+                  <div>
+                    <p className="font-medium text-red-700">Warnings:</p>
+                    <ul className="list-disc list-inside text-red-700">
+                      {importResult.errors.map((err, idx) => (
+                        <li key={`${err}-${idx}`}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setStep(3)}
@@ -586,15 +837,11 @@ export default function ExtractionModal({
                 Back to JSON
               </button>
               <button
-                onClick={() => {
-                  // stub import; wire to backend later
-                  console.log("Importing transactions:", editableRows);
-                  onClose();
-                }}
-                disabled={!editableRows.length}
+                onClick={handleImport}
+                disabled={!editableRows.length || importing}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Import Transactions
+                {importing ? "Importing..." : "Import Transactions"}
               </button>
             </div>
           </div>
