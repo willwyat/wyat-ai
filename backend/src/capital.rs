@@ -471,6 +471,68 @@ impl Transaction {
     }
 }
 
+fn default_transaction_status() -> Option<String> {
+    Some("posted".to_string())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NewTransaction {
+    pub id: String,
+    pub ts: i64,
+    #[serde(default)]
+    pub posted_ts: Option<i64>,
+    pub source: String,
+    #[serde(default)]
+    pub payee: Option<String>,
+    #[serde(default)]
+    pub memo: Option<String>,
+    #[serde(default = "default_transaction_status")]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub reconciled: bool,
+    #[serde(default)]
+    pub external_refs: Vec<(String, String)>,
+    pub legs: Vec<Leg>,
+    #[serde(default)]
+    pub tx_type: Option<String>,
+}
+
+impl Default for NewTransaction {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            ts: 0,
+            posted_ts: None,
+            source: String::new(),
+            payee: None,
+            memo: None,
+            status: default_transaction_status(),
+            reconciled: false,
+            external_refs: Vec::new(),
+            legs: Vec::new(),
+            tx_type: None,
+        }
+    }
+}
+
+impl NewTransaction {
+    pub fn into_transaction(self) -> Transaction {
+        Transaction {
+            id: self.id,
+            ts: self.ts,
+            posted_ts: self.posted_ts,
+            source: self.source,
+            payee: self.payee,
+            memo: self.memo,
+            status: self.status.or_else(default_transaction_status),
+            reconciled: self.reconciled,
+            external_refs: self.external_refs,
+            legs: self.legs,
+            tx_type: self.tx_type,
+        }
+    }
+}
+
 /// Bank/credit statement header for reconciliation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Statement {
@@ -1202,19 +1264,8 @@ pub async fn delete_transaction(
 
 // POST /capital/transactions
 #[derive(Debug, serde::Deserialize)]
-pub struct CreateTransactionReq {
-    pub id: String,
-    pub ts: i64,
-    pub posted_ts: Option<i64>,
-    pub source: String,
-    pub payee: Option<String>,
-    pub memo: Option<String>,
-    pub status: Option<String>,
-    pub reconciled: bool,
-    pub external_refs: Vec<(String, String)>,
-    pub legs: Vec<Leg>,
-    pub tx_type: Option<String>,
-}
+#[serde(transparent)]
+pub struct CreateTransactionReq(pub NewTransaction);
 
 #[derive(Debug, serde::Serialize)]
 pub struct CreateTransactionResp {
@@ -1233,30 +1284,22 @@ pub async fn create_transaction(
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Transaction>("capital_ledger");
 
+    let CreateTransactionReq(new_transaction) = req;
+    let tx_id = new_transaction.id.clone();
+
     // Check if transaction already exists
     let existing = collection
-        .find_one(doc! { "id": &req.id }, None)
+        .find_one(doc! { "id": &tx_id }, None)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
     if existing.is_some() {
-        return Err(format!("Transaction with ID '{}' already exists", req.id));
+        return Err(format!("Transaction with ID '{}' already exists", tx_id));
     }
 
+    let transaction = new_transaction.into_transaction();
+
     // Validate transaction balance (optional check)
-    let (is_balanced, net_amount) = Transaction {
-        id: req.id.clone(),
-        ts: req.ts,
-        posted_ts: req.posted_ts,
-        source: req.source.clone(),
-        payee: req.payee.clone(),
-        memo: req.memo.clone(),
-        status: req.status.clone(),
-        reconciled: req.reconciled,
-        external_refs: req.external_refs.clone(),
-        legs: req.legs.clone(),
-        tx_type: req.tx_type.clone(),
-    }
-    .is_balanced_in(Currency::USD);
+    let (is_balanced, net_amount) = transaction.is_balanced_in(Currency::USD);
 
     if !is_balanced {
         println!(
@@ -1265,28 +1308,13 @@ pub async fn create_transaction(
         );
     }
 
-    // Create the transaction
-    let transaction = Transaction {
-        id: req.id.clone(),
-        ts: req.ts,
-        posted_ts: req.posted_ts,
-        source: req.source,
-        payee: req.payee,
-        memo: req.memo,
-        status: req.status,
-        reconciled: req.reconciled,
-        external_refs: req.external_refs,
-        legs: req.legs,
-        tx_type: req.tx_type,
-    };
-
     // Insert into database
     match collection.insert_one(&transaction, None).await {
         Ok(_) => {
-            println!("Transaction created successfully: {}", req.id);
+            println!("Transaction created successfully: {}", tx_id);
             Ok(Json(CreateTransactionResp {
                 success: true,
-                transaction_id: req.id,
+                transaction_id: tx_id,
                 message: "Transaction created successfully".to_string(),
             }))
         }
@@ -1439,7 +1467,7 @@ pub async fn batch_import_transactions(
             external_refs.push((k, v));
         }
 
-        let tx = Transaction {
+        let new_transaction = NewTransaction {
             id: itx.txid.clone(),
             ts,
             posted_ts: itx.posted_ts,
@@ -1453,7 +1481,9 @@ pub async fn batch_import_transactions(
             tx_type: itx.tx_type.clone(),
         };
 
-        match collection.insert_one(&tx, None).await {
+        let transaction = new_transaction.into_transaction();
+
+        match collection.insert_one(&transaction, None).await {
             Ok(_) => imported += 1,
             Err(e) => {
                 errors.push(format!("{}: insert error: {}", itx.txid, e));
