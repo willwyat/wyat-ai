@@ -655,6 +655,9 @@ pub struct Position {
     pub last_updated: i64, // Unix timestamp
 }
 
+/// --- Fund Positions API Response Types ---
+// (legacy response types removed)
+
 // ------------------------- Family Example -------------------------
 
 /// Constructs the Family bucket using the decisions we've locked in.
@@ -1097,6 +1100,87 @@ pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<Publi
         }
     }
 }
+
+/// GET /capital/funds/:fund_id/positions - Aggregate fund positions from capital_ledger
+pub async fn get_fund_positions(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(fund_id): axum::extract::Path<String>,
+) -> Json<Vec<Position>> {
+    use futures::stream::TryStreamExt;
+    use mongodb::bson::{Bson, doc};
+
+    let db = state.mongo_client.database("wyat");
+    let ledger = db.collection::<mongodb::bson::Document>("capital_ledger");
+
+    let pipeline = vec![
+        doc! { "$unwind": "$legs" },
+        doc! { "$match": {
+            "legs.category_id": &fund_id,
+            "legs.amount.kind": "Crypto"
+        }},
+        doc! { "$addFields": {
+            "signed_qty": { "$cond": [
+                { "$eq": ["$legs.direction", "Debit"] },
+                { "$toDecimal": "$legs.amount.data.qty" },
+                { "$multiply": [{ "$toDecimal": "$legs.amount.data.qty" }, -1] }
+            ]}
+        }},
+        doc! { "$group": {
+            "_id": "$legs.amount.data.asset",
+            "qty": { "$sum": "$signed_qty" },
+            "last_updated": { "$max": { "$ifNull": ["$posted_ts", "$ts"] } }
+        }},
+    ];
+
+    let mut out: Vec<Position> = Vec::new();
+    match ledger.aggregate(pipeline, None).await {
+        Ok(mut cursor) => {
+            while let Ok(Some(doc)) = cursor.try_next().await {
+                let asset = doc.get_str("_id").unwrap_or("").to_string();
+
+                // qty as Decimal
+                let mut qty_dec = Decimal::ZERO;
+                if let Some(qv) = doc.get("qty") {
+                    qty_dec = match qv {
+                        Bson::Decimal128(d) => {
+                            Decimal::from_str_exact(&d.to_string()).unwrap_or(Decimal::ZERO)
+                        }
+                        Bson::Double(f) => Decimal::try_from(*f).unwrap_or(Decimal::ZERO),
+                        Bson::Int32(i) => Decimal::from(*i),
+                        Bson::Int64(i) => Decimal::from(*i),
+                        _ => Decimal::ZERO,
+                    };
+                }
+
+                // last_updated
+                let last_updated = doc
+                    .get_i64("last_updated")
+                    .unwrap_or_else(|_| chrono::Utc::now().timestamp());
+
+                out.push(Position {
+                    fund_id: fund_id.clone(),
+                    asset,
+                    qty: qty_dec,
+                    // price unknown here; can be filled by valuation service later
+                    price_in_base_ccy: Decimal::ZERO,
+                    last_updated,
+                });
+            }
+        }
+        Err(e) => {
+            eprintln!("Error aggregating fund positions for {}: {}", fund_id, e);
+        }
+    }
+
+    Json(out)
+}
+
+/// GET /capital/funds/:fund_id/positions - Compute positions for a specific fund
+///
+/// Positions are derived from capital_ledger transactions filtered by transaction-level `fund_id`.
+/// For v1, this endpoint returns net quantities per asset (fiat currencies and crypto assets).
+/// Valuation and pricing are intentionally omitted for now.
+// (duplicate get_fund_positions removed in favor of category-based aggregator above)
 
 /// GET /capital/accounts - Fetch all accounts from MongoDB
 pub async fn get_all_accounts(State(state): State<Arc<AppState>>) -> Json<Vec<Account>> {

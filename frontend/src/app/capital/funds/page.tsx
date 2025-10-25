@@ -32,6 +32,9 @@ export default function FundsPage() {
   const [funds, setFunds] = useState<PublicFund[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [positionsByFund, setPositionsByFund] = useState<
+    Record<string, Position[]>
+  >({});
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +47,40 @@ export default function FundsPage() {
       .catch((e) => setError(e.message || "Failed to load funds"))
       .finally(() => setLoading(false));
   }, []);
+
+  // Fetch positions for each fund after funds load
+  useEffect(() => {
+    if (!funds.length) return;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const results = await Promise.all(
+          funds.map(async (f) => {
+            try {
+              const res = await fetch(
+                `${API_URL}/capital/funds/${encodeURIComponent(
+                  f.fund_id
+                )}/positions`,
+                { credentials: "include", signal: controller.signal }
+              );
+              if (!res.ok) throw new Error(await res.text());
+              const data = (await res.json()) as Position[];
+              return [f.fund_id, data] as [string, Position[]];
+            } catch {
+              return [f.fund_id, [] as Position[]] as [string, Position[]];
+            }
+          })
+        );
+        const map: Record<string, Position[]> = {};
+        for (const [id, list] of results) map[id] = list;
+        setPositionsByFund(map);
+      } catch {
+        // ignore
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [funds]);
 
   if (loading) {
     return (
@@ -125,6 +162,63 @@ export default function FundsPage() {
                 </div>
               </div>
 
+              {/* Positions */}
+              <div className="mt-4">
+                <div className="font-medium">Positions</div>
+                {(() => {
+                  const positions = positionsByFund[f.fund_id] || [];
+                  if (!positions.length)
+                    return (
+                      <div className="text-sm text-gray-500">No positions</div>
+                    );
+                  return (
+                    <div className="overflow-x-auto mt-1">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-2 py-1 text-left">Asset</th>
+                            <th className="px-2 py-1 text-right">Qty</th>
+                            <th className="px-2 py-1 text-right">
+                              Price ({f.denominated_in})
+                            </th>
+                            <th className="px-2 py-1 text-right">
+                              Value ({f.denominated_in})
+                            </th>
+                            <th className="px-2 py-1 text-left">Updated</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {positions.map((p, i) => {
+                            const qty = toNumber(p.qty);
+                            const price = toNumber(p.price_in_base_ccy);
+                            const value = qty * price;
+                            return (
+                              <tr key={`${f.fund_id}-${p.asset}-${i}`}>
+                                <td className="px-2 py-1">{p.asset}</td>
+                                <td className="px-2 py-1 text-right">
+                                  {qty.toLocaleString()}
+                                </td>
+                                <td className="px-2 py-1 text-right">
+                                  {price.toLocaleString()}
+                                </td>
+                                <td className="px-2 py-1 text-right">
+                                  {value.toLocaleString()}
+                                </td>
+                                <td className="px-2 py-1">
+                                  {new Date(
+                                    (p.last_updated || 0) * 1000
+                                  ).toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {f.multiplier_rules && f.multiplier_rules.length > 0 && (
                 <div className="mt-3 text-sm">
                   <div className="text-gray-500">Multiplier Rules</div>
@@ -157,4 +251,18 @@ export default function FundsPage() {
       )}
     </div>
   );
+}
+
+type Position = {
+  fund_id: string;
+  asset: string;
+  qty: number | string;
+  price_in_base_ccy: number | string;
+  last_updated: number;
+};
+
+function toNumber(v: any): number {
+  if (typeof v === "number") return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
