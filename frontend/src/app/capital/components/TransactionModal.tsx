@@ -34,6 +34,25 @@ export default function TransactionModal({
 
   const tx = transaction;
 
+  const balanceLabel = (() => {
+    const s = (tx.balance_state || "unknown").toLowerCase();
+    if (s === "balanced") return "Balanced";
+    if (s === "needs_envelope_offset") return "Needs envelope offset";
+    if (s === "awaiting_transfer_match") return "Awaiting transfer match";
+    return "Unknown";
+  })();
+
+  const balanceClasses = (() => {
+    const s = (tx.balance_state || "unknown").toLowerCase();
+    if (s === "balanced")
+      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+    if (s === "needs_envelope_offset")
+      return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+    if (s === "awaiting_transfer_match")
+      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+    return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
+  })();
+
   // Get envelope name by ID
   const getEnvelopeName = (envelopeId: string | null | undefined) => {
     if (!envelopeId) return "Uncategorized";
@@ -118,6 +137,16 @@ export default function TransactionModal({
             <p className="text-sm text-gray-900 dark:text-white">
               {tx.status || "N/A"}
             </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
+              Balance State
+            </label>
+            <span
+              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${balanceClasses}`}
+            >
+              {balanceLabel}
+            </span>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">

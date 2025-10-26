@@ -137,7 +137,7 @@ export const useCapitalStore = create<CapitalState>()(
       loading: false,
       error: null,
       filters: {},
-      sortOrder: "default",
+      sortOrder: "desc",
       reclassifying: new Set(),
       deleting: new Set(),
       updatingType: new Set(),
