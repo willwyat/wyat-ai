@@ -143,6 +143,11 @@ pub struct ExerciseTypePatch {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FindByMuscleRequest {
+    pub muscles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExerciseEntryInput {
     #[schema(value_type = String)]
     pub exercise_id: ObjectId,
@@ -348,9 +353,9 @@ pub fn muscle_for_alias(term: &str) -> Option<&'static [Muscle]> {
 #[utoipa::path(
     post,
     path = "/workout/exercise-types/find-by-muscle",
-    request_body = Vec<String>,
+    request_body(content = FindByMuscleRequest, description = "List of muscle names to filter by"),
     responses(
-        (status = 200, description = "List of exercise types matching the specified muscles", body = Vec<ExerciseType>),
+        (status = 200, description = "Exercise types matching muscles", body = Vec<ExerciseType>),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
@@ -361,7 +366,7 @@ pub fn muscle_for_alias(term: &str) -> Option<&'static [Muscle]> {
 pub async fn find_exercise_type_by_muscle(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    Json(muscles): Json<Vec<String>>,
+    Json(req): Json<FindByMuscleRequest>,
 ) -> impl IntoResponse {
     // API key check
     let expected_key = std::env::var("WYAT_API_KEY").unwrap_or_default();
@@ -379,7 +384,7 @@ pub async fn find_exercise_type_by_muscle(
 
     let filter = doc! {
         "primary_muscles": {
-            "$in": muscles
+            "$in": req.muscles
         }
     };
 
@@ -1374,22 +1379,16 @@ pub async fn get_all_exercise_entries_mongo(
     }
 }
 
-/// Get all exercise entries for a specific day
-/// Path parameter: date_unix - Unix timestamp (any time on the target day)
-/// Query parameter: tz - Optional IANA timezone (e.g., "America/New_York", "Asia/Hong_Kong")
-/// Returns all entries whose timestamps fall within the local day range
-/// [local 00:00:00, next local 00:00:00) for the requested timezone (DST-safe).
-/// If no tz is provided, uses UTC.
 #[utoipa::path(
     get,
     path = "/workout/exercise-entries/day/{date_unix}",
     params(
         ("date_unix" = i64, Path, description = "Unix timestamp (any time on the target day)"),
-        ("tz" = Option<String>, Query, description = "Optional IANA timezone (e.g., 'America/New_York', 'Asia/Hong_Kong'). Defaults to UTC if not provided.")
+        ("tz" = Option<String>, Query, description = "IANA timezone, e.g. 'America/New_York'. Defaults to UTC.")
     ),
     responses(
-        (status = 200, description = "List of exercise entries for the specified day", body = Vec<ExerciseEntry>),
-        (status = 400, description = "Bad request - invalid timestamp or timezone"),
+        (status = 200, description = "Exercise entries for the day", body = Vec<ExerciseEntry>),
+        (status = 400, description = "Invalid timestamp or timezone"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),

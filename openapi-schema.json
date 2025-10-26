@@ -1,311 +1,810 @@
 {
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "info": {
-    "title": "Wyat AI Journal API",
-    "version": "1.0.0",
-    "description": "Who Dares Wins"
-  },
-  "servers": [
-    {
-      "url": "https://wyat-ai.onrender.com"
-    }
-  ],
-  "paths": {
-    "/journal/mongo": {
-      "post": {
-        "summary": "Create a new journal entry",
-        "description": "Creates a completely new journal entry with title, text content, and date. Use this endpoint for new entries only.",
-        "operationId": "createJournalEntry",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewJournalEntry"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Journal entry created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized: missing or invalid API key"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
+    "title": "backend",
+    "description": "",
+    "license": {
+      "name": ""
     },
-    "/journal/mongo/all": {
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/workout/exercise-entries": {
       "get": {
-        "summary": "Get all journal entries",
-        "operationId": "getAllJournalEntries",
+        "tags": [
+          "workout"
+        ],
+        "operationId": "get_all_exercise_entries_mongo",
         "responses": {
           "200": {
-            "description": "List of journal entries",
+            "description": "List of all exercise entries",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/JournalEntry"
+                    "$ref": "#/components/schemas/ExerciseEntry"
                   }
                 }
               }
             }
           },
           "401": {
-            "description": "Unauthorized: missing or invalid API key"
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
           }
-        }
-      }
-    },
-    "/journal/mongo/{id}": {
-      "get": {
-        "summary": "Get a journal entry by ID",
-        "operationId": "getJournalEntryById",
-        "parameters": [
+        },
+        "security": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "ID of the journal entry",
-            "schema": {
-              "type": "string"
-            }
+            "ApiKey": []
           }
+        ]
+      },
+      "post": {
+        "tags": [
+          "workout"
         ],
+        "operationId": "create_exercise_entry_mongo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExerciseEntryInput"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
-            "description": "Journal entry details",
+          "201": {
+            "description": "Exercise entry created successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JournalEntry"
+                  "$ref": "#/components/schemas/ExerciseEntry"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid ID format"
+            "description": "Bad request"
           },
           "401": {
-            "description": "Unauthorized: missing or invalid API key"
+            "description": "Unauthorized"
           },
           "404": {
-            "description": "Entry not found"
+            "description": "Exercise type not found"
           },
           "500": {
             "description": "Internal server error"
           }
-        }
-      },
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/workout/exercise-entries/day/{date_unix}": {
+      "get": {
+        "tags": [
+          "workout"
+        ],
+        "operationId": "get_exercise_entries_by_day",
+        "parameters": [
+          {
+            "name": "date_unix",
+            "in": "path",
+            "description": "Unix timestamp (any time on the target day)",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "description": "IANA timezone, e.g. 'America/New_York'. Defaults to UTC.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exercise entries for the day",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExerciseEntry"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid timestamp or timezone"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/workout/exercise-entries/{id}": {
       "patch": {
-        "summary": "Edit a journal entry (creates new version)",
-        "description": "Updates an existing journal entry by creating a new version. Only the text content can be modified - title and date remain unchanged. This endpoint creates a new version in the versions array.",
-        "operationId": "editJournalEntry",
+        "tags": [
+          "workout"
+        ],
+        "operationId": "update_exercise_entry_mongo",
         "parameters": [
           {
             "name": "id",
             "in": "path",
+            "description": "Exercise entry ID",
             "required": true,
-            "description": "ID of the journal entry",
             "schema": {
               "type": "string"
             }
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EditJournalEntry"
+                "$ref": "#/components/schemas/ExerciseEntryPatch"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "Journal entry updated successfully",
+            "description": "Exercise entry updated successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JournalResponse"
+                  "$ref": "#/components/schemas/ExerciseEntry"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid ID format"
+            "description": "Bad request"
           },
           "401": {
-            "description": "Unauthorized: missing or invalid API key"
+            "description": "Unauthorized"
           },
           "404": {
-            "description": "Entry not found"
+            "description": "Exercise entry not found"
           },
           "500": {
             "description": "Internal server error"
           }
-        }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/workout/exercise-types": {
+      "get": {
+        "tags": [
+          "workout"
+        ],
+        "operationId": "get_all_exercise_types_mongo",
+        "responses": {
+          "200": {
+            "description": "List of all exercise types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExerciseType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
       },
-      "delete": {
-        "summary": "Delete a journal entry",
-        "operationId": "deleteJournalEntry",
+      "post": {
+        "tags": [
+          "workout"
+        ],
+        "operationId": "create_exercise_type_mongo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExerciseTypeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Exercise type created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseType"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/workout/exercise-types/find-by-muscle": {
+      "post": {
+        "tags": [
+          "workout"
+        ],
+        "operationId": "find_exercise_type_by_muscle",
+        "requestBody": {
+          "description": "List of muscle names to filter by",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindByMuscleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Exercise types matching muscles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExerciseType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/workout/exercise-types/{id}": {
+      "patch": {
+        "tags": [
+          "workout"
+        ],
+        "operationId": "update_exercise_type_mongo",
         "parameters": [
           {
             "name": "id",
             "in": "path",
+            "description": "Exercise type ID",
             "required": true,
-            "description": "ID of the journal entry",
             "schema": {
               "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExerciseTypePatch"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "Journal entry deleted successfully",
+            "description": "Exercise type updated successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JournalResponse"
+                  "$ref": "#/components/schemas/ExerciseType"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid ID format"
+            "description": "Bad request"
           },
           "401": {
-            "description": "Unauthorized: missing or invalid API key"
+            "description": "Unauthorized"
           },
           "404": {
-            "description": "Entry not found"
+            "description": "Exercise type not found"
           },
           "500": {
             "description": "Internal server error"
           }
-        }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
       }
     }
   },
   "components": {
     "schemas": {
-      "NewJournalEntry": {
+      "ExerciseEntry": {
         "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Title of the journal entry"
-          },
-          "text": {
-            "type": "string",
-            "description": "Content of the journal entry"
-          },
-          "date_unix": {
-            "type": "integer",
-            "description": "Unix timestamp for the entry date"
-          }
-        },
-        "required": ["title", "text", "date_unix"]
-      },
-      "EditJournalEntry": {
-        "type": "object",
-        "description": "Payload for editing an existing journal entry. Only the text content can be modified.",
-        "properties": {
-          "text": {
-            "type": "string",
-            "description": "New content for the journal entry. This will create a new version while preserving the original title and date."
-          }
-        },
-        "required": ["text"]
-      },
-      "JournalVersion": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string",
-            "description": "Content of this version"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When this version was created"
-          }
-        },
-        "required": ["text", "timestamp"]
-      },
-      "JournalEntry": {
-        "type": "object",
+        "required": [
+          "exercise_label",
+          "date_unix"
+        ],
         "properties": {
           "_id": {
             "type": "string",
-            "description": "MongoDB ObjectId of the entry"
-          },
-          "title": {
-            "type": "string",
-            "description": "Title of the journal entry"
+            "nullable": true
           },
           "date_unix": {
             "type": "integer",
-            "description": "Unix timestamp for the entry date"
+            "format": "int64"
           },
-          "versions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/JournalVersion"
-            },
-            "description": "Array of all versions of this entry"
+          "distance_meters": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
           },
-          "preview_text": {
+          "exercise_id": {
             "type": "string",
-            "description": "First 100 characters of the latest version for preview"
+            "nullable": true
+          },
+          "exercise_label": {
+            "type": "string"
+          },
+          "intensity": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "reps": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "sets": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "time_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "tz": {
+            "type": "string",
+            "nullable": true
+          },
+          "weight_unit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WeightUnit"
+              }
+            ],
+            "nullable": true
+          },
+          "weight_value": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
           }
-        },
-        "required": ["_id", "title", "date_unix", "versions", "preview_text"]
+        }
       },
-      "JournalResponse": {
+      "ExerciseEntryInput": {
+        "type": "object",
+        "required": [
+          "exercise_id",
+          "date_unix"
+        ],
+        "properties": {
+          "date_unix": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "distance_meters": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "exercise_id": {
+            "type": "string"
+          },
+          "intensity": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "reps": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "sets": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "time_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "tz": {
+            "type": "string",
+            "nullable": true
+          },
+          "weight_unit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WeightUnit"
+              }
+            ],
+            "nullable": true
+          },
+          "weight_value": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          }
+        }
+      },
+      "ExerciseEntryPatch": {
         "type": "object",
         "properties": {
-          "message": {
+          "date_unix": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "distance_meters": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "exercise_id": {
             "type": "string",
-            "description": "Response message"
+            "nullable": true
+          },
+          "intensity": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "reps": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "sets": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "time_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "tz": {
+            "type": "string",
+            "nullable": true
+          },
+          "weight_unit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WeightUnit"
+              }
+            ],
+            "nullable": true
+          },
+          "weight_value": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
           }
-        },
-        "required": ["message"]
+        }
+      },
+      "ExerciseType": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "default_load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "guidance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_muscles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Muscle"
+            }
+          }
+        }
+      },
+      "ExerciseTypeInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "default_load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "guidance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_muscles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Muscle"
+            }
+          }
+        }
+      },
+      "ExerciseTypePatch": {
+        "type": "object",
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "default_load_basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LoadBasis"
+              }
+            ],
+            "nullable": true
+          },
+          "guidance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "primary_muscles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Muscle"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "FindByMuscleRequest": {
+        "type": "object",
+        "required": [
+          "muscles"
+        ],
+        "properties": {
+          "muscles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LoadBasis": {
+        "type": "string",
+        "enum": [
+          "per_side",
+          "total"
+        ]
+      },
+      "Muscle": {
+        "type": "string",
+        "enum": [
+          "chest",
+          "back",
+          "shoulders",
+          "biceps",
+          "triceps",
+          "forearms",
+          "glutes",
+          "quads",
+          "hamstrings",
+          "calves",
+          "abdominals",
+          "spinal_erectors",
+          "obliques"
+        ]
+      },
+      "Region": {
+        "type": "string",
+        "enum": [
+          "upper_body",
+          "lower_body",
+          "core"
+        ]
+      },
+      "WeightUnit": {
+        "type": "string",
+        "enum": [
+          "kg",
+          "lb"
+        ]
       }
     },
     "securitySchemes": {
-      "ApiKeyAuth": {
+      "ApiKey": {
         "type": "apiKey",
         "in": "header",
         "name": "x-wyat-api-key"
       }
     }
   },
-  "security": [
+  "tags": [
     {
-      "ApiKeyAuth": []
+      "name": "workout",
+      "description": "Workout tracking endpoints"
     }
   ]
 }

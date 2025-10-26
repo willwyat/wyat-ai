@@ -453,6 +453,7 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
             workout::ExerciseTypePatch,
             workout::ExerciseEntryInput,
             workout::ExerciseEntryPatch,
+            workout::FindByMuscleRequest,
             workout::WeightUnit,
             workout::LoadBasis,
             workout::Muscle,
