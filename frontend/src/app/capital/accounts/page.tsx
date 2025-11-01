@@ -14,6 +14,11 @@ export default function AccountsPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Set page title
+  useEffect(() => {
+    document.title = "Accounts - Wyat AI";
+  }, []);
+
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);

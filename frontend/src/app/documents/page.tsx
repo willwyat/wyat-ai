@@ -14,6 +14,11 @@ import { API_URL } from "@/lib/config";
 import ExtractionModal from "./components/ExtractionModal";
 import Loader from "@/components/Loader";
 
+// Set document title
+if (typeof window !== "undefined") {
+  document.title = "Documents - Wyat AI";
+}
+
 // Dynamically import PDF viewer with SSR disabled to avoid DOMMatrix errors
 const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
   ssr: false,

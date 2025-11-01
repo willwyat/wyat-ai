@@ -14,6 +14,11 @@ export default function FundsPage() {
     fetchFunds,
   } = useCapitalStore();
 
+  // Set page title
+  useEffect(() => {
+    document.title = "Funds - Wyat AI";
+  }, []);
+
   useEffect(() => {
     fetchFunds();
   }, [fetchFunds]);
@@ -42,6 +47,8 @@ export default function FundsPage() {
     USDT: 0.9997,
     XPL: 0.3057,
     SOL: 186.34,
+    HKD: 1 / 7.78, // HKD to USD conversion rate (7.78 HKD = 1 USD)
+    USD: 1.0,
   } as const;
 
   return (

@@ -11,6 +11,9 @@ import { UI_CONFIG } from "@/app/capital/config";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 
 export default function TransactionsPage() {
+  useEffect(() => {
+    document.title = "Capital - Wyat AI";
+  }, []);
   const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false);
 
   const {

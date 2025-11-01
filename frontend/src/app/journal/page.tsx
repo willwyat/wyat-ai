@@ -81,6 +81,7 @@ export default function JournalPage() {
 
   // Check localStorage for passcode
   useEffect(() => {
+    document.title = "Journal - Wyat AI";
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("journal_passcode");
       if (stored === "wyat2024") {

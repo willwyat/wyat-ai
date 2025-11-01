@@ -1335,18 +1335,30 @@ pub async fn get_fund_positions(
     let pipeline = vec![
         doc! { "$unwind": "$legs" },
         doc! { "$match": {
-            "legs.category_id": &fund_id,
-            "legs.amount.kind": "Crypto"
+            "legs.category_id": &fund_id
         }},
         doc! { "$addFields": {
             "signed_qty": { "$cond": [
                 { "$eq": ["$legs.direction", "Debit"] },
-                { "$toDecimal": "$legs.amount.data.qty" },
-                { "$multiply": [{ "$toDecimal": "$legs.amount.data.qty" }, -1] }
+                { "$cond": [
+                    { "$eq": ["$legs.amount.kind", "Crypto"] },
+                    { "$toDecimal": "$legs.amount.data.qty" },
+                    { "$toDecimal": "$legs.amount.data.amount" }
+                ]},
+                { "$cond": [
+                    { "$eq": ["$legs.amount.kind", "Crypto"] },
+                    { "$multiply": [{ "$toDecimal": "$legs.amount.data.qty" }, -1] },
+                    { "$multiply": [{ "$toDecimal": "$legs.amount.data.amount" }, -1] }
+                ]}
+            ]},
+            "asset_name": { "$cond": [
+                { "$eq": ["$legs.amount.kind", "Crypto"] },
+                "$legs.amount.data.asset",
+                "$legs.amount.data.ccy"
             ]}
         }},
         doc! { "$group": {
-            "_id": "$legs.amount.data.asset",
+            "_id": "$asset_name",
             "qty": { "$sum": "$signed_qty" },
             "last_updated": { "$max": { "$ifNull": ["$posted_ts", "$ts"] } }
         }},
