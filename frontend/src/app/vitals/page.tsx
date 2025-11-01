@@ -172,17 +172,19 @@ const VitalsPage: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto p-4">
       {/* Tabs */}
-      <div className="flex border-b mb-6">
+      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
         <button
-          className={`px-4 py-2 font-medium text-gray-800 border-b-2 transition-colors ${
-            activeTab === "daily" ? "border-blue-600" : "border-transparent"
+          className={`px-4 py-2 font-medium text-gray-800 dark:text-gray-200 border-b-2 transition-colors ${
+            activeTab === "daily"
+              ? "border-blue-600 dark:border-blue-400"
+              : "border-transparent"
           }`}
           onClick={() => setActiveTab("daily")}
         >
           Daily Metrics
         </button>
         <button
-          className={`px-4 py-2 font-medium text-gray-400 border-b-2 ml-2 cursor-not-allowed border-transparent`}
+          className={`px-4 py-2 font-medium text-gray-400 dark:text-gray-500 border-b-2 ml-2 cursor-not-allowed border-transparent`}
           onClick={() => setActiveTab("trends")}
           disabled
         >
@@ -198,8 +200,8 @@ const VitalsPage: React.FC = () => {
               key={d.date}
               className={`px-3 py-1 rounded border text-sm font-medium whitespace-nowrap ${
                 selectedDay === d.date
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-800 border-gray-300 hover:bg-gray-100"
+                  ? "bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500"
+                  : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
               }`}
               onClick={() => setSelectedDay(d.date)}
             >
@@ -210,99 +212,105 @@ const VitalsPage: React.FC = () => {
       )}
 
       {/* Loading/Error */}
-      {loading && <div className="p-8 text-center">Loading vitals...</div>}
-      {error && <div className="p-8 text-red-600">Error: {error}</div>}
+      {loading && (
+        <div className="p-8 text-center text-gray-600 dark:text-gray-400">
+          Loading vitals...
+        </div>
+      )}
+      {error && (
+        <div className="p-8 text-red-600 dark:text-red-400">Error: {error}</div>
+      )}
 
       {/* Daily Metrics Cards */}
       {activeTab === "daily" && !loading && !error && (
         <div className="flex flex-col gap-4 md:grid md:grid-cols-2">
           {/* Readiness Score Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Readiness</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.readiness?.score ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               {readinessInterpretation(selectedVitals?.readiness?.score)}
             </div>
             {selectedVitals?.readiness && (
-              <div className="text-xs text-gray-400 mt-2">
+              <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                 Day: {selectedVitals.readiness.day}
               </div>
             )}
           </div>
           {/* Sleep Summary Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Sleep Score</div>
             <div className="text-3xl font-bold mb-2">—</div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               (Sleep endpoint not implemented yet)
             </div>
           </div>
           {/* Daytime Stress Status Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Stress</div>
             <div className="text-2xl font-bold mb-2 flex items-center gap-2">
               {stressLevel(selectedVitals?.stress).emoji}
               {stressLevel(selectedVitals?.stress).label}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               {selectedVitals?.stress?.stress_high
                 ? `High: ${selectedVitals.stress.stress_high}%`
                 : "No stress data available"}
             </div>
           </div>
           {/* Activity Progress Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Activity</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.activity?.score ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Steps: {selectedVitals?.activity?.steps ?? "—"} <br />
               Calories: {selectedVitals?.activity?.active_calories ?? "—"}
             </div>
           </div>
           {/* SpO2 Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">SpO2</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.spo2?.average_saturation ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Average: {selectedVitals?.spo2?.average_saturation ?? "—"}% <br />
               Min: {selectedVitals?.spo2?.min_saturation ?? "—"}%
             </div>
           </div>
           {/* Cardiovascular Age Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Cardiovascular Age</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.cardiovascular_age?.cardiovascular_age ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Age:{" "}
               {selectedVitals?.cardiovascular_age?.cardiovascular_age ?? "—"}{" "}
               years
             </div>
           </div>
           {/* Resilience Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">Resilience</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.resilience?.score ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Recovery: {selectedVitals?.resilience?.score ?? "—"}
             </div>
           </div>
           {/* VO2 Max Card */}
-          <div className="border rounded-lg p-4 bg-white text-gray-800">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100">
             <div className="font-semibold text-lg mb-1">VO2 Max</div>
             <div className="text-3xl font-bold mb-2">
               {selectedVitals?.vo2_max?.vo2_max ?? "—"}
             </div>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
               Max: {selectedVitals?.vo2_max?.vo2_max ?? "—"} ml/kg/min
             </div>
           </div>
@@ -311,7 +319,7 @@ const VitalsPage: React.FC = () => {
 
       {/* Trends Tab Stub */}
       {activeTab === "trends" && (
-        <div className="p-8 text-center text-gray-400">
+        <div className="p-8 text-center text-gray-400 dark:text-gray-500">
           Trends coming soon...
         </div>
       )}
