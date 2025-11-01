@@ -200,6 +200,38 @@
         }
       }
     },
+    "/capital/transactions/{transaction_id}": {
+      "get": {
+        "tags": ["capital"],
+        "operationId": "get_transaction_by_id",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "description": "Transaction ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Transaction not found"
+          }
+        }
+      }
+    },
     "/workout/exercise-entries": {
       "get": {
         "tags": ["workout"],

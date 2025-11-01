@@ -40,11 +40,13 @@ export function formatCryptoAmount(qty: string, asset: string): string {
   const num = parseFloat(qty);
 
   // Determine decimal places based on asset
-  let decimals = 0; // Default for stablecoins like USDC, USDT
-  if (asset === "BTC" || asset === "WBTC") {
-    decimals = 4;
-  } else if (asset === "ETH") {
+  let decimals = 2; // Default for stablecoins like USDC, USDT
+  if (asset.includes("BTC")) {
+    decimals = 5;
+  } else if (asset.includes("ETH") || asset.includes("SOL")) {
     decimals = 3;
+  } else if (asset.includes("USD")) {
+    decimals = 2;
   }
 
   return `${num.toLocaleString("en-US", {

@@ -862,6 +862,10 @@ async fn main() {
         )
         .route(
             "/capital/transactions/:transaction_id",
+            get(capital::get_transaction_by_id),
+        )
+        .route(
+            "/capital/transactions/:transaction_id",
             axum::routing::delete(capital::delete_transaction),
         )
         .route(

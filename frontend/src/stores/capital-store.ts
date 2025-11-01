@@ -152,6 +152,7 @@ interface CapitalState {
 
   // Actions - Data Fetching
   fetchTransactions: () => Promise<void>;
+  fetchTransactionById: (transactionId: string) => Promise<Transaction>;
   fetchEnvelopes: () => Promise<void>;
   fetchAccounts: () => Promise<void>;
   fetchCycles: () => Promise<void>;
@@ -258,6 +259,28 @@ export const useCapitalStore = create<CapitalState>()(
             error: err instanceof Error ? err.message : "Unknown error",
             loading: false,
           });
+        }
+      },
+
+      fetchTransactionById: async (transactionId: string) => {
+        try {
+          const response = await fetch(
+            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.TRANSACTIONS}/${transactionId}`
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              errorText || `HTTP error! status: ${response.status}`
+            );
+          }
+
+          const transaction = await response.json();
+          return transaction;
+        } catch (err) {
+          throw err instanceof Error
+            ? err
+            : new Error("Failed to fetch transaction");
         }
       },
 

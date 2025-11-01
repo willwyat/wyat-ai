@@ -1594,6 +1594,41 @@ pub async fn get_transactions(
     }
 }
 
+/// GET /capital/transactions/:transaction_id - Get a single transaction by ID
+///
+#[utoipa::path(
+    get,
+    path = "/capital/transactions/{transaction_id}",
+    params(
+        ("transaction_id" = String, Path, description = "Transaction ID")
+    ),
+    responses(
+        (status = 200, description = "Transaction details", body = Transaction),
+        (status = 404, description = "Transaction not found")
+    ),
+    tag = "capital"
+)]
+pub async fn get_transaction_by_id(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(transaction_id): axum::extract::Path<String>,
+) -> Result<Json<Transaction>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    let filter = doc! { "id": &transaction_id };
+
+    match collection.find_one(filter, None).await {
+        Ok(Some(transaction)) => Ok(Json(transaction)),
+        Ok(None) => Err(format!("Transaction not found: {}", transaction_id)),
+        Err(e) => {
+            eprintln!("Error fetching transaction {}: {}", transaction_id, e);
+            Err(format!("Database error: {}", e))
+        }
+    }
+}
+
 /// PUT /capital/transactions/reclassify - Update transaction leg category
 ///
 /// Body: ReclassifyTransactionRequest
