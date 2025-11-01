@@ -8,6 +8,7 @@ import type {
   TransactionQuery,
   CycleList,
   EnvelopeUsage,
+  Leg,
 } from "@/app/capital/types";
 
 // AI Prompt Types
@@ -69,6 +70,58 @@ export interface ListDocumentsResponse {
   count: number;
 }
 
+// Transaction Update Types
+export interface UpdateLegsRequest {
+  legs: Leg[];
+  payee?: string;
+  memo?: string;
+}
+
+export interface UpdateLegsResponse {
+  success: boolean;
+  message: string;
+  transaction_id: string;
+}
+
+export interface BalanceTransactionResponse {
+  success: boolean;
+  message: string;
+  transaction_id: string;
+  balance_state?: string;
+}
+
+// Fund Types
+export interface Position {
+  fund_id: string;
+  asset: string;
+  qty: number | string;
+  price_in_base_ccy: number | string;
+  last_updated: number;
+}
+
+export interface PublicFund {
+  id: string;
+  fund_id: string;
+  name: string;
+  symbol: string;
+  assets: string[];
+  purpose: string;
+  horizon_years: number;
+  discretionary_sales: boolean;
+  acquisition_policy?: string | null;
+  yield_policy?: string | null;
+  denominated_in: "USD" | "HKD" | "BTC";
+  balancing_policy?: any;
+  multiplier_rules?: string[] | null;
+  max_pct_networth: number;
+  max_pct_liquid: number;
+  liquid: boolean;
+  review_cadence: string;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
 interface CapitalState {
   // Data
   transactions: Transaction[];
@@ -76,12 +129,17 @@ interface CapitalState {
   accounts: Account[];
   cycles: CycleList | null;
   envelopeUsage: Map<string, EnvelopeUsage>;
+  funds: PublicFund[];
+  positionsByFund: Record<string, Position[]>;
 
   // UI State
   loading: boolean;
   error: string | null;
   filters: TransactionQuery;
   sortOrder: "default" | "asc" | "desc";
+  fundsLoading: boolean;
+  positionsLoading: boolean;
+  fundsError: string | null;
 
   // Operation States
   reclassifying: Set<string>;
@@ -98,6 +156,10 @@ interface CapitalState {
   fetchAccounts: () => Promise<void>;
   fetchCycles: () => Promise<void>;
   fetchEnvelopeUsage: (cycle: string) => Promise<void>;
+  fetchFunds: () => Promise<void>;
+  fetchPositions: (fundIds: string[]) => Promise<void>;
+  fetchFundPositions: (fundId: string) => Promise<Position[]>;
+  createAccount: (account: Account) => Promise<void>;
 
   // Actions - Transactions
   reclassifyTransaction: (
@@ -109,6 +171,13 @@ interface CapitalState {
     transactionId: string,
     txType: string | null
   ) => Promise<void>;
+  updateTransactionLegs: (
+    transactionId: string,
+    request: UpdateLegsRequest
+  ) => Promise<UpdateLegsResponse>;
+  balanceTransaction: (
+    transactionId: string
+  ) => Promise<BalanceTransactionResponse>;
   deleteTransaction: (transactionId: string, payee: string) => Promise<void>;
   createTransaction: (transactionData: any) => Promise<any>;
 
@@ -134,10 +203,15 @@ export const useCapitalStore = create<CapitalState>()(
       accounts: [],
       cycles: null,
       envelopeUsage: new Map(),
+      funds: [],
+      positionsByFund: {},
       loading: false,
       error: null,
       filters: {},
       sortOrder: "desc",
+      fundsLoading: false,
+      positionsLoading: false,
+      fundsError: null,
       reclassifying: new Set(),
       deleting: new Set(),
       updatingType: new Set(),
@@ -210,24 +284,61 @@ export const useCapitalStore = create<CapitalState>()(
       },
 
       fetchAccounts: async () => {
+        console.log("=== STORE: fetchAccounts START ===");
         set({ loading: true, error: null });
 
         try {
-          const response = await fetch(
-            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ACCOUNTS}`
-          );
+          const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ACCOUNTS}`;
+          console.log("Fetching from:", url);
+
+          const response = await fetch(url);
+          console.log("Response status:", response.status);
 
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
 
           const data = await response.json();
+          console.log("Received accounts:", data.length);
+          console.log("First account sample:", data[0]);
+
           set({ accounts: data, loading: false });
+          console.log("=== STORE: fetchAccounts END ===");
         } catch (err) {
+          console.error("=== STORE: fetchAccounts ERROR ===", err);
           set({
             error: err instanceof Error ? err.message : "Unknown error",
             loading: false,
           });
+        }
+      },
+
+      createAccount: async (account: Account) => {
+        try {
+          const response = await fetch(
+            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ACCOUNTS}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(account),
+            }
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+              errorText || `HTTP error! status: ${response.status}`
+            );
+          }
+
+          // Refresh accounts list after creation
+          await get().fetchAccounts();
+        } catch (err) {
+          throw err instanceof Error
+            ? err
+            : new Error("Failed to create account");
         }
       },
 
@@ -283,6 +394,72 @@ export const useCapitalStore = create<CapitalState>()(
           set({ envelopeUsage: usageMap });
         } catch (err) {
           console.error("Failed to fetch envelope usage:", err);
+        }
+      },
+
+      fetchFunds: async () => {
+        set({ fundsLoading: true, fundsError: null });
+        try {
+          const response = await fetch(`${API_CONFIG.BASE_URL}/capital/funds`, {
+            credentials: "include",
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          const data = await response.json();
+          set({ funds: data, fundsLoading: false });
+
+          // Auto-fetch positions for all funds
+          const fundIds = data.map((f: PublicFund) => f.fund_id);
+          if (fundIds.length > 0) {
+            get().fetchPositions(fundIds);
+          }
+        } catch (error) {
+          set({
+            fundsError:
+              error instanceof Error ? error.message : "Failed to load funds",
+            fundsLoading: false,
+          });
+        }
+      },
+
+      fetchFundPositions: async (fundId: string): Promise<Position[]> => {
+        try {
+          const response = await fetch(
+            `${API_CONFIG.BASE_URL}/capital/funds/${encodeURIComponent(
+              fundId
+            )}/positions`,
+            { credentials: "include" }
+          );
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+          return await response.json();
+        } catch (error) {
+          console.error(`Failed to fetch positions for fund ${fundId}:`, error);
+          return [];
+        }
+      },
+
+      fetchPositions: async (fundIds: string[]) => {
+        set({ positionsLoading: true });
+        try {
+          const results = await Promise.all(
+            fundIds.map(async (fundId) => {
+              const positions = await get().fetchFundPositions(fundId);
+              return [fundId, positions] as [string, Position[]];
+            })
+          );
+
+          const positionsByFund: Record<string, Position[]> = {};
+          for (const [fundId, positions] of results) {
+            positionsByFund[fundId] = positions;
+          }
+
+          set({ positionsByFund, positionsLoading: false });
+        } catch (error) {
+          console.error("Failed to load positions:", error);
+          set({ positionsLoading: false });
         }
       },
 
@@ -389,6 +566,62 @@ export const useCapitalStore = create<CapitalState>()(
             return { updatingType: newSet };
           });
         }
+      },
+
+      updateTransactionLegs: async (
+        transactionId: string,
+        request: UpdateLegsRequest
+      ): Promise<UpdateLegsResponse> => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/transactions/${encodeURIComponent(
+            transactionId
+          )}/legs`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(request),
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error || "Failed to update transaction legs");
+        }
+
+        const data = await response.json();
+
+        // Refresh transactions after successful update
+        await get().fetchTransactions();
+
+        return data;
+      },
+
+      balanceTransaction: async (
+        transactionId: string
+      ): Promise<BalanceTransactionResponse> => {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/capital/transactions/${encodeURIComponent(
+            transactionId
+          )}/balance`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error || "Failed to balance transaction");
+        }
+
+        const data = await response.json();
+
+        // Refresh transactions after successful balance
+        await get().fetchTransactions();
+
+        return data;
       },
 
       deleteTransaction: async (transactionId: string, payee: string) => {

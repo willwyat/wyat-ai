@@ -1,5 +1,5 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.0",
   "info": {
     "title": "backend",
     "description": "",
@@ -8,12 +8,201 @@
     },
     "version": "0.1.0"
   },
+  "servers": [
+    {
+      "url": "https://wyat-ai.onrender.com",
+      "description": "Production server"
+    }
+  ],
   "paths": {
+    "/capital/accounts": {
+      "get": {
+        "tags": ["capital"],
+        "summary": "GET /capital/funds/:fund_id/positions - Compute positions for a specific fund",
+        "description": "Positions are derived from capital_ledger transactions filtered by transaction-level `fund_id`.\nFor v1, this endpoint returns net quantities per asset (fiat currencies and crypto assets).\nValuation and pricing are intentionally omitted for now.\nGET /capital/accounts - Fetch all accounts from MongoDB",
+        "operationId": "get_all_accounts",
+        "responses": {
+          "200": {
+            "description": "List of all accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Account"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/capital/envelopes": {
+      "get": {
+        "tags": ["capital"],
+        "summary": "GET /capital/envelopes - Fetch all envelopes from MongoDB",
+        "operationId": "get_all_envelopes",
+        "responses": {
+          "200": {
+            "description": "List of all envelopes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Envelope"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/capital/funds": {
+      "get": {
+        "tags": ["capital"],
+        "summary": "GET /capital/funds - Fetch all funds from MongoDB (capital_funds collection)",
+        "operationId": "get_all_funds",
+        "responses": {
+          "200": {
+            "description": "List of all funds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicFund"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/capital/funds/{fund_id}/positions": {
+      "get": {
+        "tags": ["capital"],
+        "summary": "GET /capital/funds/:fund_id/positions - Aggregate fund positions from capital_ledger",
+        "operationId": "get_fund_positions",
+        "parameters": [
+          {
+            "name": "fund_id",
+            "in": "path",
+            "description": "Fund ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fund positions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Position"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/capital/transactions": {
+      "get": {
+        "tags": ["capital"],
+        "operationId": "get_transactions",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "description": "Filter by account ID",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "envelope_id",
+            "in": "query",
+            "description": "Filter by envelope/category ID",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "description": "Filter by cycle label (e.g., '2025-10')",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Unix timestamp for start of time range",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Unix timestamp for end of time range",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "tx_type",
+            "in": "query",
+            "description": "Filter by transaction type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workout/exercise-entries": {
       "get": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "get_all_exercise_entries_mongo",
         "responses": {
           "200": {
@@ -43,9 +232,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "create_exercise_entry_mongo",
         "requestBody": {
           "content": {
@@ -90,9 +277,7 @@
     },
     "/workout/exercise-entries/day/{date_unix}": {
       "get": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "get_exercise_entries_by_day",
         "parameters": [
           {
@@ -149,9 +334,7 @@
     },
     "/workout/exercise-entries/{id}": {
       "patch": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "update_exercise_entry_mongo",
         "parameters": [
           {
@@ -207,9 +390,7 @@
     },
     "/workout/exercise-types": {
       "get": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "get_all_exercise_types_mongo",
         "responses": {
           "200": {
@@ -239,9 +420,7 @@
         ]
       },
       "post": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "create_exercise_type_mongo",
         "requestBody": {
           "content": {
@@ -283,9 +462,7 @@
     },
     "/workout/exercise-types/find-by-muscle": {
       "post": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "find_exercise_type_by_muscle",
         "requestBody": {
           "description": "List of muscle names to filter by",
@@ -328,9 +505,7 @@
     },
     "/workout/exercise-types/{id}": {
       "patch": {
-        "tags": [
-          "workout"
-        ],
+        "tags": ["workout"],
         "operationId": "update_exercise_type_mongo",
         "parameters": [
           {
@@ -387,12 +562,404 @@
   },
   "components": {
     "schemas": {
-      "ExerciseEntry": {
+      "Account": {
+        "type": "object",
+        "required": ["id", "name", "currency", "metadata"],
+        "properties": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/AccountMetadata"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AccountMetadata": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["bank_name", "owner_name", "account_number"],
+                "properties": {
+                  "account_number": {
+                    "type": "string"
+                  },
+                  "bank_name": {
+                    "type": "string"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "owner_name": {
+                    "type": "string"
+                  },
+                  "routing_number": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["Checking"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["bank_name", "owner_name", "account_number"],
+                "properties": {
+                  "account_number": {
+                    "type": "string"
+                  },
+                  "bank_name": {
+                    "type": "string"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "owner_name": {
+                    "type": "string"
+                  },
+                  "routing_number": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["Savings"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "credit_card_name",
+                  "owner_name",
+                  "account_number"
+                ],
+                "properties": {
+                  "account_number": {
+                    "type": "string"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "credit_card_name": {
+                    "type": "string"
+                  },
+                  "owner_name": {
+                    "type": "string"
+                  },
+                  "routing_number": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["Credit"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["address", "network", "is_ledger"],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "is_ledger": {
+                    "type": "boolean"
+                  },
+                  "network": {
+                    "$ref": "#/components/schemas/AccountNetwork"
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["CryptoWallet"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["cex_name", "account_id"],
+                "properties": {
+                  "account_id": {
+                    "type": "string"
+                  },
+                  "cex_name": {
+                    "type": "string"
+                  },
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["Cex"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": ["trustee", "jurisdiction"],
+                "properties": {
+                  "color": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "jurisdiction": {
+                    "type": "string"
+                  },
+                  "trustee": {
+                    "type": "string"
+                  },
+                  "txid_prefix": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": ["Trust"]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "AccountNetwork": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["EVM"],
+            "properties": {
+              "EVM": {
+                "type": "object",
+                "required": ["chain_name", "chain_id"],
+                "properties": {
+                  "chain_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "chain_name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "enum": ["Solana"]
+          },
+          {
+            "type": "string",
+            "enum": ["Bitcoin"]
+          }
+        ]
+      },
+      "BalanceState": {
+        "type": "string",
+        "enum": [
+          "balanced",
+          "needs_envelope_offset",
+          "awaiting_transfer_match",
+          "unknown"
+        ]
+      },
+      "Currency": {
+        "type": "string",
+        "enum": ["USD", "HKD", "BTC"]
+      },
+      "DeficitPolicy": {
+        "type": "string",
+        "enum": ["AutoNet", "RequireTransfer"]
+      },
+      "Envelope": {
         "type": "object",
         "required": [
-          "exercise_label",
-          "date_unix"
+          "id",
+          "name",
+          "kind",
+          "status",
+          "rollover",
+          "balance",
+          "allow_negative"
         ],
+        "properties": {
+          "allow_negative": {
+            "type": "boolean",
+            "description": "Allow controlled negative balances (deficits)."
+          },
+          "balance": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "deficit_policy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeficitPolicy"
+              }
+            ],
+            "nullable": true
+          },
+          "funding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FundingRule"
+              }
+            ],
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EnvelopeKind"
+          },
+          "last_period": {
+            "type": "string",
+            "description": "Last processed period in \"YYYY-MM\".",
+            "nullable": true
+          },
+          "min_balance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              }
+            ],
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "period_limit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true
+          },
+          "rollover": {
+            "$ref": "#/components/schemas/RolloverPolicy"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EnvelopeStatus"
+          }
+        }
+      },
+      "EnvelopeKind": {
+        "type": "string",
+        "enum": ["Fixed", "Variable"]
+      },
+      "EnvelopeStatus": {
+        "type": "string",
+        "enum": ["Active", "Inactive"]
+      },
+      "EnvelopeUsage": {
+        "type": "object",
+        "required": [
+          "envelope_id",
+          "label",
+          "budget",
+          "spent",
+          "remaining",
+          "percent"
+        ],
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "envelope_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "remaining": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "spent": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "ExerciseEntry": {
+        "type": "object",
+        "required": ["exercise_label", "date_unix"],
         "properties": {
           "_id": {
             "type": "string",
@@ -472,10 +1039,7 @@
       },
       "ExerciseEntryInput": {
         "type": "object",
-        "required": [
-          "exercise_id",
-          "date_unix"
-        ],
+        "required": ["exercise_id", "date_unix"],
         "properties": {
           "date_unix": {
             "type": "integer",
@@ -620,9 +1184,7 @@
       },
       "ExerciseType": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "_id": {
             "type": "string",
@@ -663,9 +1225,7 @@
       },
       "ExerciseTypeInput": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "aliases": {
             "type": "array",
@@ -740,9 +1300,7 @@
       },
       "FindByMuscleRequest": {
         "type": "object",
-        "required": [
-          "muscles"
-        ],
+        "required": ["muscles"],
         "properties": {
           "muscles": {
             "type": "array",
@@ -752,12 +1310,135 @@
           }
         }
       },
+      "FundingFreq": {
+        "type": "string",
+        "enum": ["Monthly"]
+      },
+      "FundingRule": {
+        "type": "object",
+        "required": ["amount", "freq"],
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "freq": {
+            "$ref": "#/components/schemas/FundingFreq"
+          }
+        }
+      },
+      "FxSnapshot": {
+        "type": "object",
+        "description": "Snapshot used to value a leg in a chosen reporting currency (e.g., USD or BTC).",
+        "required": ["to", "rate"],
+        "properties": {
+          "rate": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "to": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        }
+      },
+      "Leg": {
+        "type": "object",
+        "required": ["account_id", "direction", "amount"],
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/LegAmount"
+          },
+          "category_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "direction": {
+            "$ref": "#/components/schemas/LegDirection"
+          },
+          "fee_of_leg_idx": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "fx": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FxSnapshot"
+              }
+            ],
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "LegAmount": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["kind", "data"],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Money"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["Fiat"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["kind", "data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "description": "Crypto asset with symbol and quantity (e.g., { asset: \"ETH\", qty: 1.25 })",
+                "required": ["asset", "qty"],
+                "properties": {
+                  "asset": {
+                    "type": "string"
+                  },
+                  "qty": {
+                    "$ref": "#/components/schemas/Decimal"
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["Crypto"]
+              }
+            }
+          }
+        ],
+        "description": "Amount carried by a leg: either fiat (Money) or a crypto asset quantity.",
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "LegDirection": {
+        "type": "string",
+        "enum": ["Debit", "Credit"]
+      },
       "LoadBasis": {
         "type": "string",
-        "enum": [
-          "per_side",
-          "total"
-        ]
+        "enum": ["per_side", "total"]
+      },
+      "Money": {
+        "type": "object",
+        "required": ["amount", "ccy"],
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "ccy": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        }
       },
       "Muscle": {
         "type": "string",
@@ -777,20 +1458,284 @@
           "obliques"
         ]
       },
+      "Position": {
+        "type": "object",
+        "required": [
+          "fund_id",
+          "asset",
+          "qty",
+          "price_in_base_ccy",
+          "last_updated"
+        ],
+        "properties": {
+          "asset": {
+            "type": "string"
+          },
+          "fund_id": {
+            "type": "string"
+          },
+          "last_updated": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price_in_base_ccy": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "qty": {
+            "$ref": "#/components/schemas/Decimal"
+          }
+        }
+      },
+      "PublicFund": {
+        "type": "object",
+        "required": [
+          "id",
+          "fund_id",
+          "name",
+          "symbol",
+          "assets",
+          "purpose",
+          "horizon_years",
+          "discretionary_sales",
+          "denominated_in",
+          "max_pct_networth",
+          "max_pct_liquid",
+          "liquid",
+          "review_cadence",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "acquisition_policy": {
+            "type": "string",
+            "nullable": true
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "balancing_policy": {
+            "type": "object",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "denominated_in": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "discretionary_sales": {
+            "type": "boolean"
+          },
+          "fund_id": {
+            "type": "string"
+          },
+          "horizon_years": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string"
+          },
+          "liquid": {
+            "type": "boolean"
+          },
+          "max_pct_liquid": {
+            "type": "number",
+            "format": "double"
+          },
+          "max_pct_networth": {
+            "type": "number",
+            "format": "double"
+          },
+          "multiplier_rules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "review_cadence": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "yield_policy": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "Region": {
         "type": "string",
-        "enum": [
-          "upper_body",
-          "lower_body",
-          "core"
+        "enum": ["upper_body", "lower_body", "core"]
+      },
+      "RolloverPolicy": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "On new month: if balance is positive -> reset to 0; if negative and deficits allowed -> carry the negative.",
+            "enum": ["ResetToZero"]
+          },
+          {
+            "type": "object",
+            "required": ["CarryOver"],
+            "properties": {
+              "CarryOver": {
+                "type": "object",
+                "description": "Keep remaining balance; add funding; optionally cap final balance.",
+                "properties": {
+                  "cap": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Money"
+                      }
+                    ],
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["SinkingFund"],
+            "properties": {
+              "SinkingFund": {
+                "type": "object",
+                "description": "Classic sinking fund: always carry over; cap optional.",
+                "properties": {
+                  "cap": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Money"
+                      }
+                    ],
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["Decay"],
+            "properties": {
+              "Decay": {
+                "type": "object",
+                "description": "Carry over but apply exponential decay to prior balance before funding.",
+                "required": ["keep_ratio"],
+                "properties": {
+                  "cap": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Money"
+                      }
+                    ],
+                    "nullable": true
+                  },
+                  "keep_ratio": {
+                    "$ref": "#/components/schemas/Decimal"
+                  }
+                }
+              }
+            }
+          }
         ]
+      },
+      "Transaction": {
+        "type": "object",
+        "required": [
+          "id",
+          "ts",
+          "source",
+          "reconciled",
+          "external_refs",
+          "legs"
+        ],
+        "properties": {
+          "balance_state": {
+            "$ref": "#/components/schemas/BalanceState"
+          },
+          "external_refs": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Leg"
+            }
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
+          },
+          "payee": {
+            "type": "string",
+            "nullable": true
+          },
+          "posted_ts": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "reconciled": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tx_type": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "WeightUnit": {
         "type": "string",
-        "enum": [
-          "kg",
-          "lb"
-        ]
+        "enum": ["kg", "lb"]
       }
     },
     "securitySchemes": {
@@ -805,6 +1750,10 @@
     {
       "name": "workout",
       "description": "Workout tracking endpoints"
+    },
+    {
+      "name": "capital",
+      "description": "Capital management endpoints"
     }
   ]
 }

@@ -18,16 +18,18 @@
 
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
 };
 use bytes::Bytes;
-use mongodb::bson::{doc, oid::ObjectId};
+use futures::stream::TryStreamExt;
+use mongodb::bson::{Bson, doc, oid::ObjectId};
 use mongodb::{Database, bson};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 // Import storage functions and types
 // TODO: Re-enable when implementing bank statement import
@@ -41,15 +43,16 @@ pub const DEFAULT_ENVELOPE_ID: &str = "env_uncategorized";
 
 // ------------------------- Money -------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum Currency {
     USD,
     HKD,
     BTC,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Money {
+    #[schema(value_type = String)]
     pub amount: Decimal,
     pub ccy: Currency,
 }
@@ -108,32 +111,34 @@ pub enum CapitalError {
     MinBalanceExceeded(String),
 }
 
-// ------------------------- Envelopes -------------------------
+// ========================== //
+// * * * * ENVELOPES. * * * * //
+// ========================== //
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub enum EnvelopeStatus {
     Active,
     Inactive,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub enum EnvelopeKind {
     Fixed,
     Variable,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub enum FundingFreq {
     Monthly,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub struct FundingRule {
     pub amount: Money,
     pub freq: FundingFreq,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub enum DeficitPolicy {
     /// Next funding auto-nets the deficit first, then adds any remainder.
     AutoNet,
@@ -141,7 +146,7 @@ pub enum DeficitPolicy {
     RequireTransfer,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub enum RolloverPolicy {
     /// On new month: if balance is positive -> reset to 0; if negative and deficits allowed -> carry the negative.
     ResetToZero,
@@ -156,7 +161,7 @@ pub enum RolloverPolicy {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Envelope {
     pub id: String,
     pub name: String,
@@ -286,67 +291,95 @@ impl Envelope {
     }
 }
 
-// ------------------------- Accounts (minimal) -------------------------
+// ========================= //
+// * * * * ACCOUNTS. * * * * //
+// ========================= //
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Account {
     pub id: String,
     pub name: String,
     pub currency: Currency,
     pub metadata: AccountMetadata,
+    pub group_id: Option<String>,
+    pub group_order: Option<u32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub enum AccountNetwork {
     EVM { chain_name: String, chain_id: u64 },
     Solana,
     Bitcoin,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
 pub enum AccountMetadata {
+    // New format with explicit type/data structure
+    Tagged {
+        #[serde(rename = "type")]
+        account_type: String,
+        #[serde(default)]
+        color: String,
+        data: serde_json::Value,
+    },
+    // Legacy flat formats for backward compatibility
     Checking {
-        bank_name: String,  // e.g. "Chase"
-        owner_name: String, // e.g. "John Doe"
+        bank_name: String,
+        owner_name: String,
         account_number: String,
+        #[serde(default)]
         routing_number: Option<String>,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
     Savings {
-        bank_name: String,  // e.g. "Chase"
-        owner_name: String, // e.g. "John Doe"
+        bank_name: String,
+        owner_name: String,
         account_number: String,
+        #[serde(default)]
         routing_number: Option<String>,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
     Credit {
-        credit_card_name: String, // e.g. "Chase Sapphire"
-        owner_name: String,       // e.g. "John Doe"
+        credit_card_name: String,
+        owner_name: String,
         account_number: String,
+        #[serde(default)]
         routing_number: Option<String>,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
     CryptoWallet {
         address: String,
         network: AccountNetwork,
         is_ledger: bool,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
     Cex {
-        cex_name: String, // e.g. "Binance"
+        cex_name: String,
         account_id: String,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
     Trust {
         trustee: String,
         jurisdiction: String,
+        #[serde(default)]
         color: Option<String>,
+        #[serde(default)]
         txid_prefix: Option<String>,
     },
 }
@@ -355,6 +388,15 @@ impl Account {
     #[allow(dead_code)]
     pub fn kind(&self) -> &'static str {
         match &self.metadata {
+            AccountMetadata::Tagged { account_type, .. } => match account_type.as_str() {
+                "Checking" => "Checking",
+                "Savings" => "Savings",
+                "Credit" => "Credit",
+                "CryptoWallet" => "CryptoWallet",
+                "Cex" => "Cex",
+                "Trust" => "Trust",
+                _ => "Unknown",
+            },
             AccountMetadata::Checking { .. } => "Checking",
             AccountMetadata::Savings { .. } => "Savings",
             AccountMetadata::Credit { .. } => "Credit",
@@ -365,9 +407,166 @@ impl Account {
     }
 }
 
-// ------------------------- Ledger -------------------------
+#[derive(Debug, serde::Deserialize)]
+pub struct AccountBalanceQuery {
+    // Choose ONE of: as_of OR (from & to) OR label
+    pub as_of: Option<i64>,    // unix ts inclusive
+    pub from: Option<i64>,     // unix ts inclusive
+    pub to: Option<i64>,       // unix ts inclusive
+    pub label: Option<String>, // cycle label "YYYY-MM"
+}
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize)]
+pub struct AccountPointBalance {
+    account_id: String,
+    balance: Money,
+    as_of: i64,
+}
+
+#[derive(Serialize)]
+pub struct AccountRangeBalance {
+    account_id: String,
+    opening: Money,
+    closing: Money,
+    delta: Money,
+    start_ts: i64,
+    end_ts: i64,
+    label: Option<String>,
+}
+
+pub async fn get_account_balance(
+    State(state): State<Arc<AppState>>,
+    Path(account_id): Path<String>,
+    Query(q): Query<AccountBalanceQuery>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let accounts = db.collection::<Account>("capital_accounts");
+
+    // 1) Load account for currency
+    let account = accounts
+        .find_one(doc! { "id": &account_id }, None)
+        .await
+        .map_err(|e| format!("db error: {e}"))?
+        .ok_or_else(|| "account not found".to_string())?;
+
+    let ccy_str = match account.currency {
+        Currency::USD => "USD",
+        Currency::HKD => "HKD",
+        Currency::BTC => "BTC",
+    };
+
+    // Helper: sum signed fiat legs for this account up to and including `as_of`
+    async fn sum_as_of(
+        db: &mongodb::Database,
+        account_id: &str,
+        ccy_str: &str,
+        as_of: i64,
+    ) -> Result<Decimal, String> {
+        let ledger = db.collection::<mongodb::bson::Document>("capital_ledger");
+        // Match by account, currency, and time <= as_of (posted_ts or ts)
+        let pipeline = vec![
+            doc! { "$unwind": "$legs" },
+            doc! { "$match": {
+              "legs.account_id": account_id,
+              "legs.amount.kind": "Fiat",
+              "legs.amount.data.ccy": ccy_str,
+              "$expr": { "$lte": [ { "$ifNull": [ "$posted_ts", "$ts" ] }, as_of ] }
+            }},
+            doc! { "$project": {
+              "signed": {
+                "$cond": [
+                  { "$eq": [ "$legs.direction", "Debit" ] },
+                  { "$toDecimal": "$legs.amount.data.amount" },
+                  { "$multiply": [ { "$toDecimal": "$legs.amount.data.amount" }, -1 ] }
+                ]
+              }
+            }},
+            doc! { "$group": { "_id": null, "sum": { "$sum": "$signed" } } },
+        ];
+
+        let mut cursor = ledger
+            .aggregate(pipeline, None)
+            .await
+            .map_err(|e| format!("agg error: {e}"))?;
+        let mut amt = Decimal::ZERO;
+        if let Some(doc) = cursor
+            .try_next()
+            .await
+            .map_err(|e| format!("cursor error: {e}"))?
+        {
+            if let Some(sum) = doc.get("sum") {
+                amt = match sum {
+                    Bson::Decimal128(d) => {
+                        Decimal::from_str_exact(&d.to_string()).unwrap_or(Decimal::ZERO)
+                    }
+                    Bson::Double(f) => Decimal::try_from(*f).unwrap_or(Decimal::ZERO),
+                    Bson::Int32(i) => Decimal::from(*i),
+                    Bson::Int64(i) => Decimal::from(*i),
+                    _ => Decimal::ZERO,
+                };
+            }
+        }
+        Ok(amt)
+    }
+
+    // 2) Resolve query intent: point vs range
+    if let Some(label) = q.label.clone() {
+        // Use cycle boundaries for this label
+        let (start_ts, end_ts) = crate::capital::cycle_bounds_for_label(&label)
+            .ok_or_else(|| format!("Invalid cycle label: {label}"))?;
+        let opening_as_of = start_ts - 1;
+        let closing_as_of = end_ts;
+
+        let opening = sum_as_of(&db, &account_id, ccy_str, opening_as_of).await?;
+        let closing = sum_as_of(&db, &account_id, ccy_str, closing_as_of).await?;
+        let delta = closing - opening;
+
+        return Ok(Json(serde_json::json!({
+          "account_id": account_id,
+          "opening": { "amount": opening, "ccy": account.currency },
+          "closing": { "amount": closing, "ccy": account.currency },
+          "delta":   { "amount": delta,   "ccy": account.currency },
+          "start_ts": start_ts,
+          "end_ts": end_ts,
+          "label": label
+        })));
+    }
+
+    if q.from.is_some() && q.to.is_some() {
+        let start_ts = q.from.unwrap();
+        let end_ts = q.to.unwrap();
+        let opening_as_of = start_ts - 1;
+        let closing_as_of = end_ts;
+
+        let opening = sum_as_of(&db, &account_id, ccy_str, opening_as_of).await?;
+        let closing = sum_as_of(&db, &account_id, ccy_str, closing_as_of).await?;
+        let delta = closing - opening;
+
+        return Ok(Json(serde_json::json!({
+          "account_id": account_id,
+          "opening": { "amount": opening, "ccy": account.currency },
+          "closing": { "amount": closing, "ccy": account.currency },
+          "delta":   { "amount": delta,   "ccy": account.currency },
+          "start_ts": start_ts,
+          "end_ts": end_ts
+        })));
+    }
+
+    // Default: point-in-time balance (now or provided as_of)
+    let as_of = q.as_of.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    let amount = sum_as_of(&db, &account_id, ccy_str, as_of).await?;
+    Ok(Json(serde_json::json!({
+      "account_id": account_id,
+      "balance": { "amount": amount, "ccy": account.currency },
+      "as_of": as_of
+    })))
+}
+
+// ======================= //
+// * * * * LEDGER. * * * * //
+// ======================= //
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub enum LegDirection {
     Debit,
     Credit,
@@ -383,14 +582,14 @@ impl LegDirection {
 }
 
 /// Snapshot used to value a leg in a chosen reporting currency (e.g., USD or BTC).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, ToSchema)]
 pub struct FxSnapshot {
     pub to: Currency,  // currency to value in (e.g., USD or BTC)
     pub rate: Decimal, // price per 1 unit of the leg's native unit in `to`
 }
 
 /// Amount carried by a leg: either fiat (Money) or a crypto asset quantity.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", content = "data")]
 pub enum LegAmount {
     /// Fiat amount in a defined Currency (USD/HKD/BTC if you later model BTC as fiat-like)
@@ -417,7 +616,7 @@ impl LegAmount {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Leg {
     pub account_id: String,          // e.g., "acct.chase_credit" or "acct.binance"
     pub direction: LegDirection,     // Debit or Credit
@@ -428,7 +627,7 @@ pub struct Leg {
     pub notes: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BalanceState {
     Balanced,
@@ -443,7 +642,7 @@ impl Default for BalanceState {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Transaction {
     pub id: String,             // stable UUID/String
     pub ts: i64,                // when it happened (unix seconds)
@@ -589,11 +788,14 @@ pub struct Statement {
     pub raw_ref: Option<String>, // e.g., filename or source range
 }
 
-// ------------------------- Funds -------------------------
+// ====================== //
+// * * * * FUNDS. * * * * //
+// ====================== //
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Fund {
     #[serde(rename = "_id")]
+    #[schema(value_type = String)]
     pub id: mongodb::bson::oid::ObjectId,
     pub name: String,
     pub symbol: String,
@@ -607,6 +809,7 @@ pub struct Fund {
     pub yield_policy: Option<String>,
     pub denominated_in: Currency,
     #[serde(default)]
+    #[schema(value_type = Option<Object>)]
     pub balancing_policy: Option<mongodb::bson::Document>,
     #[serde(default)]
     pub multiplier_rules: Option<Vec<String>>,
@@ -616,13 +819,15 @@ pub struct Fund {
     pub review_cadence: String,
     pub status: String,
     #[serde(default)]
+    #[schema(value_type = Option<i64>)]
     pub created_at: Option<mongodb::bson::DateTime>,
     #[serde(default)]
+    #[schema(value_type = Option<i64>)]
     pub updated_at: Option<mongodb::bson::DateTime>,
     pub fund_id: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct PublicFund {
     pub id: String,
     pub fund_id: String,
@@ -635,6 +840,7 @@ pub struct PublicFund {
     pub acquisition_policy: Option<String>,
     pub yield_policy: Option<String>,
     pub denominated_in: Currency,
+    #[schema(value_type = Option<Object>)]
     pub balancing_policy: Option<mongodb::bson::Document>,
     pub multiplier_rules: Option<Vec<String>>,
     pub max_pct_networth: f64,
@@ -646,7 +852,7 @@ pub struct PublicFund {
     pub updated_at: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Position {
     pub fund_id: String,
     pub asset: String, // "BONK", "DOGE"
@@ -658,20 +864,9 @@ pub struct Position {
 /// --- Fund Positions API Response Types ---
 // (legacy response types removed)
 
-// ------------------------- Family Example -------------------------
-
-/// Constructs the Family bucket using the decisions we've locked in.
-/// Currency for all envelopes here is USD unless noted otherwise.
-///
-/// - W Pocket Money (SoFi / ZA) – CarryOver
-/// - A Pocket Money (TD / Mox) – CarryOver
-/// - Groceries (Chase Credit) – ResetToZero, $1,000/mo, allow deficits to -$150 (AutoNet)
-/// - Transport (Chase Credit) – ResetToZero, $500/mo, allow deficits to -$150 (AutoNet)
-/// - Flights (HSBC Joint, HKD) – SinkingFund cap HKD 10,000 *example*, adjust later
-/// - Family (HSBC Joint, HKD) – SinkingFund cap HKD 12,000 *example*, adjust later
-/// - Extras (Chase) – CarryOver cap USD 3,000
-/// - Rent (Chase) – Fixed 4,500/mo but modeled as envelope for forecast; Inactive until lease resumes
-// ------------------------- API Handlers -------------------------
+// ============================= //
+// * * * * API HANDLERS. * * * * //
+// ============================= //
 use crate::AppState;
 
 // ------------------------- Helper Functions -------------------------
@@ -740,7 +935,7 @@ fn active_cycle_bounds(now_utc: i64) -> (i64, i64, String) {
 
 // ------------------------- Response Types -------------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct EnvelopeUsage {
     pub envelope_id: String,
     pub label: String, // cycle label, e.g., "2025-10"
@@ -753,8 +948,14 @@ pub struct EnvelopeUsage {
 // ------------------------- Envelope Endpoints -------------------------
 
 /// GET /capital/envelopes - Fetch all envelopes from MongoDB
-///
-
+#[utoipa::path(
+    get,
+    path = "/capital/envelopes",
+    responses(
+        (status = 200, description = "List of all envelopes", body = Vec<Envelope>)
+    ),
+    tag = "capital"
+)]
 pub async fn get_all_envelopes(State(state): State<Arc<AppState>>) -> Json<Vec<Envelope>> {
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Envelope>("capital_envelopes");
@@ -1048,6 +1249,14 @@ pub async fn get_cycles(State(_state): State<Arc<AppState>>) -> Json<CycleList> 
 }
 
 /// GET /capital/funds - Fetch all funds from MongoDB (capital_funds collection)
+#[utoipa::path(
+    get,
+    path = "/capital/funds",
+    responses(
+        (status = 200, description = "List of all funds", body = Vec<PublicFund>)
+    ),
+    tag = "capital"
+)]
 pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<PublicFund>> {
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Fund>("capital_funds");
@@ -1102,6 +1311,17 @@ pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<Publi
 }
 
 /// GET /capital/funds/:fund_id/positions - Aggregate fund positions from capital_ledger
+#[utoipa::path(
+    get,
+    path = "/capital/funds/{fund_id}/positions",
+    params(
+        ("fund_id" = String, Path, description = "Fund ID")
+    ),
+    responses(
+        (status = 200, description = "Fund positions", body = Vec<Position>)
+    ),
+    tag = "capital"
+)]
 pub async fn get_fund_positions(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(fund_id): axum::extract::Path<String>,
@@ -1183,7 +1403,16 @@ pub async fn get_fund_positions(
 // (duplicate get_fund_positions removed in favor of category-based aggregator above)
 
 /// GET /capital/accounts - Fetch all accounts from MongoDB
+#[utoipa::path(
+    get,
+    path = "/capital/accounts",
+    responses(
+        (status = 200, description = "List of all accounts", body = Vec<Account>)
+    ),
+    tag = "capital"
+)]
 pub async fn get_all_accounts(State(state): State<Arc<AppState>>) -> Json<Vec<Account>> {
+    println!("=== GET_ALL_ACCOUNTS START ===");
     let db = state.mongo_client.database("wyat");
     let collection = db.collection::<Account>("capital_accounts");
 
@@ -1191,17 +1420,74 @@ pub async fn get_all_accounts(State(state): State<Arc<AppState>>) -> Json<Vec<Ac
 
     match collection.find(None, None).await {
         Ok(cursor) => match cursor.try_collect::<Vec<Account>>().await {
-            Ok(accounts) => Json(accounts),
+            Ok(accounts) => {
+                println!("Successfully fetched {} accounts", accounts.len());
+                for account in &accounts {
+                    println!("  Account: id={}, name={}", account.id, account.name);
+                }
+                println!("=== GET_ALL_ACCOUNTS END ===");
+                Json(accounts)
+            }
             Err(e) => {
                 eprintln!("Error collecting accounts: {}", e);
+                println!("=== GET_ALL_ACCOUNTS ERROR ===");
                 Json(Vec::new())
             }
         },
         Err(e) => {
             eprintln!("Error fetching accounts: {}", e);
+            println!("=== GET_ALL_ACCOUNTS ERROR ===");
             Json(Vec::new())
         }
     }
+}
+
+/// POST /capital/accounts - Create a new account
+#[utoipa::path(
+    post,
+    path = "/capital/accounts",
+    request_body = Account,
+    responses(
+        (status = 200, description = "Account created successfully", body = Account)
+    ),
+    tag = "capital"
+)]
+pub async fn create_account(
+    State(state): State<Arc<AppState>>,
+    Json(account): Json<Account>,
+) -> Result<Json<Account>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Account>("capital_accounts");
+
+    use mongodb::bson::doc;
+
+    // Validate account ID is not empty
+    if account.id.trim().is_empty() {
+        return Err("Account ID cannot be empty".to_string());
+    }
+
+    // Validate account name is not empty
+    if account.name.trim().is_empty() {
+        return Err("Account name cannot be empty".to_string());
+    }
+
+    // Check if account already exists
+    let existing = collection
+        .find_one(doc! { "id": &account.id }, None)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    if existing.is_some() {
+        return Err(format!("Account with ID '{}' already exists", account.id));
+    }
+
+    // Insert the new account
+    collection
+        .insert_one(&account, None)
+        .await
+        .map_err(|e| format!("Failed to create account: {}", e))?;
+
+    Ok(Json(account))
 }
 
 // ------------------------- Query Parameters -------------------------
@@ -1223,26 +1509,22 @@ pub struct ReclassifyTransactionRequest {
     pub category_id: Option<String>, // envelope ID or category
 }
 
-/// GET /capital/transactions - Fetch transactions with optional filtering
-///
-/// Query parameters:
-/// - account_id: Filter by account ID (searches in legs.account_id)
-/// - envelope_id: Filter by envelope/category ID (searches in legs.category_id)
-/// - label: Filter by cycle label (e.g., "2025-10"). Takes precedence over from/to.
-/// - from: Unix timestamp for start of time range (inclusive, ignored if label is provided)
-/// - to: Unix timestamp for end of time range (inclusive, ignored if label is provided)
-/// - tx_type: Filter by transaction type (spending, income, fee_only, transfer, transfer_fx, trade, adjustment, refund)
-///
-/// Uses posted_ts when available, falls back to ts for time filtering.
-///
-/// Examples:
-/// - GET /capital/transactions
-/// - GET /capital/transactions?account_id=acct.chase_credit
-/// - GET /capital/transactions?envelope_id=env.groceries
-/// - GET /capital/transactions?label=2025-10
-/// - GET /capital/transactions?from=1696000000&to=1698591999
-/// - GET /capital/transactions?tx_type=spending
-/// - GET /capital/transactions?account_id=acct.chase_credit&label=2025-10&envelope_id=env.groceries&tx_type=transfer_fx
+#[utoipa::path(
+    get,
+    path = "/capital/transactions",
+    params(
+        ("account_id" = Option<String>, Query, description = "Filter by account ID"),
+        ("envelope_id" = Option<String>, Query, description = "Filter by envelope/category ID"),
+        ("label" = Option<String>, Query, description = "Filter by cycle label (e.g., '2025-10')"),
+        ("from" = Option<i64>, Query, description = "Unix timestamp for start of time range"),
+        ("to" = Option<i64>, Query, description = "Unix timestamp for end of time range"),
+        ("tx_type" = Option<String>, Query, description = "Filter by transaction type")
+    ),
+    responses(
+        (status = 200, description = "List of transactions", body = Vec<Transaction>)
+    ),
+    tag = "capital"
+)]
 pub async fn get_transactions(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TransactionQuery>,
@@ -1453,6 +1735,151 @@ pub async fn update_transaction_type(
                 Err(format!("Transaction not found: {}", transaction_id))
             }
         }
+        Err(e) => Err(format!("Database update error: {}", e)),
+    }
+}
+
+/// PATCH /capital/transactions/{transaction_id}/legs - Edit transaction legs
+///
+/// Updates the legs array of a transaction, including direction, amount, memo, payee.
+///
+/// Body: {
+///   "legs": [...],  // full array of legs to replace
+///   "payee": "...",  // optional: update payee
+///   "memo": "..."    // optional: update memo
+/// }
+#[derive(Debug, Deserialize)]
+pub struct UpdateTransactionLegsRequest {
+    pub legs: Vec<Leg>,
+    pub payee: Option<String>,
+    pub memo: Option<String>,
+}
+
+pub async fn update_transaction_legs(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(transaction_id): axum::extract::Path<String>,
+    Json(request): Json<UpdateTransactionLegsRequest>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    if request.legs.is_empty() {
+        return Err("Transaction must have at least one leg".to_string());
+    }
+
+    let filter = doc! { "id": &transaction_id };
+
+    // Build update document
+    let mut update_fields = doc! {
+        "legs": bson::to_bson(&request.legs)
+            .map_err(|e| format!("Failed to serialize legs: {}", e))?
+    };
+
+    if let Some(payee) = &request.payee {
+        update_fields.insert("payee", payee);
+    }
+    if let Some(memo) = &request.memo {
+        update_fields.insert("memo", memo);
+    }
+
+    let update = doc! { "$set": update_fields };
+
+    match collection.update_one(filter, update, None).await {
+        Ok(result) => {
+            if result.modified_count == 1 || result.matched_count == 1 {
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "Transaction legs updated successfully",
+                    "transaction_id": transaction_id
+                })))
+            } else {
+                Err(format!("Transaction not found: {}", transaction_id))
+            }
+        }
+        Err(e) => Err(format!("Database update error: {}", e)),
+    }
+}
+
+/// POST /capital/transactions/{transaction_id}/balance - Balance and reconcile a transaction
+///
+/// Attempts to balance a transaction by:
+/// 1. Checking that credit and debit legs sum to zero (in USD)
+/// 2. Verifying that __pnl__ leg (if present) has a category_id
+/// 3. If checks pass, sets balance_state to "Balanced" and reconciled to true
+///
+/// Returns success or error message with details
+pub async fn balance_transaction(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(transaction_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, String> {
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<Transaction>("capital_ledger");
+
+    use mongodb::bson::doc;
+
+    // Fetch the transaction
+    let filter = doc! { "id": &transaction_id };
+    let mut transaction = match collection.find_one(filter.clone(), None).await {
+        Ok(Some(tx)) => tx,
+        Ok(None) => return Err(format!("Transaction not found: {}", transaction_id)),
+        Err(e) => return Err(format!("Database query error: {}", e)),
+    };
+
+    // Check if already balanced
+    if transaction.balance_state == BalanceState::Balanced {
+        return Ok(Json(serde_json::json!({
+            "success": true,
+            "message": "Transaction is already balanced",
+            "transaction_id": transaction_id
+        })));
+    }
+
+    // Check 1: Verify legs sum to zero in USD
+    let (is_balanced, net) = transaction.is_balanced_in(Currency::USD);
+    if !is_balanced {
+        return Err(format!(
+            "Transaction does not balance: net amount is {} {}",
+            net.amount,
+            match net.ccy {
+                Currency::USD => "USD",
+                Currency::HKD => "HKD",
+                Currency::BTC => "BTC",
+            }
+        ));
+    }
+
+    // Check 2: Verify __pnl__ leg has category_id
+    let pnl_leg = transaction
+        .legs
+        .iter()
+        .find(|leg| leg.account_id == PNL_ACCOUNT_ID);
+    if let Some(leg) = pnl_leg {
+        if leg.category_id.is_none() {
+            return Err("__pnl__ leg must have a category_id (envelope)".to_string());
+        }
+    }
+
+    // All checks passed - update balance_state and reconciled
+    transaction.balance_state = BalanceState::Balanced;
+    transaction.reconciled = true;
+
+    let update = doc! {
+        "$set": {
+            "balance_state": bson::to_bson(&BalanceState::Balanced)
+                .map_err(|e| format!("Failed to serialize balance_state: {}", e))?,
+            "reconciled": true
+        }
+    };
+
+    match collection.update_one(filter, update, None).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "success": true,
+            "message": "Transaction balanced and reconciled successfully",
+            "transaction_id": transaction_id,
+            "balance_state": "Balanced"
+        }))),
         Err(e) => Err(format!("Database update error: {}", e)),
     }
 }
@@ -1689,9 +2116,9 @@ pub struct BatchImportRequest {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BatchImportResponse {
-    imported: usize,
-    skipped: usize,
-    errors: Vec<String>,
+    pub imported: usize,
+    pub skipped: usize,
+    pub errors: Vec<String>,
 }
 
 pub async fn process_batch_import(
@@ -1846,4 +2273,54 @@ pub async fn batch_import_transactions(
     let db = state.mongo_client.database("wyat");
     let summary = process_batch_import(&db, req.transactions).await?;
     Ok(Json(summary))
+}
+
+// ======================= //
+// * * * * DATA FEEDS * * * //
+// ======================= //
+
+use chrono::{DateTime, Utc};
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DataFeedSource {
+    pub publisher: Option<String>, // e.g. "Coingecko"
+    pub publish_url: String,       // API endpoint
+    pub fetch_method: String,      // e.g. "GET", "POST"
+    pub format: Option<String>,    // "json", "csv", etc.
+    pub parser: Option<String>,    // optional parser hint
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DataFeed {
+    pub name: String,            // e.g. "Ethereum / USD"
+    pub symbol: String,          // e.g. "ETHUSD"
+    pub categories: Vec<String>, // e.g. ["crypto", "price"]
+    pub source: DataFeedSource,  // metadata about publisher/source
+    #[schema(value_type = Option<i64>)]
+    pub last_fetch: Option<DateTime<Utc>>, // last successful fetch time
+    #[serde(default)]
+    pub metadata: Option<mongodb::bson::Document>, // additional optional metadata
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DataSnapshotData {
+    pub r#type: String,                 // e.g. "price"
+    pub feed_symbol: String,            // link to DataFeed.symbol
+    pub source: Option<DataFeedSource>, // optional reference for provenance
+    pub symbol: Option<String>,         // e.g. "ETH"
+    pub pair: Option<String>,           // e.g. "ETH/USD"
+    pub value: rust_decimal::Decimal,   // numeric value
+    pub unit: Option<String>,           // e.g. "USD"
+    pub label: Option<String>,          // e.g. "spot", "close"
+    #[serde(default)]
+    pub metadata: Option<mongodb::bson::Document>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DataSnapshot {
+    pub fetch_time: DateTime<Utc>,
+    pub source_time: Option<DateTime<Utc>>,
+    pub data: Vec<DataSnapshotData>,
+    #[serde(default)]
+    pub metadata: Option<mongodb::bson::Document>,
 }

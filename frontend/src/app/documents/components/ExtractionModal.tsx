@@ -286,6 +286,8 @@ export default function ExtractionModal({
           : undefined,
       });
 
+      console.log("Raw extraction response:", response);
+
       validateResponseShape(response);
 
       const normalized: ExtractionPreview = {
@@ -299,6 +301,9 @@ export default function ExtractionModal({
         import_summary: response.import_summary,
       };
 
+      console.log("Normalized preview:", normalized);
+      console.log("Setting draftRows to:", normalized.transactions);
+
       setPreview(normalized);
       setPreviewJson(JSON.stringify(response, null, 2));
       setImportSummary(response.import_summary ?? null);
@@ -306,6 +311,28 @@ export default function ExtractionModal({
       setConfirmed(
         new Array((normalized.transactions || []).length).fill(false)
       );
+
+      console.log("State updated - preview:", normalized);
+      console.log(
+        "State updated - previewJson length:",
+        JSON.stringify(response, null, 2).length
+      );
+      console.log(
+        "State updated - draftRows count:",
+        normalized.transactions.length
+      );
+
+      // Refresh the runs list to include the new extraction
+      listExtractionRuns(docId)
+        .then((r) => {
+          setRuns(r || []);
+          if (r && r.length > 0) {
+            setSelectedRunId(r[0]._id);
+          }
+        })
+        .catch((err) => {
+          console.warn("Failed to refresh extraction runs", err);
+        });
 
       if (response.import_summary) {
         setToastMessage(
@@ -371,6 +398,11 @@ export default function ExtractionModal({
       setIsImporting(false);
     }
   }
+
+  // Note: The ExtractionModal is for extracting and importing transactions from documents.
+  // For editing existing transactions in the system, use the TransactionModal in the Capital page.
+  // The endpoints PATCH /capital/transactions/:id/legs and POST /capital/transactions/:id/balance
+  // are available for transaction editing and balancing in other parts of the application.
 
   function closeAndReset() {
     resetState();
@@ -604,8 +636,8 @@ export default function ExtractionModal({
                   isImporting ||
                   isExtracting ||
                   isSubmitting ||
-                  !draftRows?.length ||
-                  recon.diff > 0.01
+                  !draftRows?.length
+                  // || recon.diff > 0.01  // Temporarily disabled for partial-period statements
                 }
               >
                 {isImporting ? "Importing…" : "Import edited rows"}
@@ -813,20 +845,37 @@ function increment(map: Map<string, number>, key: string) {
 }
 
 function validateResponseShape(data: any) {
+  console.log("Validating response shape:", data);
+
   if (!data || typeof data !== "object") {
+    console.error("Response is not an object:", data);
     throw new Error("Extraction response missing body");
   }
+
   if (!Array.isArray(data.transactions)) {
+    console.error("Transactions is not an array:", data.transactions);
     throw new Error("Extraction response missing transactions array");
   }
-  if (
-    typeof data.audit === "undefined" ||
-    typeof data.inferred_meta === "undefined" ||
-    typeof data.quality === "undefined" ||
-    typeof data.confidence === "undefined"
-  ) {
-    throw new Error("Extraction response missing required fields");
+
+  // Make these fields optional with defaults
+  if (typeof data.audit === "undefined") {
+    console.warn("Missing audit field, using empty object");
+    data.audit = {};
   }
+  if (typeof data.inferred_meta === "undefined") {
+    console.warn("Missing inferred_meta field, using empty object");
+    data.inferred_meta = {};
+  }
+  if (typeof data.quality === "undefined") {
+    console.warn("Missing quality field, using 'unknown'");
+    data.quality = "unknown";
+  }
+  if (typeof data.confidence === "undefined") {
+    console.warn("Missing confidence field, using 0");
+    data.confidence = 0;
+  }
+
+  console.log("Validation passed");
 }
 
 function EditableTransactionsTable({

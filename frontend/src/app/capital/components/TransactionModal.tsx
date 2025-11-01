@@ -1,14 +1,15 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   formatDate,
   formatAmount,
   formatCryptoAmount,
   getAccountColorClasses,
 } from "@/app/capital/utils";
-import type { Transaction, Envelope } from "@/app/capital/types";
+import type { Transaction, Envelope, Leg } from "@/app/capital/types";
 import Modal from "@/components/ui/Modal";
+import { useCapitalStore } from "@/stores/capital-store";
 
 interface TransactionModalProps {
   transaction: Transaction | null;
@@ -18,6 +19,7 @@ interface TransactionModalProps {
   onClose: () => void;
   onDelete?: (transactionId: string, payee: string) => void;
   deleting?: Set<string>;
+  onRefresh?: () => void;
 }
 
 export default function TransactionModal({
@@ -28,7 +30,36 @@ export default function TransactionModal({
   onClose,
   onDelete,
   deleting,
+  onRefresh,
 }: TransactionModalProps) {
+  const updateTransactionLegs = useCapitalStore(
+    (state) => state.updateTransactionLegs
+  );
+  const balanceTransaction = useCapitalStore(
+    (state) => state.balanceTransaction
+  );
+  const accounts = useCapitalStore((state) => state.accounts);
+
+  const [editMode, setEditMode] = useState(false);
+  const [editedPayee, setEditedPayee] = useState("");
+  const [editedMemo, setEditedMemo] = useState("");
+  const [editedLegs, setEditedLegs] = useState<Leg[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [balancing, setBalancing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (transaction && isOpen) {
+      setEditedPayee(transaction.payee || "");
+      setEditedMemo(transaction.memo || "");
+      setEditedLegs(JSON.parse(JSON.stringify(transaction.legs))); // deep copy
+      setEditMode(false);
+      setActionError(null);
+      setActionSuccess(null);
+    }
+  }, [transaction, isOpen]);
+
   if (!transaction) return null;
   const deletingSet = deleting ?? new Set<string>();
 
@@ -69,13 +100,133 @@ export default function TransactionModal({
     };
   };
 
+  const handleSaveEdits = async () => {
+    if (!tx) return;
+    setSaving(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      await updateTransactionLegs(tx.id, {
+        legs: editedLegs,
+        payee: editedPayee || undefined,
+        memo: editedMemo || undefined,
+      });
+      setActionSuccess("Transaction updated successfully");
+      setEditMode(false);
+
+      // Refresh data without closing modal
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      setActionError(err.message || "Failed to save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBalance = async () => {
+    if (!tx) return;
+    setBalancing(true);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const result = await balanceTransaction(tx.id);
+      setActionSuccess(result.message);
+
+      // Refresh data without closing modal
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      setActionError(err.message || "Failed to balance transaction");
+    } finally {
+      setBalancing(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditedPayee(tx.payee || "");
+    setEditedMemo(tx.memo || "");
+    setEditedLegs(JSON.parse(JSON.stringify(tx.legs)));
+    setEditMode(false);
+    setActionError(null);
+    setActionSuccess(null);
+  };
+
+  const updateLegAmount = (index: number, newAmount: string) => {
+    const updated = [...editedLegs];
+    if (updated[index].amount.kind === "Fiat") {
+      updated[index].amount.data.amount = newAmount;
+    }
+    setEditedLegs(updated);
+  };
+
+  const updateLegDirection = (index: number, direction: "Debit" | "Credit") => {
+    const updated = [...editedLegs];
+    updated[index].direction = direction;
+    setEditedLegs(updated);
+  };
+
+  const updateLegCategory = (index: number, categoryId: string) => {
+    const updated = [...editedLegs];
+    updated[index].category_id = categoryId || undefined;
+    setEditedLegs(updated);
+  };
+
+  const updateLegAccountId = (index: number, accountId: string) => {
+    const updated = [...editedLegs];
+    updated[index].account_id = accountId;
+    setEditedLegs(updated);
+  };
+
+  const addNewLeg = () => {
+    const newLeg: Leg = {
+      account_id: accounts.length > 0 ? accounts[0].id : "",
+      direction: "Debit",
+      amount: {
+        kind: "Fiat",
+        data: {
+          amount: "0.00",
+          ccy: "USD",
+        },
+      },
+      category_id: undefined,
+      notes: undefined,
+    };
+    setEditedLegs([...editedLegs, newLeg]);
+  };
+
+  const removeLeg = (index: number) => {
+    if (editedLegs.length <= 1) {
+      setActionError("Transaction must have at least one leg");
+      return;
+    }
+    const updated = editedLegs.filter((_, i) => i !== index);
+    setEditedLegs(updated);
+  };
+
   return (
     <Modal
       isOpen={isOpen && !!transaction}
       onClose={onClose}
-      title="Transaction Details"
+      title={editMode ? "Edit Transaction" : "Transaction Details"}
       size="2xl"
     >
+      {/* Error/Success Messages */}
+      {actionError && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
+      {actionSuccess && (
+        <div className="mb-4 rounded border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+          {actionSuccess}
+        </div>
+      )}
+
       {/* Basic Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="space-y-4">
@@ -118,17 +269,35 @@ export default function TransactionModal({
             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
               Payee
             </label>
-            <p className="text-sm text-gray-900 dark:text-white">
-              {tx.payee || "N/A"}
-            </p>
+            {editMode ? (
+              <input
+                type="text"
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                value={editedPayee}
+                onChange={(e) => setEditedPayee(e.target.value)}
+              />
+            ) : (
+              <p className="text-sm text-gray-900 dark:text-white">
+                {tx.payee || "N/A"}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
               Memo
             </label>
-            <p className="text-sm text-gray-900 dark:text-white">
-              {tx.memo || "N/A"}
-            </p>
+            {editMode ? (
+              <input
+                type="text"
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                value={editedMemo}
+                onChange={(e) => setEditedMemo(e.target.value)}
+              />
+            ) : (
+              <p className="text-sm text-gray-900 dark:text-white">
+                {tx.memo || "N/A"}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -191,11 +360,36 @@ export default function TransactionModal({
 
       {/* Transaction Legs */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Transaction Legs ({tx.legs.length})
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Transaction Legs ({editMode ? editedLegs.length : tx.legs.length})
+          </h3>
+          {editMode && (
+            <button
+              type="button"
+              onClick={addNewLeg}
+              className="inline-flex items-center px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              <svg
+                className="w-4 h-4 mr-1"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Add Leg
+            </button>
+          )}
+        </div>
         <div className="space-y-4">
-          {tx.legs.map((leg, index) => {
+          {(editMode ? editedLegs : tx.legs).map((leg, index) => {
             const accountInfo = getAccountInfo(leg.account_id);
             const envelopeName = getEnvelopeName(leg.category_id);
 
@@ -209,33 +403,80 @@ export default function TransactionModal({
                     <span className="text-base font-medium text-gray-500 dark:text-gray-400">
                       Leg {index + 1}
                     </span>
+                    {editMode && editedLegs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeLeg(index)}
+                        className="text-red-600 hover:text-red-800 text-xs"
+                        title="Remove leg"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                   <div className="text-right">
-                    <p
-                      className={`text-base font-medium ${
-                        leg.direction === "Debit"
-                          ? "text-green-700 dark:text-green-300"
-                          : "text-red-700 dark:text-red-300"
-                      }`}
-                    >
-                      {leg.direction === "Debit" ? "+" : "-"}
-                      {leg.amount.kind === "Fiat"
-                        ? formatAmount(
-                            leg.amount.data.amount,
-                            leg.amount.data.ccy
-                          )
-                        : leg.amount.kind === "Crypto" &&
-                          leg.amount.data?.qty &&
-                          leg.amount.data?.asset
-                        ? `${formatCryptoAmount(
-                            leg.amount.data.qty,
-                            leg.amount.data.asset
-                          )}`
-                        : "—"}
-                    </p>
-                    {/* <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {leg.amount.kind}
-                        </p> */}
+                    {editMode && leg.amount.kind === "Fiat" ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="rounded border border-gray-300 px-2 py-1 text-sm"
+                          value={leg.direction}
+                          onChange={(e) =>
+                            updateLegDirection(
+                              index,
+                              e.target.value as "Debit" | "Credit"
+                            )
+                          }
+                        >
+                          <option value="Debit">Debit (+)</option>
+                          <option value="Credit">Credit (−)</option>
+                        </select>
+                        <input
+                          type="text"
+                          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm text-right"
+                          value={leg.amount.data.amount}
+                          onChange={(e) =>
+                            updateLegAmount(index, e.target.value)
+                          }
+                        />
+                        <span className="text-sm">{leg.amount.data.ccy}</span>
+                      </div>
+                    ) : (
+                      <p
+                        className={`text-base font-medium ${
+                          leg.direction === "Debit"
+                            ? "text-green-700 dark:text-green-300"
+                            : "text-red-700 dark:text-red-300"
+                        }`}
+                      >
+                        {leg.direction === "Debit" ? "+" : "-"}
+                        {leg.amount.kind === "Fiat"
+                          ? formatAmount(
+                              leg.amount.data.amount,
+                              leg.amount.data.ccy
+                            )
+                          : leg.amount.kind === "Crypto" &&
+                            leg.amount.data?.qty &&
+                            leg.amount.data?.asset
+                          ? `${formatCryptoAmount(
+                              leg.amount.data.qty,
+                              leg.amount.data.asset
+                            )}`
+                          : "—"}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -244,21 +485,58 @@ export default function TransactionModal({
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                       Account
                     </label>
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-medium rounded ${getAccountColorClasses(
-                        accountInfo.color
-                      )}`}
-                    >
-                      {accountInfo.name}
-                    </span>
+                    {editMode ? (
+                      <select
+                        className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={leg.account_id}
+                        onChange={(e) =>
+                          updateLegAccountId(index, e.target.value)
+                        }
+                      >
+                        {accounts.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.name}
+                          </option>
+                        ))}
+                        {/* Add __pnl__ account if not in the list */}
+                        {!accounts.find((a) => a.id === "__pnl__") && (
+                          <option value="__pnl__">__pnl__ (P&L Account)</option>
+                        )}
+                      </select>
+                    ) : (
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-medium rounded ${getAccountColorClasses(
+                          accountInfo.color
+                        )}`}
+                      >
+                        {accountInfo.name}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                       Envelope
                     </label>
-                    <span className="text-sm text-gray-900 dark:text-white">
-                      {envelopeName}
-                    </span>
+                    {editMode ? (
+                      <select
+                        className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={leg.category_id || ""}
+                        onChange={(e) =>
+                          updateLegCategory(index, e.target.value)
+                        }
+                      >
+                        <option value="">Uncategorized</option>
+                        {envelopes.map((env) => (
+                          <option key={env.id} value={env.id}>
+                            {env.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-sm text-gray-900 dark:text-white">
+                        {envelopeName}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -300,35 +578,105 @@ export default function TransactionModal({
       </div>
 
       {/* Actions */}
-      <div className="mt-8 flex justify-end">
-        <button
-          onClick={() => onDelete && onDelete(tx.id, tx.payee || "Unknown")}
-          disabled={deletingSet.has(tx.id)}
-          className="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
-          title="Delete transaction"
-        >
-          {deletingSet.has(tx.id) ? (
-            <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+      <div className="mt-8 flex justify-between items-center">
+        <div className="flex gap-2">
+          {!editMode && tx.balance_state !== "balanced" && (
+            <button
+              type="button"
+              onClick={handleBalance}
+              disabled={balancing}
+              className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+              title="Attempt to balance transaction"
+            >
+              {balancing ? (
+                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+              ) : (
+                "Balance Transaction"
+              )}
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {editMode ? (
+            <>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdits}
+                disabled={saving}
+                className="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-60"
+              >
+                {saving ? (
+                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>
+                ) : null}
+                Save Changes
+              </button>
+            </>
           ) : (
             <>
-              <svg
-                className="w-4 h-4 mr-1"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+              <button
+                type="button"
+                onClick={() => setEditMode(true)}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                title="Edit transaction"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-              Delete
+                <svg
+                  className="w-4 h-4 mr-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                  />
+                </svg>
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onDelete && onDelete(tx.id, tx.payee || "Unknown")
+                }
+                disabled={deletingSet.has(tx.id)}
+                className="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
+                title="Delete transaction"
+              >
+                {deletingSet.has(tx.id) ? (
+                  <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                ) : (
+                  <>
+                    <svg
+                      className="w-4 h-4 mr-1"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                    Delete
+                  </>
+                )}
+              </button>
             </>
           )}
-        </button>
+        </div>
       </div>
     </Modal>
   );

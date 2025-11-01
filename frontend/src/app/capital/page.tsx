@@ -205,6 +205,16 @@ export default function TransactionsPage() {
           </button>
         </div> */}
         <div className="px-3 sm:px-3 lg:px-8 py-4">
+          {/* Actions */}
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-rounded text-lg">add</span>
+              Create Transaction
+            </button>
+          </div>
           {/* Cycle Navigation */}
 
           <div className="py-4 flex items-center justify-center gap-12">
@@ -352,7 +362,7 @@ export default function TransactionsPage() {
                           </select>
                         </div>
                       </th>
-                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider max-w-xs">
                         Payee
                       </th>
                       <th className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
@@ -440,6 +450,23 @@ export default function TransactionsPage() {
           onClose={handleCloseModal}
           accountMap={accountMap}
           envelopes={envelopes}
+          onDelete={handleDelete}
+          deleting={deleting}
+          onRefresh={async () => {
+            const currentTxId = selectedTransaction?.id;
+            await fetchTransactions();
+            await fetchEnvelopes();
+
+            // Update the selected transaction with fresh data
+            if (currentTxId) {
+              const updatedTx = transactions.find(
+                (tx) => tx.id === currentTxId
+              );
+              if (updatedTx) {
+                setSelectedTransaction(updatedTx);
+              }
+            }
+          }}
         />
 
         {/* Transaction Create Modal */}

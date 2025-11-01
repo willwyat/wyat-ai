@@ -402,13 +402,32 @@ export default function TransactionCreateModal({
             </label>
             <input
               type="datetime-local"
-              value={new Date(formData.ts * 1000).toISOString().slice(0, 16)}
+              value={(() => {
+                try {
+                  const timestamp =
+                    formData.ts || Math.floor(Date.now() / 1000);
+                  const date = new Date(timestamp * 1000);
+                  if (isNaN(date.getTime())) {
+                    return new Date().toISOString().slice(0, 16);
+                  }
+                  return date.toISOString().slice(0, 16);
+                } catch (e) {
+                  console.error("Error formatting date:", e);
+                  return new Date().toISOString().slice(0, 16);
+                }
+              })()}
               onChange={(e) => {
-                const localDateTime = new Date(e.target.value);
-                setFormData({
-                  ...formData,
-                  ts: Math.floor(localDateTime.getTime() / 1000),
-                });
+                try {
+                  const localDateTime = new Date(e.target.value);
+                  if (!isNaN(localDateTime.getTime())) {
+                    setFormData({
+                      ...formData,
+                      ts: Math.floor(localDateTime.getTime() / 1000),
+                    });
+                  }
+                } catch (e) {
+                  console.error("Error parsing date:", e);
+                }
               }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             />

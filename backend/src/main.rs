@@ -364,6 +364,8 @@ struct PlaidLinkTokenRequest<'a> {
     country_codes: Vec<&'a str>,
     user: PlaidUser,
     products: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redirect_uri: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -374,6 +376,17 @@ struct PlaidUser {
 #[derive(Serialize, Deserialize)]
 struct PlaidLinkTokenResponse {
     link_token: String,
+}
+
+/// Get the Plaid API base URL based on PLAID_ENV environment variable
+/// Defaults to sandbox if not set or invalid
+fn get_plaid_base_url() -> String {
+    let env = env::var("PLAID_ENV").unwrap_or_else(|_| "sandbox".to_string());
+    match env.to_lowercase().as_str() {
+        "production" | "prod" => "https://production.plaid.com".to_string(),
+        "development" | "dev" => "https://development.plaid.com".to_string(),
+        _ => "https://sandbox.plaid.com".to_string(),
+    }
 }
 
 pub async fn create_plaid_link_token() -> impl IntoResponse {
@@ -390,6 +403,9 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
         }
     };
 
+    // Optional: Set redirect_uri from environment variable if needed
+    let redirect_uri = env::var("PLAID_REDIRECT_URI").ok();
+
     let payload = PlaidLinkTokenRequest {
         client_id: &client_id,
         secret: &secret,
@@ -400,15 +416,12 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
             client_user_id: "wyat-demo-user".to_string(),
         },
         products: vec!["transactions"],
+        redirect_uri: redirect_uri.as_deref(),
     };
 
+    let plaid_url = format!("{}/link/token/create", get_plaid_base_url());
     let client = Client::new();
-    let response = match client
-        .post("https://sandbox.plaid.com/link/token/create")
-        .json(&payload)
-        .send()
-        .await
-    {
+    let response = match client.post(&plaid_url).json(&payload).send().await {
         Ok(resp) => resp,
         Err(e) => {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
@@ -433,8 +446,272 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
     AxumJson(json).into_response()
 }
 
+#[derive(Deserialize)]
+pub struct ExchangeTokenRequest {
+    pub public_token: String,
+}
+
+#[derive(Serialize)]
+pub struct ExchangeTokenResponse {
+    pub access_token: String,
+    pub item_id: String,
+}
+
+pub async fn exchange_public_token(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumJson(payload): AxumJson<ExchangeTokenRequest>,
+) -> impl IntoResponse {
+    let client_id = match env::var("PLAID_CLIENT_ID") {
+        Ok(id) => id,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+    let secret = match env::var("PLAID_SECRET") {
+        Ok(secret) => secret,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    #[derive(Serialize)]
+    struct PlaidExchangeRequest {
+        client_id: String,
+        secret: String,
+        public_token: String,
+    }
+
+    let request = PlaidExchangeRequest {
+        client_id,
+        secret,
+        public_token: payload.public_token,
+    };
+
+    let plaid_url = format!("{}/item/public_token/exchange", get_plaid_base_url());
+    let client = Client::new();
+    let response = match client.post(&plaid_url).json(&request).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    let text = response.text().await.unwrap_or_else(|e| {
+        println!("Failed to read response text: {}", e);
+        "{}".to_string()
+    });
+    println!("Plaid exchange response: {}", text);
+
+    #[derive(Deserialize)]
+    struct PlaidExchangeResponse {
+        access_token: String,
+        item_id: String,
+    }
+
+    let plaid_response = match serde_json::from_str::<PlaidExchangeResponse>(&text) {
+        Ok(json) => json,
+        Err(e) => {
+            println!("Deserialization error: {}", e);
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    // Store the access token in MongoDB
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<mongodb::bson::Document>("plaid_items");
+
+    let doc = mongodb::bson::doc! {
+        "item_id": &plaid_response.item_id,
+        "access_token": &plaid_response.access_token,
+        "created_at": chrono::Utc::now().timestamp(),
+        "updated_at": chrono::Utc::now().timestamp(),
+    };
+
+    match collection.insert_one(doc, None).await {
+        Ok(_) => println!(
+            "Stored Plaid access token for item {}",
+            plaid_response.item_id
+        ),
+        Err(e) => println!("Failed to store access token: {}", e),
+    }
+
+    let response = ExchangeTokenResponse {
+        access_token: plaid_response.access_token,
+        item_id: plaid_response.item_id,
+    };
+
+    AxumJson(response).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct PlaidSyncRequest {
+    pub item_id: String,
+    pub account_id: String, // Our internal account ID (e.g., "acct.chase_checking")
+    pub start_date: String, // YYYY-MM-DD
+    pub end_date: String,   // YYYY-MM-DD
+}
+
+#[derive(Serialize)]
+pub struct PlaidSyncResponse {
+    pub imported: usize,
+    pub skipped: usize,
+    pub errors: Vec<String>,
+}
+
+pub async fn sync_plaid_transactions(
+    AxumState(state): AxumState<Arc<AppState>>,
+    AxumJson(payload): AxumJson<PlaidSyncRequest>,
+) -> impl IntoResponse {
+    let client_id = match env::var("PLAID_CLIENT_ID") {
+        Ok(id) => id,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+    let secret = match env::var("PLAID_SECRET") {
+        Ok(secret) => secret,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    // Fetch the access token from MongoDB
+    let db = state.mongo_client.database("wyat");
+    let collection = db.collection::<mongodb::bson::Document>("plaid_items");
+
+    let filter = mongodb::bson::doc! { "item_id": &payload.item_id };
+    let item_doc = match collection.find_one(filter, None).await {
+        Ok(Some(doc)) => doc,
+        Ok(None) => {
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("Plaid item {} not found", payload.item_id),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    let access_token = match item_doc.get_str("access_token") {
+        Ok(token) => token,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    // Call Plaid transactions/get endpoint
+    #[derive(Serialize)]
+    struct PlaidTransactionsRequest {
+        client_id: String,
+        secret: String,
+        access_token: String,
+        start_date: String,
+        end_date: String,
+    }
+
+    let request = PlaidTransactionsRequest {
+        client_id,
+        secret,
+        access_token: access_token.to_string(),
+        start_date: payload.start_date.clone(),
+        end_date: payload.end_date.clone(),
+    };
+
+    let plaid_url = format!("{}/transactions/get", get_plaid_base_url());
+    let client = Client::new();
+    let response = match client.post(&plaid_url).json(&request).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    let text = response.text().await.unwrap_or_else(|e| {
+        println!("Failed to read response text: {}", e);
+        "{}".to_string()
+    });
+    println!("Plaid transactions response: {}", text);
+
+    #[derive(Deserialize)]
+    struct PlaidTransaction {
+        transaction_id: String,
+        date: String,
+        name: String,
+        amount: f64,
+        // Add more fields as needed
+    }
+
+    #[derive(Deserialize)]
+    struct PlaidTransactionsResponse {
+        transactions: Vec<PlaidTransaction>,
+    }
+
+    let plaid_response = match serde_json::from_str::<PlaidTransactionsResponse>(&text) {
+        Ok(json) => json,
+        Err(e) => {
+            println!("Deserialization error: {}", e);
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+
+    // Convert Plaid transactions to our FlatTransaction format and import
+    let mut flat_transactions = Vec::new();
+    for tx in plaid_response.transactions {
+        let flat_tx = capital::FlatTransaction {
+            txid: format!("plaid_{}", tx.transaction_id),
+            date: tx.date,
+            posted_ts: None,
+            source: "plaid".to_string(),
+            payee: Some(tx.name),
+            memo: None,
+            account_id: payload.account_id.clone(),
+            direction: if tx.amount < 0.0 {
+                "Debit".to_string()
+            } else {
+                "Credit".to_string()
+            },
+            kind: "Fiat".to_string(),
+            ccy_or_asset: "USD".to_string(),
+            amount_or_qty: tx.amount.abs(),
+            price: None,
+            price_ccy: None,
+            category_id: None,
+            status: Some("posted".to_string()),
+            tx_type: Some(if tx.amount < 0.0 {
+                "spending".to_string()
+            } else {
+                "income".to_string()
+            }),
+            ext1_kind: Some("plaid_transaction_id".to_string()),
+            ext1_val: Some(tx.transaction_id),
+        };
+        flat_transactions.push(flat_tx);
+    }
+
+    // Import transactions using the existing batch import function
+    let import_result = capital::process_batch_import(&db, flat_transactions).await;
+
+    let sync_response = match import_result {
+        Ok(result) => PlaidSyncResponse {
+            imported: result.imported,
+            skipped: result.skipped,
+            errors: result.errors,
+        },
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+        }
+    };
+
+    AxumJson(sync_response).into_response()
+}
+
 #[derive(OpenApi)]
 #[openapi(
+    servers(
+        (url = "https://wyat-ai.onrender.com", description = "Production server")
+    ),
     paths(
         workout::create_exercise_type_mongo,
         workout::update_exercise_type_mongo,
@@ -444,6 +721,11 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
         workout::get_all_exercise_entries_mongo,
         workout::get_exercise_entries_by_day,
         workout::find_exercise_type_by_muscle,
+        capital::get_all_envelopes,
+        capital::get_all_accounts,
+        capital::get_all_funds,
+        capital::get_fund_positions,
+        capital::get_transactions,
     ),
     components(
         schemas(
@@ -458,11 +740,33 @@ pub async fn create_plaid_link_token() -> impl IntoResponse {
             workout::LoadBasis,
             workout::Muscle,
             workout::Region,
+            capital::Currency,
+            capital::Money,
+            capital::Envelope,
+            capital::EnvelopeStatus,
+            capital::EnvelopeKind,
+            capital::FundingFreq,
+            capital::FundingRule,
+            capital::DeficitPolicy,
+            capital::RolloverPolicy,
+            capital::Account,
+            capital::AccountNetwork,
+            capital::AccountMetadata,
+            capital::Transaction,
+            capital::Leg,
+            capital::LegDirection,
+            capital::LegAmount,
+            capital::FxSnapshot,
+            capital::BalanceState,
+            capital::PublicFund,
+            capital::Position,
+            capital::EnvelopeUsage,
         )
     ),
     modifiers(&SecurityAddon),
     tags(
-        (name = "workout", description = "Workout tracking endpoints")
+        (name = "workout", description = "Workout tracking endpoints"),
+        (name = "capital", description = "Capital management endpoints")
     )
 )]
 struct ApiDoc;
@@ -536,6 +840,11 @@ async fn main() {
         )
         .route("/capital/cycles", get(capital::get_cycles))
         .route("/capital/accounts", get(capital::get_all_accounts))
+        .route("/capital/accounts", post(capital::create_account))
+        .route(
+            "/capital/accounts/:account_id/balance",
+            get(capital::get_account_balance),
+        )
         .route("/capital/funds", get(capital::get_all_funds))
         .route(
             "/capital/funds/:fund_id/positions",
@@ -558,6 +867,14 @@ async fn main() {
         .route(
             "/capital/transactions/:transaction_id/type",
             patch(capital::update_transaction_type),
+        )
+        .route(
+            "/capital/transactions/:transaction_id/legs",
+            patch(capital::update_transaction_legs),
+        )
+        .route(
+            "/capital/transactions/:transaction_id/balance",
+            post(capital::balance_transaction),
         )
         .route("/journal/mongo", post(create_journal_entry_mongo))
         .route("/journal/mongo/all", get(get_journal_entries_mongo))
@@ -607,6 +924,8 @@ async fn main() {
         .route("/api/oura/auth", get(generate_oura_auth_url))
         .route("/api/oura/callback", get(handle_oura_callback))
         .route("/plaid/link-token/create", get(create_plaid_link_token))
+        .route("/plaid/exchange-public-token", post(exchange_public_token))
+        .route("/plaid/sync-transactions", post(sync_plaid_transactions))
         .route("/test-mongo", get(test_mongo))
         .route("/ai/prompts", get(list_ai_prompts_handler))
         .route("/ai/prompts/:prompt_id", get(get_ai_prompt_handler))

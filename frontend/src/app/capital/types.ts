@@ -28,6 +28,16 @@ export type LegAmount =
   | { kind: "Fiat"; data: { amount: string; ccy: string } }
   | { kind: "Crypto"; data: { qty: string; asset: string } };
 
+export interface Leg {
+  account_id: string;
+  direction: "Debit" | "Credit";
+  amount: LegAmount;
+  fx?: any;
+  category_id?: string | null;
+  fee_of_leg_idx?: number;
+  notes?: string;
+}
+
 export interface Transaction {
   id: string;
   ts: number;
@@ -44,15 +54,7 @@ export interface Transaction {
     | "awaiting_transfer_match"
     | "unknown";
   external_refs: Array<[string, string]>;
-  legs: Array<{
-    account_id: string;
-    direction: "Debit" | "Credit";
-    amount: LegAmount;
-    fx?: any;
-    category_id?: string | null;
-    fee_of_leg_idx?: number;
-    notes?: string;
-  }>;
+  legs: Leg[];
 }
 
 export interface Envelope {
@@ -145,6 +147,7 @@ export interface Account {
   currency: Currency;
   metadata: AccountMetadata;
   group_id?: string;
+  group_order?: number;
 }
 
 export interface TransactionQuery {

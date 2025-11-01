@@ -479,7 +479,7 @@ export default function TransactionRow({
             <AccountPill id={view.accounts.single} accountMap={accountMap} />
           </td>
           {/* Payee */}
-          <td className="px-3 py-4 whitespace-nowrap text-base text-gray-900 dark:text-white">
+          <td className="px-3 py-4 text-base text-gray-900 dark:text-white max-w-xs truncate">
             {tx.payee || "N/A"}
           </td>
         </>
