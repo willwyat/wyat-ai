@@ -51,38 +51,50 @@ export default function FundsPage() {
     USD: 1.0,
   } as const;
 
+  // Calculate total portfolio value and metrics (moved outside return for reuse)
+  const fundMetrics = funds.map((f) => {
+    const positions = positionsByFund[f.fund_id] || [];
+    const nav = positions.reduce((sum, p) => {
+      const qty = toNumber(p.qty);
+      const price =
+        (assetPrices as any)[p.asset] || toNumber(p.price_in_base_ccy);
+      return sum + qty * price;
+    }, 0);
+    return { fund: f, nav };
+  });
+
+  const totalPortfolioValue = fundMetrics.reduce((sum, m) => sum + m.nav, 0);
+  const totalLiquidValue = fundMetrics
+    .filter((m) => m.fund.liquid)
+    .reduce((sum, m) => sum + m.nav, 0);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
-        Funds
-      </h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+          Funds
+        </h1>
+        {funds.length > 0 && (
+          <div className="text-right">
+            <div className="text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Total Portfolio NAV
+            </div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white">
+              $
+              {totalPortfolioValue.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+          </div>
+        )}
+      </div>
       {funds.length === 0 ? (
         <div className="text-gray-600 dark:text-gray-400">No funds found.</div>
       ) : (
         <>
           {/* Summary Table */}
           {(() => {
-            // Calculate total portfolio value and metrics
-            const fundMetrics = funds.map((f) => {
-              const positions = positionsByFund[f.fund_id] || [];
-              const nav = positions.reduce((sum, p) => {
-                const qty = toNumber(p.qty);
-                const price =
-                  (assetPrices as any)[p.asset] ||
-                  toNumber(p.price_in_base_ccy);
-                return sum + qty * price;
-              }, 0);
-              return { fund: f, nav };
-            });
-
-            const totalPortfolioValue = fundMetrics.reduce(
-              (sum, m) => sum + m.nav,
-              0
-            );
-            const totalLiquidValue = fundMetrics
-              .filter((m) => m.fund.liquid)
-              .reduce((sum, m) => sum + m.nav, 0);
-
             return (
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-6 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
