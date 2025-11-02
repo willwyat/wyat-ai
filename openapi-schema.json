@@ -82,6 +82,31 @@
         }
       }
     },
+    "/capital/funds/positions": {
+      "get": {
+        "tags": ["capital"],
+        "summary": "GET /capital/funds/positions - Get positions for all funds",
+        "operationId": "get_all_fund_positions",
+        "responses": {
+          "200": {
+            "description": "Positions grouped by fund",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Position"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/capital/funds/{fund_id}/positions": {
       "get": {
         "tags": ["capital"],

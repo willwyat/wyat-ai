@@ -1310,22 +1310,8 @@ pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<Publi
     }
 }
 
-/// GET /capital/funds/:fund_id/positions - Aggregate fund positions from capital_ledger
-#[utoipa::path(
-    get,
-    path = "/capital/funds/{fund_id}/positions",
-    params(
-        ("fund_id" = String, Path, description = "Fund ID")
-    ),
-    responses(
-        (status = 200, description = "Fund positions", body = Vec<Position>)
-    ),
-    tag = "capital"
-)]
-pub async fn get_fund_positions(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(fund_id): axum::extract::Path<String>,
-) -> Json<Vec<Position>> {
+/// Helper function to get positions for a single fund
+async fn get_positions_for_fund(state: &Arc<AppState>, fund_id: &str) -> Vec<Position> {
     use futures::stream::TryStreamExt;
     use mongodb::bson::{Bson, doc};
 
@@ -1390,7 +1376,7 @@ pub async fn get_fund_positions(
                     .unwrap_or_else(|_| chrono::Utc::now().timestamp());
 
                 out.push(Position {
-                    fund_id: fund_id.clone(),
+                    fund_id: fund_id.to_string(),
                     asset,
                     qty: qty_dec,
                     // price unknown here; can be filled by valuation service later
@@ -1404,7 +1390,65 @@ pub async fn get_fund_positions(
         }
     }
 
-    Json(out)
+    out
+}
+
+/// GET /capital/funds/positions - Get positions for all funds
+#[utoipa::path(
+    get,
+    path = "/capital/funds/positions",
+    responses(
+        (status = 200, description = "Positions grouped by fund", body = HashMap<String, Vec<Position>>)
+    ),
+    tag = "capital"
+)]
+pub async fn get_all_fund_positions(
+    State(state): State<Arc<AppState>>,
+) -> Json<std::collections::HashMap<String, Vec<Position>>> {
+    use futures::stream::TryStreamExt;
+    use std::collections::HashMap;
+
+    let db = state.mongo_client.database("wyat");
+    let funds_collection = db.collection::<Fund>("capital_funds");
+
+    let mut result: HashMap<String, Vec<Position>> = HashMap::new();
+
+    // Get all funds
+    match funds_collection.find(None, None).await {
+        Ok(cursor) => {
+            let funds: Vec<Fund> = cursor.try_collect().await.unwrap_or_default();
+
+            // For each fund, get its positions
+            for fund in funds {
+                let positions = get_positions_for_fund(&state, &fund.fund_id).await;
+                result.insert(fund.fund_id, positions);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error fetching funds: {}", e);
+        }
+    }
+
+    Json(result)
+}
+
+/// GET /capital/funds/:fund_id/positions - Get positions for a specific fund
+#[utoipa::path(
+    get,
+    path = "/capital/funds/{fund_id}/positions",
+    params(
+        ("fund_id" = String, Path, description = "Fund ID")
+    ),
+    responses(
+        (status = 200, description = "Fund positions", body = Vec<Position>)
+    ),
+    tag = "capital"
+)]
+pub async fn get_fund_positions(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(fund_id): axum::extract::Path<String>,
+) -> Json<Vec<Position>> {
+    Json(get_positions_for_fund(&state, &fund_id).await)
 }
 
 /// GET /capital/funds/:fund_id/positions - Compute positions for a specific fund

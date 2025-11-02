@@ -847,6 +847,10 @@ async fn main() {
         )
         .route("/capital/funds", get(capital::get_all_funds))
         .route(
+            "/capital/funds/positions",
+            get(capital::get_all_fund_positions),
+        )
+        .route(
             "/capital/funds/:fund_id/positions",
             get(capital::get_fund_positions),
         )
