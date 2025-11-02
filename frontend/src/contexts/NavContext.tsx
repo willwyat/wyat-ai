@@ -56,11 +56,6 @@ const coreFeatures: NavigationItem[] = [
     icon: "fire",
   },
   {
-    href: "/vitals",
-    label: "体",
-    icon: "heart",
-  },
-  {
     href: "/capital",
     label: "資本",
     icon: "currency-dollar",

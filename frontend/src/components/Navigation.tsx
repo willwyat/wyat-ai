@@ -62,7 +62,7 @@ function MobileFloatingButtons() {
 
   return (
     <div className="fixed bottom-3 left-1/2 transform -translate-x-1/2 z-50 md:hidden">
-      <div className="flex bg-white/50 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 p-2 gap-1">
+      <div className="flex bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 dark:border-gray-700 p-2 gap-1">
         {coreFeatures.map((feature, index) => {
           const IconComponent = getIconComponent(feature.icon);
           return (
@@ -72,8 +72,8 @@ function MobileFloatingButtons() {
               onClick={() => navigateTo(feature.href)}
               className={`flex flex-col items-center w-24 py-2 rounded-full transition-colors ${
                 currentPage === feature.href
-                  ? "bg-zinc-400/10 backdrop-blur-sm text-blue-600"
-                  : "text-gray-600 hover:text-blue-600 hover:bg-zinc-400/20"
+                  ? "bg-gray-400/10 dark:bg-gray-700/50 backdrop-blur-sm text-blue-600 dark:text-blue-400"
+                  : "text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-zinc-400/20 dark:hover:bg-gray-700/30"
               }`}
             >
               <IconComponent className="w-5 h-5 mb-0.5" />
@@ -96,21 +96,21 @@ function TabletSideMenu() {
       {/* Toggle button */}
       <button
         onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 lg:hidden md:block hidden"
+        className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 dark:border-gray-700 lg:hidden md:block hidden"
       >
         <div className="w-6 h-6 flex flex-col justify-center space-y-1">
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-transform ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-transform ${
               sidebarOpen ? "rotate-45 translate-y-1.5" : ""
             }`}
           ></div>
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-opacity ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-opacity ${
               sidebarOpen ? "opacity-0" : ""
             }`}
           ></div>
           <div
-            className={`w-full h-0.5 bg-gray-600 transition-transform ${
+            className={`w-full h-0.5 bg-gray-600 dark:bg-gray-400 transition-transform ${
               sidebarOpen ? "-rotate-45 -translate-y-1.5" : ""
             }`}
           ></div>
@@ -119,7 +119,7 @@ function TabletSideMenu() {
 
       {/* Side menu */}
       <div
-        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-900 shadow-lg border-r border-gray-200 z-30 transition-transform duration-300 lg:hidden md:block hidden ${
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-900 shadow-lg border-r border-gray-200 dark:border-gray-700 z-30 transition-transform duration-300 lg:hidden md:block hidden ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -135,8 +135,8 @@ function TabletSideMenu() {
                       onClick={() => navigateTo(feature.href)}
                       className={`flex items-center px-4 py-3 rounded-xs transition-colors ${
                         currentPage === feature.href
-                          ? "bg-blue-100 text-blue-600"
-                          : "text-gray-700 hover:text-blue-600 hover:bg-gray-50"
+                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                          : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-800"
                       }`}
                     >
                       <IconComponent className="w-5 h-5 mr-3" />
@@ -157,7 +157,7 @@ function TabletSideMenu() {
       {/* Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-25 z-20 lg:hidden md:block hidden"
+          className="fixed inset-0 bg-black bg-opacity-25 dark:bg-opacity-50 z-20 lg:hidden md:block hidden"
           onClick={toggleSidebar}
         />
       )}
@@ -269,8 +269,11 @@ function DesktopSideMenu() {
 export default function Navigation() {
   const { setNavigationMode } = useNav();
   const [windowWidth, setWindowWidth] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+
     const handleResize = () => {
       const width = window.innerWidth;
       setWindowWidth(width);
@@ -290,6 +293,11 @@ export default function Navigation() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [setNavigationMode]);
+
+  // Prevent hydration mismatch by not rendering until mounted
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <>
