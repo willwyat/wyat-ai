@@ -427,6 +427,9 @@ export default function CapitalDataPage() {
                     Latest Price
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    24h Change
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Last Updated
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -438,7 +441,7 @@ export default function CapitalDataPage() {
                 {sortedWatchlist.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-4 py-10 text-center text-gray-500 dark:text-gray-400"
                     >
                       {loading
@@ -489,6 +492,24 @@ export default function CapitalDataPage() {
                             asset.latest_value,
                             asset.unit,
                             asset.latest_value_text
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-sm">
+                          {asset.change_24h_pct != null ? (
+                            <span
+                              className={`inline-flex items-center gap-1 font-medium ${
+                                asset.change_24h_pct >= 0
+                                  ? "text-green-600 dark:text-green-400"
+                                  : "text-red-600 dark:text-red-400"
+                              }`}
+                            >
+                              {asset.change_24h_pct >= 0 ? "↑" : "↓"}
+                              {Math.abs(asset.change_24h_pct).toFixed(2)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500">
+                              —
+                            </span>
                           )}
                         </td>
                         <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">

@@ -1,13 +1,9 @@
-use crate::services::data_feeds::{
-    DataFeed, DataFeedError, DataFeedSource, DataSnapshot, DataSnapshotData,
-};
+use crate::services::data_feeds::{DataFeed, DataFeedError, DataSnapshot, DataSnapshotData};
 use chrono::Utc;
-use mongodb::bson::Document;
 use reqwest::{Client, StatusCode};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use serde_json::Value;
-use std::str::FromStr;
 
 pub struct CoingeckoClient {
     client: Client,
@@ -103,9 +99,10 @@ impl CoingeckoClient {
 
         // If base_url already includes /simple/price, use it directly
         // Otherwise, construct the full URL
+        // Include 24h change data in the request
         let url = if self.base_url.contains("/simple/price") {
             format!(
-                "{}?ids={}&vs_currencies={}",
+                "{}?ids={}&vs_currencies={}&include_24hr_change=true",
                 self.base_url, feed.symbol, vs_currency
             )
         } else {
@@ -114,7 +111,7 @@ impl CoingeckoClient {
                 .trim_end_matches("/coins/{id}")
                 .trim_end_matches('/');
             format!(
-                "{}/simple/price?ids={}&vs_currencies={}",
+                "{}/simple/price?ids={}&vs_currencies={}&include_24hr_change=true",
                 base_url, feed.symbol, vs_currency
             )
         };
@@ -162,6 +159,17 @@ impl CoingeckoClient {
 
         println!("Extracted price: {}", price);
 
+        // Extract 24h change percentage
+        let change_24h = coin_data
+            .get(&format!("{}_24h_change", vs_currency))
+            .and_then(|v| v.as_f64());
+
+        if let Some(change) = change_24h {
+            println!("Extracted 24h change: {}%", change);
+        } else {
+            println!("No 24h change data available");
+        }
+
         let value = Decimal::from_f64(price).ok_or(DataFeedError::Decimal)?;
         println!("Decimal value: {}", value);
 
@@ -170,6 +178,12 @@ impl CoingeckoClient {
 
         let asset_symbol = feed.symbol.to_uppercase();
         println!("Asset symbol (uppercase): {}", asset_symbol);
+
+        // Store 24h change in metadata if available
+        let mut metadata_doc = mongodb::bson::Document::new();
+        if let Some(change) = change_24h {
+            metadata_doc.insert("change_24h_pct", change);
+        }
 
         let data = DataSnapshotData {
             r#type: "price".to_string(),
@@ -180,7 +194,11 @@ impl CoingeckoClient {
             value,
             unit: Some(vs_currency.to_uppercase()),
             label: Some("spot".to_string()),
-            metadata: None,
+            metadata: if metadata_doc.is_empty() {
+                None
+            } else {
+                Some(metadata_doc)
+            },
         };
 
         let snapshot = DataSnapshot {

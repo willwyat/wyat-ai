@@ -2419,6 +2419,7 @@ pub struct WatchlistAssetResponse {
     pub source: Option<String>,
     pub latest_value: Option<f64>,
     pub latest_value_text: Option<String>,
+    pub change_24h_pct: Option<f64>,
     #[schema(value_type = Option<i64>)]
     pub last_updated: Option<DateTime<Utc>>,
 }
@@ -2469,6 +2470,7 @@ fn build_watchlist_response(
     let mut latest_text = None;
     let mut last_updated = None;
     let mut unit = entry.unit.clone();
+    let mut change_24h_pct = None;
 
     if let Some(snapshot) = snapshot {
         if let Some(data) = snapshot.data.first() {
@@ -2478,6 +2480,11 @@ fn build_watchlist_response(
                 unit = Some(snapshot_unit.clone());
             }
             last_updated = snapshot.source_time.or(Some(snapshot.fetch_time));
+
+            // Extract 24h change from metadata
+            if let Some(metadata) = &data.metadata {
+                change_24h_pct = metadata.get("change_24h_pct").and_then(|v| v.as_f64());
+            }
         }
     }
 
@@ -2490,6 +2497,7 @@ fn build_watchlist_response(
         source: feed.source.publisher.clone(),
         latest_value,
         latest_value_text: latest_text,
+        change_24h_pct,
         last_updated,
     }
 }

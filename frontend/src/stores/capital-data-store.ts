@@ -13,6 +13,7 @@ export interface WatchlistAsset {
   source?: string | null;
   latest_value?: number | null;
   latest_value_text?: string | null;
+  change_24h_pct?: number | null;
   last_updated?: string | null;
 }
 
