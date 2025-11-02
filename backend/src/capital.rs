@@ -2405,6 +2405,11 @@ pub struct AddWatchlistAssetRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateWatchlistAssetRequest {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WatchlistAssetResponse {
     pub symbol: String,
     pub name: String,
@@ -2602,32 +2607,55 @@ pub async fn add_watchlist_asset(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AddWatchlistAssetRequest>,
 ) -> Result<Json<WatchlistAssetResponse>, String> {
+    println!("=== ADD WATCHLIST ASSET START ===");
+    println!(
+        "Request: symbol={}, name={}, kind={:?}, pair={:?}, unit={:?}",
+        req.symbol, req.name, req.kind, req.pair, req.unit
+    );
+
     if req.symbol.trim().is_empty() {
+        eprintln!("❌ Symbol is empty");
         return Err("Symbol is required".to_string());
     }
     if req.name.trim().is_empty() {
+        eprintln!("❌ Name is empty");
         return Err("Name is required".to_string());
     }
 
-    let service = DataFeedService::new().map_err(|e| e.to_string())?;
+    println!("Creating DataFeedService...");
+    let service = DataFeedService::new().map_err(|e| {
+        eprintln!("❌ Failed to create DataFeedService: {}", e);
+        e.to_string()
+    })?;
+
     let db = state.mongo_client.database("wyat");
     let watchlist = db.collection::<WatchlistEntry>("capital_watchlist");
     let feeds = db.collection::<DataFeed>("capital_data_feeds");
 
     let normalized_symbol = normalize_symbol(&req.kind, &req.symbol);
+    println!("Normalized symbol: {} -> {}", req.symbol, normalized_symbol);
+
+    println!("Checking if asset already exists in watchlist...");
     if watchlist
         .find_one(doc! { "symbol": &normalized_symbol }, None)
         .await
-        .map_err(|e| format!("Database error: {e}"))?
+        .map_err(|e| {
+            eprintln!("❌ Database error checking watchlist: {}", e);
+            format!("Database error: {e}")
+        })?
         .is_some()
     {
+        eprintln!("❌ Asset '{}' already on watchlist", normalized_symbol);
         return Err(format!(
             "Asset '{}' is already on the watchlist",
             normalized_symbol
         ));
     }
+    println!("✅ Asset not in watchlist, proceeding...");
 
     let provider = provider_for_kind(&req.kind);
+    println!("Provider: {:?}", provider);
+
     let pair = req.pair.as_ref().and_then(|p| {
         let trimmed = p.trim();
         if trimmed.is_empty() {
@@ -2644,34 +2672,52 @@ pub async fn add_watchlist_asset(
             Some(trimmed.to_uppercase())
         }
     });
+    println!("Processed pair: {:?}, unit: {:?}", pair, unit);
+
     let metadata = metadata_from_pair_unit(&pair, &unit);
 
+    println!("Checking for existing feed...");
     let mut feed = match feeds
         .find_one(doc! { "symbol": &normalized_symbol }, None)
         .await
-        .map_err(|e| format!("Database error: {e}"))?
-    {
-        Some(existing) => existing,
-        None => DataFeed {
-            name: req.name.trim().to_string(),
-            symbol: normalized_symbol.clone(),
-            categories: categories_for_kind(&req.kind),
-            source: service.source_for(&provider, &normalized_symbol),
-            last_fetch: None,
-            metadata: metadata.clone(),
-        },
+        .map_err(|e| {
+            eprintln!("❌ Database error checking feeds: {}", e);
+            format!("Database error: {e}")
+        })? {
+        Some(existing) => {
+            println!("Found existing feed for {}", normalized_symbol);
+            existing
+        }
+        None => {
+            println!("Creating new feed for {}", normalized_symbol);
+            DataFeed {
+                name: req.name.trim().to_string(),
+                symbol: normalized_symbol.clone(),
+                categories: categories_for_kind(&req.kind),
+                source: service.source_for(&provider, &normalized_symbol),
+                last_fetch: None,
+                metadata: metadata.clone(),
+            }
+        }
     };
 
+    println!("Updating feed metadata...");
     feed.name = req.name.trim().to_string();
     feed.categories = categories_for_kind(&req.kind);
     feed.source = service.source_for(&provider, &normalized_symbol);
     feed.metadata = metadata.clone();
 
+    println!("Fetching latest price snapshot...");
     let snapshot = service
         .fetch_and_store_snapshot(&db, &mut feed, pair.clone(), unit.clone())
         .await
-        .map_err(|e| format!("Failed to fetch latest data: {e}"))?;
+        .map_err(|e| {
+            eprintln!("❌ Failed to fetch snapshot: {}", e);
+            format!("Failed to fetch latest data: {e}")
+        })?;
+    println!("✅ Successfully fetched snapshot");
 
+    println!("Creating watchlist entry...");
     let entry = WatchlistEntry {
         id: None,
         symbol: normalized_symbol.clone(),
@@ -2683,16 +2729,19 @@ pub async fn add_watchlist_asset(
         created_at: Utc::now(),
     };
 
-    watchlist
-        .insert_one(&entry, None)
-        .await
-        .map_err(|e| format!("Database error: {e}"))?;
+    println!("Inserting entry into watchlist collection...");
+    watchlist.insert_one(&entry, None).await.map_err(|e| {
+        eprintln!("❌ Failed to insert watchlist entry: {}", e);
+        format!("Database error: {e}")
+    })?;
+    println!("✅ Successfully inserted watchlist entry");
 
-    Ok(Json(build_watchlist_response(
-        &entry,
-        &feed,
-        Some(&snapshot),
-    )))
+    println!("Building response...");
+    let response = build_watchlist_response(&entry, &feed, Some(&snapshot));
+    println!("✅ Successfully added {} to watchlist", normalized_symbol);
+    println!("=== ADD WATCHLIST ASSET END ===");
+
+    Ok(Json(response))
 }
 
 #[utoipa::path(
@@ -2735,4 +2784,124 @@ pub async fn remove_watchlist_asset(
     }
 
     Ok(StatusCode::NOT_FOUND)
+}
+
+#[utoipa::path(
+    patch,
+    path = "/capital/data/watchlist/{symbol}",
+    params(("symbol" = String, Path, description = "Symbol to update")),
+    request_body = UpdateWatchlistAssetRequest,
+    responses(
+        (status = 200, description = "Asset name updated", body = WatchlistAssetResponse),
+        (status = 404, description = "Asset not found")
+    ),
+    tag = "capital"
+)]
+pub async fn update_watchlist_asset(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+    Json(req): Json<UpdateWatchlistAssetRequest>,
+) -> Result<Json<WatchlistAssetResponse>, String> {
+    println!("=== UPDATE WATCHLIST ASSET START ===");
+    println!("Symbol: {}, New name: {}", symbol, req.name);
+
+    if req.name.trim().is_empty() {
+        eprintln!("❌ Name is empty");
+        return Err("Name is required".to_string());
+    }
+
+    let db = state.mongo_client.database("wyat");
+    let watchlist = db.collection::<WatchlistEntry>("capital_watchlist");
+    let feeds = db.collection::<DataFeed>("capital_data_feeds");
+    let trimmed = symbol.trim();
+
+    // Try different case variations
+    let mut candidates = vec![trimmed.to_string()];
+    let upper = trimmed.to_uppercase();
+    if !candidates.contains(&upper) {
+        candidates.push(upper);
+    }
+    let lower = trimmed.to_lowercase();
+    if !candidates.contains(&lower) {
+        candidates.push(lower);
+    }
+
+    println!("Searching for symbol in: {:?}", candidates);
+
+    // Find the watchlist entry
+    let mut found_entry: Option<WatchlistEntry> = None;
+    for candidate in &candidates {
+        if let Some(entry) = watchlist
+            .find_one(doc! { "symbol": candidate }, None)
+            .await
+            .map_err(|e| format!("Database error: {e}"))?
+        {
+            found_entry = Some(entry);
+            break;
+        }
+    }
+
+    let entry = found_entry.ok_or_else(|| {
+        eprintln!("❌ Asset '{}' not found in watchlist", trimmed);
+        format!("Asset '{}' not found in watchlist", trimmed)
+    })?;
+
+    println!("Found entry with symbol: {}", entry.symbol);
+
+    // Update watchlist entry name
+    watchlist
+        .update_one(
+            doc! { "symbol": &entry.symbol },
+            doc! { "$set": { "name": req.name.trim() } },
+            None,
+        )
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Failed to update watchlist entry: {}", e);
+            format!("Database error: {e}")
+        })?;
+
+    println!("✅ Updated watchlist entry");
+
+    // Update data feed name
+    feeds
+        .update_one(
+            doc! { "symbol": &entry.symbol },
+            doc! { "$set": { "name": req.name.trim() } },
+            None,
+        )
+        .await
+        .map_err(|e| {
+            eprintln!("❌ Failed to update data feed: {}", e);
+            format!("Database error: {e}")
+        })?;
+
+    println!("✅ Updated data feed");
+
+    // Fetch the updated entry
+    let updated_entry = watchlist
+        .find_one(doc! { "symbol": &entry.symbol }, None)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+        .ok_or_else(|| "Entry disappeared after update".to_string())?;
+
+    // Fetch the feed and latest snapshot for response
+    let feed = feeds
+        .find_one(doc! { "symbol": &entry.symbol }, None)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+        .ok_or_else(|| "Feed not found".to_string())?;
+
+    let service = DataFeedService::new().map_err(|e| e.to_string())?;
+    let snapshot_opt = service
+        .get_latest_snapshot(&db, &entry.symbol)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?;
+
+    let response = build_watchlist_response(&updated_entry, &feed, snapshot_opt.as_ref());
+
+    println!("✅ Successfully updated {} to '{}'", entry.symbol, req.name);
+    println!("=== UPDATE WATCHLIST ASSET END ===");
+
+    Ok(Json(response))
 }

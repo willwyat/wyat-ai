@@ -7,7 +7,7 @@ echo "🧪 Testing Meta CRUD Operations"
 echo "================================"
 
 BASE_URL="http://localhost:3001"
-API_KEY="2ef1076ebf724d5d36320a219693075c5d8db3ea619fd11c663e67dbcb7f5a71"
+API_KEY="${WYAT_API_KEY:-your-test-api-key-here}"
 
 echo ""
 echo "1. Testing Person CRUD operations..."

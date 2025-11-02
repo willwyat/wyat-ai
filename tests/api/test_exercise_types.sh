@@ -4,7 +4,7 @@
 # Make sure the backend is running on localhost:3001
 
 API_URL="http://localhost:3001"
-API_KEY="2ef1076ebf724d5d36320a219693075c5d8db3ea619fd11c663e67dbcb7f5a71"
+API_KEY="${WYAT_API_KEY:-your-test-api-key-here}"
 
 echo "🏋️ Testing Exercise Type Endpoints"
 echo "=================================="

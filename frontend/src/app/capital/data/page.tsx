@@ -65,7 +65,12 @@ export default function CapitalDataPage() {
   const addLoading = useCapitalDataStore((state) => state.addLoading);
   const error = useCapitalDataStore((state) => state.error);
   const fetchWatchlist = useCapitalDataStore((state) => state.fetchWatchlist);
-  const addWatchlistAsset = useCapitalDataStore((state) => state.addWatchlistAsset);
+  const addWatchlistAsset = useCapitalDataStore(
+    (state) => state.addWatchlistAsset
+  );
+  const updateWatchlistAsset = useCapitalDataStore(
+    (state) => state.updateWatchlistAsset
+  );
   const removeWatchlistAsset = useCapitalDataStore(
     (state) => state.removeWatchlistAsset
   );
@@ -80,6 +85,8 @@ export default function CapitalDataPage() {
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [removingSymbol, setRemovingSymbol] = useState<string | null>(null);
+  const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
+  const [editName, setEditName] = useState<string>("");
 
   useEffect(() => {
     document.title = "Market Data - Wyat AI";
@@ -103,6 +110,9 @@ export default function CapitalDataPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    console.log("=== FORM SUBMIT START ===");
+    console.log("Raw form data:", form);
+
     setFormError(null);
     clearError();
 
@@ -114,17 +124,23 @@ export default function CapitalDataPage() {
       unit: form.unit?.trim() || undefined,
     };
 
+    console.log("Processed payload:", payload);
+
     if (!payload.symbol) {
+      console.error("❌ Validation failed: Symbol is required");
       setFormError("Symbol is required");
       return;
     }
     if (!payload.name) {
+      console.error("❌ Validation failed: Name is required");
       setFormError("Name is required");
       return;
     }
 
+    console.log("✅ Validation passed, calling addWatchlistAsset...");
     try {
       await addWatchlistAsset(payload);
+      console.log("✅ Successfully added to watchlist, resetting form");
       setForm({
         symbol: "",
         name: "",
@@ -132,12 +148,15 @@ export default function CapitalDataPage() {
         pair: form.pair,
         unit: form.unit || "USD",
       });
+      console.log("=== FORM SUBMIT END (Success) ===");
     } catch (err) {
+      console.error("❌ Form submission error:", err);
       if (err instanceof Error) {
         setFormError(err.message);
       } else {
         setFormError("Failed to add asset");
       }
+      console.log("=== FORM SUBMIT END (Error) ===");
     }
   };
 
@@ -150,6 +169,31 @@ export default function CapitalDataPage() {
       console.error(`Failed to remove ${symbol}`, err);
     } finally {
       setRemovingSymbol(null);
+    }
+  };
+
+  const handleEditStart = (symbol: string, currentName: string) => {
+    setEditingSymbol(symbol);
+    setEditName(currentName);
+    clearError();
+  };
+
+  const handleEditCancel = () => {
+    setEditingSymbol(null);
+    setEditName("");
+  };
+
+  const handleEditSave = async (symbol: string) => {
+    if (!editName.trim()) {
+      return;
+    }
+    clearError();
+    try {
+      await updateWatchlistAsset(symbol, editName.trim());
+      setEditingSymbol(null);
+      setEditName("");
+    } catch (err) {
+      console.error(`Failed to update ${symbol}`, err);
     }
   };
 
@@ -171,19 +215,101 @@ export default function CapitalDataPage() {
 
         <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-10">
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            {form.kind === "crypto" && (
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <svg
+                      className="h-5 w-5 text-blue-600 dark:text-blue-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                      Use CoinGecko IDs for Crypto Assets
+                    </h3>
+                    <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+                      Enter the CoinGecko ID (not the ticker symbol). Examples:
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white dark:bg-gray-900 px-2 py-1 rounded border border-blue-200 dark:border-blue-700">
+                          bitcoin
+                        </code>
+                        <span className="text-blue-700 dark:text-blue-300">
+                          (not BTC)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white dark:bg-gray-900 px-2 py-1 rounded border border-blue-200 dark:border-blue-700">
+                          ethereum
+                        </code>
+                        <span className="text-blue-700 dark:text-blue-300">
+                          (not ETH)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white dark:bg-gray-900 px-2 py-1 rounded border border-blue-200 dark:border-blue-700">
+                          solana
+                        </code>
+                        <span className="text-blue-700 dark:text-blue-300">
+                          (not SOL)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white dark:bg-gray-900 px-2 py-1 rounded border border-blue-200 dark:border-blue-700">
+                          usd-coin
+                        </code>
+                        <span className="text-blue-700 dark:text-blue-300">
+                          (not USDC)
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">
+                      Find IDs at{" "}
+                      <a
+                        href="https://www.coingecko.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-blue-900 dark:hover:text-blue-100"
+                      >
+                        coingecko.com
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
                   Asset Symbol
+                  {form.kind === "crypto" && (
+                    <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
+                      (CoinGecko ID)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
                   name="symbol"
                   value={form.symbol}
                   onChange={handleInputChange}
-                  placeholder={form.kind === "crypto" ? "btc" : "AAPL"}
+                  placeholder={form.kind === "crypto" ? "bitcoin" : "AAPL"}
                   className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-blue-500"
                 />
+                {form.kind === "crypto" && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Use lowercase CoinGecko ID (e.g., "bitcoin", not "BTC")
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -224,9 +350,14 @@ export default function CapitalDataPage() {
                   name="pair"
                   value={form.pair ?? ""}
                   onChange={handleInputChange}
-                  placeholder={form.kind === "crypto" ? "btc/usd" : "AAPL/USD"}
+                  placeholder={
+                    form.kind === "crypto" ? "BITCOIN/USD" : "AAPL/USD"
+                  }
                   className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-blue-500"
                 />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Leave empty to use default pairing
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -240,12 +371,18 @@ export default function CapitalDataPage() {
                   placeholder="USD"
                   className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-blue-500"
                 />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Default: USD
+                </p>
               </div>
             </div>
 
             {(formError || error) && (
               <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-red-700 dark:border-red-900 dark:bg-red-900/30 dark:text-red-200">
-                {formError || error}
+                <div className="font-semibold mb-1">Error</div>
+                <div className="text-sm whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                  {formError || error}
+                </div>
               </div>
             )}
 
@@ -310,43 +447,94 @@ export default function CapitalDataPage() {
                     </td>
                   </tr>
                 ) : (
-                  sortedWatchlist.map((asset) => (
-                    <tr key={`${asset.symbol}-${asset.pair ?? "default"}`}>
-                      <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {asset.name}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        <div className="font-mono uppercase">{asset.symbol}</div>
-                        {asset.pair && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {asset.pair}
+                  sortedWatchlist.map((asset) => {
+                    const isEditing = editingSymbol === asset.symbol;
+                    return (
+                      <tr key={`${asset.symbol}-${asset.pair ?? "default"}`}>
+                        <td className="px-4 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleEditSave(asset.symbol);
+                                } else if (e.key === "Escape") {
+                                  handleEditCancel();
+                                }
+                              }}
+                              className="w-full rounded border border-blue-500 dark:border-blue-400 bg-white dark:bg-gray-900 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              autoFocus
+                            />
+                          ) : (
+                            asset.name
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
+                          <div className="font-mono uppercase">
+                            {asset.symbol}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        {asset.source ?? "—"}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        {formatPrice(
-                          asset.latest_value,
-                          asset.unit,
-                          asset.latest_value_text
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
-                        {formatTimestamp(asset.last_updated)}
-                      </td>
-                      <td className="px-4 py-4 text-right text-sm">
-                        <button
-                          onClick={() => handleRemove(asset.symbol)}
-                          disabled={removingSymbol === asset.symbol}
-                          className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {removingSymbol === asset.symbol ? "Removing..." : "Remove"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                          {asset.pair && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {asset.pair}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
+                          {asset.source ?? "—"}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
+                          {formatPrice(
+                            asset.latest_value,
+                            asset.unit,
+                            asset.latest_value_text
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">
+                          {formatTimestamp(asset.last_updated)}
+                        </td>
+                        <td className="px-4 py-4 text-right text-sm">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleEditSave(asset.symbol)}
+                                className="rounded-lg bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleEditCancel}
+                                className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() =>
+                                  handleEditStart(asset.symbol, asset.name)
+                                }
+                                className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleRemove(asset.symbol)}
+                                disabled={removingSymbol === asset.symbol}
+                                className="rounded-lg border border-red-300 dark:border-red-700 px-3 py-1 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {removingSymbol === asset.symbol
+                                  ? "Removing..."
+                                  : "Remove"}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

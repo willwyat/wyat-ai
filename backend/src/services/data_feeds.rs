@@ -13,6 +13,8 @@ use serde_json::Value;
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use super::coingecko::CoingeckoClient;
+
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DataFeedProvider {
@@ -100,9 +102,7 @@ pub struct DataFeedService {
     yahoo_url: String,
     yahoo_api_key: Option<String>,
     yahoo_api_header: String,
-    coingecko_url: String,
-    coingecko_api_key: Option<String>,
-    coingecko_api_header: String,
+    coingecko_client: CoingeckoClient,
     staleness: Duration,
 }
 
@@ -117,8 +117,8 @@ impl DataFeedService {
         let coingecko_url = env::var("COINGECKO_API_URL")
             .map_err(|_| DataFeedError::MissingConfig("COINGECKO_API_URL"))?;
         let coingecko_api_key = env::var("COINGECKO_API_KEY").ok();
-        let coingecko_api_header =
-            env::var("COINGECKO_API_KEY_HEADER").unwrap_or_else(|_| "x-cg-pro-api-key".to_string());
+        let coingecko_api_header = env::var("COINGECKO_API_KEY_HEADER")
+            .unwrap_or_else(|_| "x-cg-demo-api-key".to_string());
 
         let staleness_minutes: i64 = env::var("DATA_FEED_MAX_STALENESS_MINUTES")
             .ok()
@@ -126,14 +126,20 @@ impl DataFeedService {
             .filter(|minutes| *minutes > 0)
             .unwrap_or(5);
 
-        Ok(Self {
-            client: reqwest::Client::new(),
-            yahoo_url,
-            yahoo_api_key,
-            yahoo_api_header,
+        let client = reqwest::Client::new();
+        let coingecko_client = CoingeckoClient::new(
+            client.clone(),
             coingecko_url,
             coingecko_api_key,
             coingecko_api_header,
+        );
+
+        Ok(Self {
+            client,
+            yahoo_url,
+            yahoo_api_key,
+            yahoo_api_header,
+            coingecko_client,
             staleness: Duration::minutes(staleness_minutes),
         })
     }
@@ -151,7 +157,7 @@ impl DataFeedService {
             DataFeedProvider::Coingecko => DataFeedSource {
                 provider: DataFeedProvider::Coingecko,
                 publisher: Some("Coingecko".to_string()),
-                publish_url: self.interpolate_url(&self.coingecko_url, symbol),
+                publish_url: self.coingecko_client.get_source_url(symbol),
                 fetch_method: "GET".to_string(),
                 format: Some("json".to_string()),
                 parser: Some("coingecko_market".to_string()),
@@ -188,7 +194,8 @@ impl DataFeedService {
                     .await?
             }
             DataFeedProvider::Coingecko => {
-                self.fetch_coingecko_snapshot(feed, pair.clone(), unit.clone())
+                self.coingecko_client
+                    .fetch_price_snapshot(feed, pair.clone(), unit.clone())
                     .await?
             }
         };
@@ -246,7 +253,10 @@ impl DataFeedService {
         unit: Option<String>,
     ) -> Result<DataSnapshot, DataFeedError> {
         let url = self.interpolate_url(&self.yahoo_url, &feed.symbol);
-        let mut request = self.client.get(&url);
+        let mut request = self.client.get(&url).header(
+            "User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        );
         if let Some(key) = &self.yahoo_api_key {
             request = request.header(&self.yahoo_api_header, key);
         }
@@ -295,90 +305,6 @@ impl DataFeedService {
             value,
             unit: unit.or_else(|| Some("USD".to_string())),
             label: Some("regular_market".to_string()),
-            metadata: if metadata.is_empty() {
-                None
-            } else {
-                Some(metadata)
-            },
-        };
-
-        Ok(DataSnapshot {
-            id: None,
-            feed_symbol: feed.symbol.clone(),
-            fetch_time: Utc::now(),
-            source_time,
-            data: vec![data],
-            metadata: None,
-        })
-    }
-
-    async fn fetch_coingecko_snapshot(
-        &self,
-        feed: &DataFeed,
-        pair: Option<String>,
-        unit: Option<String>,
-    ) -> Result<DataSnapshot, DataFeedError> {
-        let url = self.interpolate_url(&self.coingecko_url, &feed.symbol);
-        let mut request = self.client.get(&url);
-        if let Some(key) = &self.coingecko_api_key {
-            request = request.header(&self.coingecko_api_header, key);
-        }
-
-        let response = request.send().await?;
-        if response.status() == StatusCode::UNAUTHORIZED
-            || response.status() == StatusCode::FORBIDDEN
-        {
-            return Err(DataFeedError::Http(
-                response.error_for_status().unwrap_err(),
-            ));
-        }
-        let payload: Value = response.error_for_status()?.json().await?;
-
-        let market_data = payload
-            .get("market_data")
-            .ok_or_else(|| DataFeedError::Parse("missing market_data".to_string()))?;
-
-        let price = market_data
-            .pointer("/current_price/usd")
-            .and_then(|v| v.as_f64())
-            .ok_or_else(|| DataFeedError::Parse("missing usd price".to_string()))?;
-        let value = Decimal::from_f64(price).ok_or(DataFeedError::Decimal)?;
-
-        let source_time = market_data
-            .get("last_updated")
-            .and_then(|v| v.as_str())
-            .and_then(|ts| DateTime::parse_from_rfc3339(ts).ok())
-            .map(|dt| dt.with_timezone(&Utc));
-
-        let mut metadata = Document::new();
-        if let Some(market_cap) = market_data
-            .pointer("/market_cap/usd")
-            .and_then(|v| v.as_f64())
-        {
-            metadata.insert("market_cap_usd", market_cap);
-        }
-        if let Some(volume) = market_data
-            .pointer("/total_volume/usd")
-            .and_then(|v| v.as_f64())
-        {
-            metadata.insert("volume_usd", volume);
-        }
-
-        let asset_symbol = payload
-            .get("symbol")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&feed.symbol)
-            .to_uppercase();
-
-        let data = DataSnapshotData {
-            r#type: "price".to_string(),
-            feed_symbol: feed.symbol.clone(),
-            source: Some(feed.source.clone()),
-            symbol: Some(asset_symbol),
-            pair: pair.or_else(|| Some(format!("{}/USD", feed.symbol.to_uppercase()))),
-            value,
-            unit: unit.or_else(|| Some("USD".to_string())),
-            label: Some("spot".to_string()),
             metadata: if metadata.is_empty() {
                 None
             } else {

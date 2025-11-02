@@ -728,6 +728,7 @@ pub async fn sync_plaid_transactions(
         capital::get_transactions,
         capital::get_watchlist_data,
         capital::add_watchlist_asset,
+        capital::update_watchlist_asset,
         capital::remove_watchlist_asset,
     ),
     components(
@@ -868,7 +869,7 @@ async fn main() {
         )
         .route(
             "/capital/data/watchlist/:symbol",
-            delete(capital::remove_watchlist_asset),
+            delete(capital::remove_watchlist_asset).patch(capital::update_watchlist_asset),
         )
         .route("/capital/transactions", get(capital::get_transactions))
         .route("/capital/transactions", post(capital::create_transaction))

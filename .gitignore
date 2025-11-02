@@ -1,6 +1,9 @@
 # Global
 .env
 .env.local
+.env.bak
+.env*.bak
+*.env.bak
 
 # Node
 node_modules/

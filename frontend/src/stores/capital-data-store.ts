@@ -31,6 +31,7 @@ interface CapitalDataState {
   error: string | null;
   fetchWatchlist: () => Promise<void>;
   addWatchlistAsset: (payload: AddWatchlistAssetPayload) => Promise<void>;
+  updateWatchlistAsset: (symbol: string, name: string) => Promise<void>;
   removeWatchlistAsset: (symbol: string) => Promise<void>;
   clearError: () => void;
 }
@@ -61,18 +62,23 @@ export const useCapitalDataStore = create<CapitalDataState>()(
         set({
           loading: false,
           error:
-            error instanceof Error
-              ? error.message
-              : "Failed to load watchlist",
+            error instanceof Error ? error.message : "Failed to load watchlist",
         });
         throw error;
       }
     },
 
     addWatchlistAsset: async (payload: AddWatchlistAssetPayload) => {
+      console.log("=== ADD WATCHLIST ASSET START (Frontend) ===");
+      console.log("Payload:", payload);
+
       set({ addLoading: true, error: null });
       try {
-        const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
+        const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+        console.log("Request URL:", url);
+        console.log("Request body:", JSON.stringify(payload, null, 2));
+
+        const response = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -80,22 +86,83 @@ export const useCapitalDataStore = create<CapitalDataState>()(
           credentials: "include",
           body: JSON.stringify(payload),
         });
+
+        console.log("Response status:", response.status);
+        console.log("Response ok:", response.ok);
+
         if (!response.ok) {
           const message = await response.text();
+          console.error("❌ Server error:", message);
           throw new Error(message || "Failed to add asset to watchlist");
         }
+
         const asset: WatchlistAsset = await response.json();
+        console.log("✅ Received asset:", asset);
+
         set((state) => ({
           watchlist: [...state.watchlist, asset],
           addLoading: false,
         }));
+
+        console.log("✅ Successfully added to watchlist");
+        console.log("=== ADD WATCHLIST ASSET END (Frontend) ===");
       } catch (error) {
+        console.error("❌ Error adding to watchlist:", error);
         set({
           addLoading: false,
           error:
             error instanceof Error
               ? error.message
               : "Failed to add asset to watchlist",
+        });
+        throw error;
+      }
+    },
+
+    updateWatchlistAsset: async (symbol: string, name: string) => {
+      console.log("=== UPDATE WATCHLIST ASSET START (Frontend) ===");
+      console.log("Symbol:", symbol, "New name:", name);
+
+      const encoded = encodeURIComponent(symbol);
+      try {
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}${endpoint}/${encoded}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({ name }),
+          }
+        );
+
+        console.log("Response status:", response.status);
+
+        if (!response.ok) {
+          const message = await response.text();
+          console.error("❌ Server error:", message);
+          throw new Error(message || "Failed to update asset");
+        }
+
+        const updatedAsset: WatchlistAsset = await response.json();
+        console.log("✅ Received updated asset:", updatedAsset);
+
+        set((state) => ({
+          watchlist: state.watchlist.map((asset) =>
+            asset.symbol.toLowerCase() === symbol.toLowerCase()
+              ? updatedAsset
+              : asset
+          ),
+        }));
+
+        console.log("✅ Successfully updated watchlist");
+        console.log("=== UPDATE WATCHLIST ASSET END (Frontend) ===");
+      } catch (error) {
+        console.error("❌ Error updating watchlist:", error);
+        set({
+          error:
+            error instanceof Error ? error.message : "Failed to update asset",
         });
         throw error;
       }

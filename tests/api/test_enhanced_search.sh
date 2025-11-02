@@ -1,6 +1,6 @@
 #!/bin/bash
 
-API_KEY="2ef1076ebf724d5d36320a219693075c5d8db3ea619fd11c663e67dbcb7f5a71"
+API_KEY="${WYAT_API_KEY:-your-test-api-key-here}"
 BASE_URL="http://localhost:3001"
 
 echo "🧪 Testing Enhanced Journal Search with Highlights..."
