@@ -726,6 +726,9 @@ pub async fn sync_plaid_transactions(
         capital::get_all_funds,
         capital::get_fund_positions,
         capital::get_transactions,
+        capital::get_watchlist_data,
+        capital::add_watchlist_asset,
+        capital::remove_watchlist_asset,
     ),
     components(
         schemas(
@@ -761,6 +764,10 @@ pub async fn sync_plaid_transactions(
             capital::PublicFund,
             capital::Position,
             capital::EnvelopeUsage,
+            capital::WatchlistAssetKind,
+            capital::WatchlistEntry,
+            capital::AddWatchlistAssetRequest,
+            capital::WatchlistAssetResponse,
         )
     ),
     modifiers(&SecurityAddon),
@@ -853,6 +860,15 @@ async fn main() {
         .route(
             "/capital/funds/:fund_id/positions",
             get(capital::get_fund_positions),
+        )
+        .route("/capital/data", get(capital::get_watchlist_data))
+        .route(
+            "/capital/data/watchlist",
+            get(capital::get_watchlist_data).post(capital::add_watchlist_asset),
+        )
+        .route(
+            "/capital/data/watchlist/:symbol",
+            delete(capital::remove_watchlist_asset),
         )
         .route("/capital/transactions", get(capital::get_transactions))
         .route("/capital/transactions", post(capital::create_transaction))

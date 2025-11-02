@@ -29,6 +29,7 @@ export const API_CONFIG = {
     CYCLES: "/capital/cycles",
     ENVELOPES: "/capital/envelopes",
     ACCOUNTS: "/capital/accounts",
+    DATA_WATCHLIST: "/capital/data/watchlist",
     ENVELOPE_USAGE: (envelopeId: string) =>
       `/capital/envelopes/${envelopeId}/usage`,
     UPDATE_TRANSACTION_TYPE: (transactionId: string) =>
