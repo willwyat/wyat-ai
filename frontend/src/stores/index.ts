@@ -2,6 +2,7 @@
 export { useJournalStore } from "./journal-store";
 export { useVitalsStore } from "./vitals-store";
 export { useCapitalStore } from "./capital-store";
+export { useCapitalDataStore } from "./capital-data-store";
 export { useDocumentStore } from "./document-store";
 export { useAiStore } from "./ai-store";
 export { useWorkoutStore } from "./workout-store";

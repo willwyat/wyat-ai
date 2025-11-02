@@ -1,4 +1,5 @@
 pub mod ai_prompts;
+pub mod data_feeds;
 pub mod extraction;
 pub mod openai;
 pub mod oura;

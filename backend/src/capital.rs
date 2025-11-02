@@ -16,13 +16,15 @@
 //!   serde = { version = "1", features = ["derive"] }
 //!   thiserror = "1"
 
+use axum::http::StatusCode;
 use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use futures::stream::TryStreamExt;
-use mongodb::bson::{Bson, doc, oid::ObjectId};
+use mongodb::bson::{Bson, Document as BsonDocument, doc, oid::ObjectId};
+use mongodb::options::{FindOptions, UpdateOptions};
 use mongodb::{Database, bson};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -31,10 +33,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use utoipa::ToSchema;
 
+use crate::services::data_feeds::{DataFeed, DataFeedProvider, DataFeedService, DataSnapshot};
+
 // Import storage functions and types
 // TODO: Re-enable when implementing bank statement import
 // use crate::services::openai::extract_bank_statement;
-use crate::services::storage::{Document, create_document, get_blob_bytes_by_id, insert_blob};
 
 /// Virtual ledger account used to offset spending/income legs into P&L.
 pub const PNL_ACCOUNT_ID: &str = "__pnl__";
@@ -2326,48 +2329,366 @@ pub async fn batch_import_transactions(
 // * * * * DATA FEEDS * * * //
 // ======================= //
 
-use chrono::{DateTime, Utc};
-
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct DataFeedSource {
-    pub publisher: Option<String>, // e.g. "Coingecko"
-    pub publish_url: String,       // API endpoint
-    pub fetch_method: String,      // e.g. "GET", "POST"
-    pub format: Option<String>,    // "json", "csv", etc.
-    pub parser: Option<String>,    // optional parser hint
+#[serde(rename_all = "snake_case")]
+pub enum WatchlistAssetKind {
+    Stock,
+    Crypto,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct DataFeed {
-    pub name: String,            // e.g. "Ethereum / USD"
-    pub symbol: String,          // e.g. "ETHUSD"
-    pub categories: Vec<String>, // e.g. ["crypto", "price"]
-    pub source: DataFeedSource,  // metadata about publisher/source
+pub struct WatchlistEntry {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub id: Option<ObjectId>,
+    pub symbol: String,
+    pub name: String,
+    pub kind: WatchlistAssetKind,
+    pub feed_symbol: String,
+    pub pair: Option<String>,
+    pub unit: Option<String>,
+    #[schema(value_type = i64)]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AddWatchlistAssetRequest {
+    pub symbol: String,
+    pub name: String,
+    pub kind: WatchlistAssetKind,
+    pub pair: Option<String>,
+    pub unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct WatchlistAssetResponse {
+    pub symbol: String,
+    pub name: String,
+    pub kind: WatchlistAssetKind,
+    pub pair: Option<String>,
+    pub unit: Option<String>,
+    pub source: Option<String>,
+    pub latest_value: Option<f64>,
+    pub latest_value_text: Option<String>,
     #[schema(value_type = Option<i64>)]
-    pub last_fetch: Option<DateTime<Utc>>, // last successful fetch time
-    #[serde(default)]
-    pub metadata: Option<mongodb::bson::Document>, // additional optional metadata
+    pub last_updated: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct DataSnapshotData {
-    pub r#type: String,                 // e.g. "price"
-    pub feed_symbol: String,            // link to DataFeed.symbol
-    pub source: Option<DataFeedSource>, // optional reference for provenance
-    pub symbol: Option<String>,         // e.g. "ETH"
-    pub pair: Option<String>,           // e.g. "ETH/USD"
-    pub value: rust_decimal::Decimal,   // numeric value
-    pub unit: Option<String>,           // e.g. "USD"
-    pub label: Option<String>,          // e.g. "spot", "close"
-    #[serde(default)]
-    pub metadata: Option<mongodb::bson::Document>,
+fn provider_for_kind(kind: &WatchlistAssetKind) -> DataFeedProvider {
+    match kind {
+        WatchlistAssetKind::Stock => DataFeedProvider::YahooFinance,
+        WatchlistAssetKind::Crypto => DataFeedProvider::Coingecko,
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct DataSnapshot {
-    pub fetch_time: DateTime<Utc>,
-    pub source_time: Option<DateTime<Utc>>,
-    pub data: Vec<DataSnapshotData>,
-    #[serde(default)]
-    pub metadata: Option<mongodb::bson::Document>,
+fn categories_for_kind(kind: &WatchlistAssetKind) -> Vec<String> {
+    match kind {
+        WatchlistAssetKind::Stock => vec!["stock".to_string(), "price".to_string()],
+        WatchlistAssetKind::Crypto => vec!["crypto".to_string(), "price".to_string()],
+    }
+}
+
+fn normalize_symbol(kind: &WatchlistAssetKind, symbol: &str) -> String {
+    let trimmed = symbol.trim();
+    match kind {
+        WatchlistAssetKind::Stock => trimmed.to_uppercase(),
+        WatchlistAssetKind::Crypto => trimmed.to_lowercase(),
+    }
+}
+
+fn metadata_from_pair_unit(pair: &Option<String>, unit: &Option<String>) -> Option<BsonDocument> {
+    let mut doc = BsonDocument::new();
+    if let Some(pair_val) = pair {
+        if !pair_val.is_empty() {
+            doc.insert("pair", pair_val.clone());
+        }
+    }
+    if let Some(unit_val) = unit {
+        if !unit_val.is_empty() {
+            doc.insert("unit", unit_val.clone());
+        }
+    }
+    if doc.is_empty() { None } else { Some(doc) }
+}
+
+fn build_watchlist_response(
+    entry: &WatchlistEntry,
+    feed: &DataFeed,
+    snapshot: Option<&DataSnapshot>,
+) -> WatchlistAssetResponse {
+    let mut latest_value = None;
+    let mut latest_text = None;
+    let mut last_updated = None;
+    let mut unit = entry.unit.clone();
+
+    if let Some(snapshot) = snapshot {
+        if let Some(data) = snapshot.data.first() {
+            latest_value = data.value.to_f64();
+            latest_text = Some(data.value.normalize().to_string());
+            if let Some(snapshot_unit) = &data.unit {
+                unit = Some(snapshot_unit.clone());
+            }
+            last_updated = snapshot.source_time.or(Some(snapshot.fetch_time));
+        }
+    }
+
+    WatchlistAssetResponse {
+        symbol: entry.symbol.clone(),
+        name: entry.name.clone(),
+        kind: entry.kind.clone(),
+        pair: entry.pair.clone(),
+        unit,
+        source: feed.source.publisher.clone(),
+        latest_value,
+        latest_value_text: latest_text,
+        last_updated,
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/capital/data/watchlist",
+    responses((status = 200, description = "Current watchlist with latest prices", body = [WatchlistAssetResponse])),
+    tag = "capital"
+)]
+pub async fn get_watchlist_data(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<WatchlistAssetResponse>>, String> {
+    let service = DataFeedService::new().map_err(|e| e.to_string())?;
+    let db = state.mongo_client.database("wyat");
+
+    let watchlist = db.collection::<WatchlistEntry>("capital_watchlist");
+    let mut cursor = watchlist
+        .find(
+            None,
+            FindOptions::builder()
+                .sort(doc! { "created_at": 1 })
+                .build(),
+        )
+        .await
+        .map_err(|e| format!("Database error: {e}"))?;
+
+    let feeds = db.collection::<DataFeed>("capital_data_feeds");
+    let mut responses = Vec::new();
+
+    while let Some(entry) = cursor
+        .try_next()
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+    {
+        let provider = provider_for_kind(&entry.kind);
+        let metadata = metadata_from_pair_unit(&entry.pair, &entry.unit);
+        let mut feed = match feeds
+            .find_one(doc! { "symbol": &entry.feed_symbol }, None)
+            .await
+            .map_err(|e| format!("Database error: {e}"))?
+        {
+            Some(existing) => existing,
+            None => DataFeed {
+                name: entry.name.clone(),
+                symbol: entry.feed_symbol.clone(),
+                categories: categories_for_kind(&entry.kind),
+                source: service.source_for(&provider, &entry.feed_symbol),
+                last_fetch: None,
+                metadata: metadata.clone(),
+            },
+        };
+
+        feed.name = entry.name.clone();
+        feed.categories = categories_for_kind(&entry.kind);
+        feed.source = service.source_for(&provider, &entry.feed_symbol);
+        feed.metadata = metadata.clone();
+
+        let mut snapshot_opt: Option<DataSnapshot> = None;
+        let mut refreshed = false;
+
+        if service.needs_refresh(&feed) {
+            match service
+                .fetch_and_store_snapshot(&db, &mut feed, entry.pair.clone(), entry.unit.clone())
+                .await
+            {
+                Ok(snapshot) => {
+                    refreshed = true;
+                    snapshot_opt = Some(snapshot);
+                }
+                Err(err) => {
+                    eprintln!("Failed to refresh feed {}: {}", feed.symbol, err);
+                }
+            }
+        }
+
+        if !refreshed {
+            let feed_doc =
+                bson::to_document(&feed).map_err(|e| format!("Serialization error: {e}"))?;
+            feeds
+                .update_one(
+                    doc! { "symbol": &feed.symbol },
+                    doc! { "$set": feed_doc },
+                    UpdateOptions::builder().upsert(true).build(),
+                )
+                .await
+                .map_err(|e| format!("Database error: {e}"))?;
+        }
+
+        if snapshot_opt.is_none() {
+            snapshot_opt = service
+                .get_latest_snapshot(&db, &feed.symbol)
+                .await
+                .map_err(|e| format!("Database error: {e}"))?;
+        }
+
+        responses.push(build_watchlist_response(
+            &entry,
+            &feed,
+            snapshot_opt.as_ref(),
+        ));
+    }
+
+    Ok(Json(responses))
+}
+
+#[utoipa::path(
+    post,
+    path = "/capital/data/watchlist",
+    request_body = AddWatchlistAssetRequest,
+    responses((status = 200, description = "Asset added to watchlist", body = WatchlistAssetResponse)),
+    tag = "capital"
+)]
+pub async fn add_watchlist_asset(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<AddWatchlistAssetRequest>,
+) -> Result<Json<WatchlistAssetResponse>, String> {
+    if req.symbol.trim().is_empty() {
+        return Err("Symbol is required".to_string());
+    }
+    if req.name.trim().is_empty() {
+        return Err("Name is required".to_string());
+    }
+
+    let service = DataFeedService::new().map_err(|e| e.to_string())?;
+    let db = state.mongo_client.database("wyat");
+    let watchlist = db.collection::<WatchlistEntry>("capital_watchlist");
+    let feeds = db.collection::<DataFeed>("capital_data_feeds");
+
+    let normalized_symbol = normalize_symbol(&req.kind, &req.symbol);
+    if watchlist
+        .find_one(doc! { "symbol": &normalized_symbol }, None)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+        .is_some()
+    {
+        return Err(format!(
+            "Asset '{}' is already on the watchlist",
+            normalized_symbol
+        ));
+    }
+
+    let provider = provider_for_kind(&req.kind);
+    let pair = req.pair.as_ref().and_then(|p| {
+        let trimmed = p.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let unit = req.unit.as_ref().and_then(|u| {
+        let trimmed = u.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_uppercase())
+        }
+    });
+    let metadata = metadata_from_pair_unit(&pair, &unit);
+
+    let mut feed = match feeds
+        .find_one(doc! { "symbol": &normalized_symbol }, None)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?
+    {
+        Some(existing) => existing,
+        None => DataFeed {
+            name: req.name.trim().to_string(),
+            symbol: normalized_symbol.clone(),
+            categories: categories_for_kind(&req.kind),
+            source: service.source_for(&provider, &normalized_symbol),
+            last_fetch: None,
+            metadata: metadata.clone(),
+        },
+    };
+
+    feed.name = req.name.trim().to_string();
+    feed.categories = categories_for_kind(&req.kind);
+    feed.source = service.source_for(&provider, &normalized_symbol);
+    feed.metadata = metadata.clone();
+
+    let snapshot = service
+        .fetch_and_store_snapshot(&db, &mut feed, pair.clone(), unit.clone())
+        .await
+        .map_err(|e| format!("Failed to fetch latest data: {e}"))?;
+
+    let entry = WatchlistEntry {
+        id: None,
+        symbol: normalized_symbol.clone(),
+        name: req.name.trim().to_string(),
+        kind: req.kind.clone(),
+        feed_symbol: normalized_symbol.clone(),
+        pair: pair.clone(),
+        unit: unit.clone(),
+        created_at: Utc::now(),
+    };
+
+    watchlist
+        .insert_one(&entry, None)
+        .await
+        .map_err(|e| format!("Database error: {e}"))?;
+
+    Ok(Json(build_watchlist_response(
+        &entry,
+        &feed,
+        Some(&snapshot),
+    )))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/capital/data/watchlist/{symbol}",
+    params(("symbol" = String, Path, description = "Symbol to remove")),
+    responses(
+        (status = 204, description = "Asset removed from watchlist"),
+        (status = 404, description = "Asset not found"),
+    ),
+    tag = "capital"
+)]
+pub async fn remove_watchlist_asset(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+) -> Result<StatusCode, String> {
+    let db = state.mongo_client.database("wyat");
+    let watchlist = db.collection::<WatchlistEntry>("capital_watchlist");
+    let trimmed = symbol.trim();
+
+    let mut candidates = vec![trimmed.to_string()];
+    let upper = trimmed.to_uppercase();
+    if !candidates.contains(&upper) {
+        candidates.push(upper);
+    }
+    let lower = trimmed.to_lowercase();
+    if !candidates.contains(&lower) {
+        candidates.push(lower);
+    }
+
+    for candidate in candidates {
+        let result = watchlist
+            .delete_one(doc! { "symbol": &candidate }, None)
+            .await
+            .map_err(|e| format!("Database error: {e}"))?;
+
+        if result.deleted_count > 0 {
+            return Ok(StatusCode::NO_CONTENT);
+        }
+    }
+
+    Ok(StatusCode::NOT_FOUND)
 }
