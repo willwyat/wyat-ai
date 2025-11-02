@@ -9,9 +9,13 @@ export default function FundsPage() {
   const {
     funds,
     positionsByFund,
+    assetPrices,
     fundsLoading: loading,
     fundsError: error,
+    pricesLoading,
     fetchFunds,
+    fetchAssetPrices,
+    getAssetPrice,
   } = useCapitalStore();
 
   // Set page title
@@ -21,7 +25,8 @@ export default function FundsPage() {
 
   useEffect(() => {
     fetchFunds();
-  }, [fetchFunds]);
+    fetchAssetPrices();
+  }, [fetchFunds, fetchAssetPrices]);
 
   if (loading) {
     return (
@@ -39,7 +44,8 @@ export default function FundsPage() {
     );
   }
 
-  const assetPrices = {
+  // Fallback prices for assets not in watchlist
+  const fallbackPrices: Record<string, number> = {
     WBTC: 109807.7,
     ETH: 3862.57,
     BTC: 109807.7,
@@ -49,15 +55,32 @@ export default function FundsPage() {
     SOL: 186.34,
     HKD: 1 / 7.78, // HKD to USD conversion rate (7.78 HKD = 1 USD)
     USD: 1.0,
-  } as const;
+  };
+
+  // Helper function to get price with fallback
+  const getPriceForAsset = (asset: string, fallbackPrice?: number): number => {
+    // Try to get from real-time data first
+    const realtimePrice = getAssetPrice(asset);
+    if (realtimePrice !== undefined) {
+      return realtimePrice;
+    }
+
+    // Fall back to hardcoded prices
+    const normalizedAsset = asset.toUpperCase();
+    if (fallbackPrices[normalizedAsset] !== undefined) {
+      return fallbackPrices[normalizedAsset];
+    }
+
+    // Finally, use the price from position data
+    return fallbackPrice || 0;
+  };
 
   // Calculate total portfolio value and metrics (moved outside return for reuse)
   const fundMetrics = funds.map((f) => {
     const positions = positionsByFund[f.fund_id] || [];
     const nav = positions.reduce((sum, p) => {
       const qty = toNumber(p.qty);
-      const price =
-        (assetPrices as any)[p.asset] || toNumber(p.price_in_base_ccy);
+      const price = getPriceForAsset(p.asset, toNumber(p.price_in_base_ccy));
       return sum + qty * price;
     }, 0);
     return { fund: f, nav };
@@ -279,9 +302,10 @@ export default function FundsPage() {
                       const positions = positionsByFund[f.fund_id] || [];
                       const totalValue = positions.reduce((sum, p) => {
                         const qty = toNumber(p.qty);
-                        const price =
-                          (assetPrices as any)[p.asset] ||
-                          toNumber(p.price_in_base_ccy);
+                        const price = getPriceForAsset(
+                          p.asset,
+                          toNumber(p.price_in_base_ccy)
+                        );
                         return sum + qty * price;
                       }, 0);
                       return (
@@ -402,10 +426,11 @@ export default function FundsPage() {
                           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {positions.map((p, i) => {
                               const qty = toNumber(p.qty);
-                              // Use assetPrices if available, otherwise fall back to stored price
-                              const price =
-                                (assetPrices as any)[p.asset] ||
-                                toNumber(p.price_in_base_ccy);
+                              // Use real-time prices if available, otherwise fall back to stored price
+                              const price = getPriceForAsset(
+                                p.asset,
+                                toNumber(p.price_in_base_ccy)
+                              );
                               const value = qty * price;
                               return (
                                 <tr

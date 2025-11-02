@@ -99,6 +99,15 @@ export interface Position {
   last_updated: number;
 }
 
+// Price Data Types
+export interface AssetPrice {
+  symbol: string;
+  price: number;
+  change_24h_pct?: number;
+  last_updated?: string;
+  source?: string;
+}
+
 export interface PublicFund {
   id: string;
   fund_id: string;
@@ -131,6 +140,7 @@ interface CapitalState {
   envelopeUsage: Map<string, EnvelopeUsage>;
   funds: PublicFund[];
   positionsByFund: Record<string, Position[]>;
+  assetPrices: Record<string, AssetPrice>;
 
   // UI State
   loading: boolean;
@@ -140,6 +150,7 @@ interface CapitalState {
   fundsLoading: boolean;
   positionsLoading: boolean;
   fundsError: string | null;
+  pricesLoading: boolean;
 
   // Operation States
   reclassifying: Set<string>;
@@ -160,6 +171,8 @@ interface CapitalState {
   fetchFunds: () => Promise<void>;
   fetchPositions: (fundIds: string[]) => Promise<void>;
   fetchFundPositions: (fundId: string) => Promise<Position[]>;
+  fetchAssetPrices: () => Promise<void>;
+  getAssetPrice: (symbol: string) => number | undefined;
   createAccount: (account: Account) => Promise<void>;
 
   // Actions - Transactions
@@ -206,6 +219,7 @@ export const useCapitalStore = create<CapitalState>()(
       envelopeUsage: new Map(),
       funds: [],
       positionsByFund: {},
+      assetPrices: {},
       loading: false,
       error: null,
       filters: {},
@@ -213,6 +227,7 @@ export const useCapitalStore = create<CapitalState>()(
       fundsLoading: false,
       positionsLoading: false,
       fundsError: null,
+      pricesLoading: false,
       reclassifying: new Set(),
       deleting: new Set(),
       updatingType: new Set(),
@@ -484,6 +499,52 @@ export const useCapitalStore = create<CapitalState>()(
           console.error("Failed to load positions:", error);
           set({ positionsLoading: false });
         }
+      },
+
+      fetchAssetPrices: async () => {
+        set({ pricesLoading: true });
+        try {
+          const response = await fetch(
+            `${API_CONFIG.BASE_URL}/capital/data/watchlist`,
+            { credentials: "include" }
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const watchlist = await response.json();
+
+          // Map watchlist data to asset prices by name from capital_data_feeds
+          // e.g., "BTC", "ETH", "SOL" from the name field
+          const priceMap: Record<string, AssetPrice> = {};
+
+          for (const item of watchlist) {
+            if (item.latest_value != null && item.name) {
+              // Use the name field (e.g., "BTC", "ETH") as the key
+              // Normalize to uppercase for consistent lookup
+              const normalizedName = item.name.toUpperCase();
+
+              priceMap[normalizedName] = {
+                symbol: item.symbol, // Keep the CoinGecko ID (e.g., "bitcoin")
+                price: item.latest_value,
+                change_24h_pct: item.change_24h_pct,
+                last_updated: item.last_updated,
+                source: item.source,
+              };
+            }
+          }
+          console.log("Asset prices:", priceMap);
+          set({ assetPrices: priceMap, pricesLoading: false });
+        } catch (error) {
+          console.error("Failed to fetch asset prices:", error);
+          set({ pricesLoading: false });
+        }
+      },
+
+      getAssetPrice: (symbol: string): number | undefined => {
+        const normalizedSymbol = symbol.toUpperCase();
+        return get().assetPrices[normalizedSymbol]?.price;
       },
 
       // Transaction Actions
