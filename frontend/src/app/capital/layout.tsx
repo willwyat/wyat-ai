@@ -84,7 +84,7 @@ export default function CapitalLayout({ children }: CapitalLayoutProps) {
                         key={symbol}
                         className="flex items-center space-x-2 text-sm"
                       >
-                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                        <span className="font-medium text-gray-600 dark:text-gray-400">
                           {symbol}
                         </span>
                         <span className="text-gray-900 dark:text-white font-semibold">

@@ -98,7 +98,7 @@ export default function FundsPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <header className="h-8 flex items-center justify-between mb-8">
         <Heading level={1}>Funds</Heading>
         {funds.length > 0 && (
           <div className="text-right">
@@ -113,7 +113,7 @@ export default function FundsPage() {
             </div>
           </div>
         )}
-      </div>
+      </header>
       {funds.length === 0 ? (
         <div className="text-gray-600 dark:text-gray-400">No funds found.</div>
       ) : (

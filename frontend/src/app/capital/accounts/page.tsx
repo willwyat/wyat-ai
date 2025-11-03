@@ -133,9 +133,9 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-6 flex justify-between items-center">
+      <header className="h-8 mb-8 flex justify-between items-center">
         <Heading level={1}>Accounts</Heading>
         <button
           onClick={() => setIsCreateModalOpen(true)}
@@ -143,7 +143,7 @@ export default function AccountsPage() {
         >
           + Create Account
         </button>
-      </div>
+      </header>
 
       {/* Error Display */}
       {error && (

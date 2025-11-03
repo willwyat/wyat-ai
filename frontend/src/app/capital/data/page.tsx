@@ -7,6 +7,7 @@ import {
   type WatchlistAssetKind,
   type AddWatchlistAssetPayload,
 } from "@/stores/capital-data-store";
+import { Heading } from "@/components/ui/Heading";
 
 const KIND_OPTIONS: Array<{ value: WatchlistAssetKind; label: string }> = [
   { value: "stock", label: "Stock (Yahoo Finance)" },
@@ -202,15 +203,10 @@ export default function CapitalDataPage() {
   }, [watchlist]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-5xl mx-auto px-6 py-10">
-        <header className="mb-8 flex flex-col gap-2">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Market Data Watchlist
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            Track real-time prices for your most important assets.
-          </p>
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto p-6">
+        <header className="h-8 mb-8 flex flex-col gap-2">
+          <Heading level={1}>Market Data Watchlist</Heading>
         </header>
 
         <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-10">
