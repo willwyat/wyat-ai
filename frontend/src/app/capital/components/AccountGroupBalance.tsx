@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import type { Account, Currency } from "@/app/capital/types";
 import { API_URL } from "@/lib/config";
+import { Balance } from "@/components/ui/Balance";
 
 interface AccountGroupBalanceProps {
   accounts: Account[];
@@ -28,12 +29,13 @@ export function AccountGroupBalance({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Only fetch balances for Checking, Savings, and Credit accounts
+    // Only fetch balances for Checking, Savings, Credit, and BrokerageAccount
     const accountsToFetch = accounts.filter(
       (acc) =>
         acc.metadata.type === "Checking" ||
         acc.metadata.type === "Savings" ||
-        acc.metadata.type === "Credit"
+        acc.metadata.type === "Credit" ||
+        acc.metadata.type === "BrokerageAccount"
     );
 
     if (accountsToFetch.length === 0) return;
@@ -68,22 +70,6 @@ export function AccountGroupBalance({
       });
   }, [accounts]);
 
-  const getCurrencySymbol = (currency: string) => {
-    if (currency === "USD") return "$";
-    if (currency === "HKD") return "HK$";
-    if (currency === "BTC") return "₿";
-    return "";
-  };
-
-  const formatBalance = (amount: string): string => {
-    const num = parseFloat(amount);
-    if (isNaN(num)) return amount;
-    return num.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
-
   // Calculate aggregate balances by currency
   const aggregateBalances = new Map<string, number>();
   balances.forEach((balance) => {
@@ -114,8 +100,7 @@ export function AccountGroupBalance({
             Total
           </div>
           <div className="text-lg font-bold text-gray-900 dark:text-white">
-            {getCurrencySymbol(ccy)}
-            {formatBalance(total.toString())}
+            <Balance amount={total} ccy={ccy} />
           </div>
         </div>
       ))}

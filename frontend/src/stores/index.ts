@@ -8,6 +8,7 @@ export { useAiStore } from "./ai-store";
 export { useWorkoutStore } from "./workout-store";
 export { useMetaStore } from "./meta-store";
 export { useUIStore } from "./ui-store";
+export { usePreferencesStore } from "./preferences-store";
 
 // Export types
 export type {

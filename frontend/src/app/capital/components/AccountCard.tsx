@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import type { Account, Currency, AccountNetwork } from "@/app/capital/types";
 import { API_URL } from "@/lib/config";
+import { Balance } from "@/components/ui/Balance";
 
 interface AccountCardProps {
   account: Account;
@@ -23,12 +24,13 @@ export function AccountCard({ account, isInGroup = false }: AccountCardProps) {
   const [balance, setBalance] = useState<AccountBalance | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
-  // Fetch balance for Checking, Savings, and Credit accounts
+  // Fetch balance for Checking, Savings, Credit, and BrokerageAccount
   useEffect(() => {
     const shouldFetchBalance =
       account.metadata.type === "Checking" ||
       account.metadata.type === "Savings" ||
-      account.metadata.type === "Credit";
+      account.metadata.type === "Credit" ||
+      account.metadata.type === "BrokerageAccount";
 
     if (shouldFetchBalance) {
       setLoadingBalance(true);
@@ -77,6 +79,8 @@ export function AccountCard({ account, isInGroup = false }: AccountCardProps) {
         return "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300";
       case "Trust":
         return "bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300";
+      case "BrokerageAccount":
+        return "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300";
       default:
         return "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300";
     }
@@ -159,6 +163,10 @@ export function AccountCard({ account, isInGroup = false }: AccountCardProps) {
       case "Trust": {
         const d = data as { trustee: string };
         return d.trustee;
+      }
+      case "BrokerageAccount": {
+        const d = data as { broker_name: string; account_number: string };
+        return `${d.broker_name} •••${d.account_number.slice(-4)}`;
       }
       default:
         return "";
@@ -319,6 +327,47 @@ export function AccountCard({ account, isInGroup = false }: AccountCardProps) {
         );
       }
 
+      case "BrokerageAccount": {
+        const d = data as {
+          broker_name: string;
+          owner_name: string;
+          account_number: string;
+          account_type?: string | null;
+        };
+        return (
+          <>
+            <div className="flex justify-between">
+              <span className="text-gray-500 dark:text-gray-400">Broker:</span>
+              <span className="text-gray-900 dark:text-white font-medium">
+                {d.broker_name}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500 dark:text-gray-400">Owner:</span>
+              <span className="text-gray-900 dark:text-white font-medium">
+                {d.owner_name}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500 dark:text-gray-400">
+                Account Number:
+              </span>
+              <span className="text-gray-900 dark:text-white font-medium font-mono text-xs">
+                •••{d.account_number.slice(-4)}
+              </span>
+            </div>
+            {d.account_type && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Type:</span>
+                <span className="text-gray-900 dark:text-white font-medium">
+                  {d.account_type}
+                </span>
+              </div>
+            )}
+          </>
+        );
+      }
+
       default:
         return null;
     }
@@ -364,12 +413,14 @@ export function AccountCard({ account, isInGroup = false }: AccountCardProps) {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Balance display for Checking, Savings, Credit */}
+              {/* Balance display for Checking, Savings, Credit, BrokerageAccount */}
               {balance && (
                 <div className="text-right">
                   <div className="text-base font-semibold text-gray-900 dark:text-white">
-                    {getCurrencySymbol(account.currency)}
-                    {formatBalance(balance.balance.amount)}
+                    <Balance
+                      amount={balance.balance.amount}
+                      ccy={account.currency}
+                    />
                   </div>
                 </div>
               )}

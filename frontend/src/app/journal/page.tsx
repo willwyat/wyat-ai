@@ -8,6 +8,7 @@ import "react-day-picker/style.css";
 import { parse } from "date-fns";
 import WorkoutDisplay from "@/components/WorkoutDisplay";
 import { ExerciseEntry } from "@/types/workout";
+import { Heading } from "@/components/ui/Heading";
 
 type JournalEntry = {
   title?: string; // Deprecated field
@@ -35,41 +36,6 @@ export default function JournalPage() {
   // * * * SEARCH. * * * //
   // =================== //
   const [searchInput, setSearchInput] = useState("");
-  // const handleSearch = async (query: string) => {
-  //   setSearchQuery(query);
-
-  //   if (!query.trim()) {
-  //     // If search is empty, show all entries
-  //     setEntries(allEntries);
-  //     return;
-  //   }
-
-  //   try {
-  //     // Use the search/ids endpoint to get matching results with highlights
-  //     const response = await fetch(
-  //       `${API_URL}/journal/mongo/search/ids?q=${encodeURIComponent(query)}`,
-  //       {
-  //         headers: {
-  //           "x-wyat-api-key": WYAT_API_KEY,
-  //         },
-  //       }
-  //     );
-
-  //     const searchResults = await response.json();
-
-  //     // Filter all entries to only show those with matching IDs
-  //     const filteredEntries = allEntries.filter((entry) => {
-  //       const id = typeof entry._id === "object" ? entry._id.$oid : entry._id;
-  //       return searchResults.some((result: any) => result._id === id);
-  //     });
-
-  //     setEntries(filteredEntries);
-  //   } catch (error) {
-  //     console.error("Search error:", error);
-  //     // Fallback to showing all entries if search fails
-  //     setEntries(allEntries);
-  //   }
-  // };
 
   // ===================== //
   // * * * PASSCODE. * * * //
@@ -461,7 +427,7 @@ export default function JournalPage() {
               {selectedDayEntries.length === 0 ? (
                 // JOURNAL ENTRIES NOT FOUND
                 <div className="px-6 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
-                  <h1 className="text-3xl font-bold">
+                  <Heading level={1}>
                     {parse(
                       selectedDate,
                       "yyyy-MM-dd",
@@ -479,7 +445,7 @@ export default function JournalPage() {
                       weekday: "long",
                     })}
                     {")"}
-                  </h1>
+                  </Heading>
                   <div className="h-24 flex flex-col items-center justify-center">
                     <p className="text-sm text-gray-400 dark:text-gray-500">
                       この日は日記なし
@@ -539,7 +505,7 @@ export default function JournalPage() {
               </div>
 
               <div className="px-6 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
-                <h2 className="text-2xl font-bold">支出</h2>
+                <Heading level={2}>支出</Heading>
               </div>
             </div>
           </div>

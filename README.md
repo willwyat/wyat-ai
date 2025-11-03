@@ -6,11 +6,23 @@ Personal super app that tracks health, finances, time, and more.
 
 - `frontend/`: Next.js dashboard
 - `backend/`: Rust API using Axum
+- `docs/`: Comprehensive documentation (guides, features, and technical references)
 
 ## Dev Commands
 
 - `npm run dev` (in `frontend/`)
 - `cargo run` (in `backend/`)
+
+## 📚 Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs/) directory:
+
+- **[Setup Guide](./docs/SETUP_GUIDE.md)** - Get started with the project
+- **[Security Guide](./docs/SECURITY.md)** - Security best practices
+- **[Feature Documentation](./docs/)** - Detailed feature guides
+- **[API Integration Guides](./docs/)** - Plaid, CoinGecko, and more
+
+See the [docs README](./docs/README.md) for a complete index of all documentation.
 
 ## Oura Integration
 

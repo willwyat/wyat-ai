@@ -385,6 +385,17 @@ pub enum AccountMetadata {
         #[serde(default)]
         txid_prefix: Option<String>,
     },
+    BrokerageAccount {
+        broker_name: String,
+        owner_name: String,
+        account_number: String,
+        #[serde(default)]
+        account_type: Option<String>, // e.g., "Individual", "IRA", "401k", "Roth IRA"
+        #[serde(default)]
+        color: Option<String>,
+        #[serde(default)]
+        txid_prefix: Option<String>,
+    },
 }
 
 impl Account {
@@ -398,6 +409,7 @@ impl Account {
                 "CryptoWallet" => "CryptoWallet",
                 "Cex" => "Cex",
                 "Trust" => "Trust",
+                "BrokerageAccount" => "BrokerageAccount",
                 _ => "Unknown",
             },
             AccountMetadata::Checking { .. } => "Checking",
@@ -406,6 +418,7 @@ impl Account {
             AccountMetadata::CryptoWallet { .. } => "CryptoWallet",
             AccountMetadata::Cex { .. } => "Cex",
             AccountMetadata::Trust { .. } => "Trust",
+            AccountMetadata::BrokerageAccount { .. } => "BrokerageAccount",
         }
     }
 }

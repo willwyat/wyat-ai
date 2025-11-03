@@ -102,7 +102,14 @@ export interface AccountMetadata {
     | "zinc"
     | "neutral"
     | "stone";
-  type: "Checking" | "Savings" | "Credit" | "CryptoWallet" | "Cex" | "Trust";
+  type:
+    | "Checking"
+    | "Savings"
+    | "Credit"
+    | "CryptoWallet"
+    | "Cex"
+    | "Trust"
+    | "BrokerageAccount";
   data:
     | {
         bank_name: string;
@@ -122,7 +129,7 @@ export interface AccountMetadata {
       }
     | {
         address: string;
-        network: AccountNetwork;
+        network: AccountNetwork | string;
         is_ledger: boolean;
         color?: string;
         txid_prefix?: string;
@@ -136,6 +143,14 @@ export interface AccountMetadata {
     | {
         trustee: string;
         jurisdiction: string;
+        color?: string;
+        txid_prefix?: string;
+      }
+    | {
+        broker_name: string;
+        owner_name: string;
+        account_number: string;
+        account_type?: string | null; // e.g., "Individual", "IRA", "401k", "Roth IRA"
         color?: string;
         txid_prefix?: string;
       };

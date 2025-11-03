@@ -19,7 +19,11 @@ export function formatDate(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleDateString();
 }
 
-export function formatAmount(amount: string, ccy: string): string {
+export function formatAmount(
+  amount: string,
+  ccy: string,
+  showCcy: boolean = true
+): string {
   const num = parseFloat(amount);
   const symbol =
     ccy === "USD" ? "$" : ccy === "HKD" ? "HK$" : ccy === "BTC" ? "₿" : "";
@@ -33,7 +37,7 @@ export function formatAmount(amount: string, ccy: string): string {
     maximumFractionDigits: decimals,
   });
 
-  return `${symbol}${formatted}`;
+  return showCcy ? `${symbol}${formatted}` : formatted;
 }
 
 export function formatCryptoAmount(qty: string, asset: string): string {
@@ -53,6 +57,13 @@ export function formatCryptoAmount(qty: string, asset: string): string {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })} ${asset}`;
+}
+
+export function getCurrencySymbol(ccy: string): string {
+  if (ccy === "USD") return "$";
+  if (ccy === "HKD") return "HK$";
+  if (ccy === "BTC") return "₿";
+  return "";
 }
 
 export function getAccountColorClasses(color: string): string {

@@ -2,6 +2,9 @@
 
 import React, { useEffect } from "react";
 import { useCapitalStore } from "@/stores/capital-store";
+import { usePreferencesStore } from "@/stores/preferences-store";
+import { Heading } from "@/components/ui/Heading";
+import { Balance } from "@/components/ui/Balance";
 
 type Currency = "USD" | "HKD" | "BTC";
 
@@ -17,6 +20,8 @@ export default function FundsPage() {
     fetchAssetPrices,
     getAssetPrice,
   } = useCapitalStore();
+
+  const { hideBalances, toggleHideBalances } = usePreferencesStore();
 
   // Set page title
   useEffect(() => {
@@ -94,20 +99,17 @@ export default function FundsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-          Funds
-        </h1>
+        <Heading level={1}>Funds</Heading>
         {funds.length > 0 && (
           <div className="text-right">
             <div className="text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               Total Portfolio NAV
             </div>
-            <div className="text-3xl font-bold text-gray-900 dark:text-white">
-              $
-              {totalPortfolioValue.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+            <div className="flex items-center justify-end gap-3">
+              <button onClick={toggleHideBalances}>👁</button>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                <Balance amount={totalPortfolioValue} ccy="USD" />
+              </div>
             </div>
           </div>
         )}

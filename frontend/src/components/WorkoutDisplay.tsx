@@ -1,5 +1,6 @@
 import { ExerciseEntry } from "@/types/workout";
-import WorkoutDisplayItem from "./WorkoutDisplayItem";
+import WorkoutDisplayItem from "@/components/WorkoutDisplayItem";
+import { Heading } from "@/components/ui/Heading";
 
 interface WorkoutDisplayProps {
   workouts: ExerciseEntry[];
@@ -13,9 +14,9 @@ export default function WorkoutDisplay({
 }: WorkoutDisplayProps) {
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">
+      <Heading level={2}>
         {title} {workouts.length > 0 ? `(${workouts.length})` : ""}
-      </h2>
+      </Heading>
       {workouts.length === 0 ? (
         <div className="h-24 flex flex-col items-center justify-center">
           <p className="text-sm text-gray-400 dark:text-gray-500">

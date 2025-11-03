@@ -6,10 +6,15 @@ import { AccountCard } from "@/app/capital/components/AccountCard";
 import { AccountGroupBalance } from "@/app/capital/components/AccountGroupBalance";
 import AccountCreateModal from "@/app/capital/components/AccountCreateModal";
 import type { Account } from "@/app/capital/types";
+import { Heading } from "@/components/ui/Heading";
+import { Text } from "@/components/ui/Text";
+import { usePreferencesStore } from "@/stores/preferences-store";
 
 export default function AccountsPage() {
   const { accounts, loading, error, fetchAccounts, createAccount } =
     useCapitalStore();
+  const { hideBalances, toggleHideBalances } = usePreferencesStore();
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -36,6 +41,21 @@ export default function AccountsPage() {
       throw err; // Re-throw to let modal handle it
     } finally {
       setCreating(false);
+    }
+  };
+
+  const getAccountGroupName = (groupId: string) => {
+    switch (groupId) {
+      case "grp.hsbc_joint":
+        return "HSBC Joint";
+      case "grp.chase_william":
+        return "Chase William";
+      case "grp.sofi_william":
+        return "Sofi William";
+      case "grp.fund_altcoins":
+        return "Altcoins Fund";
+      case "grp.fund_btc_accum":
+        return "BTC Accumulation Fund";
     }
   };
 
@@ -113,17 +133,10 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Accounts
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Manage your financial accounts
-          </p>
-        </div>
+        <Heading level={1}>Accounts</Heading>
         <button
           onClick={() => setIsCreateModalOpen(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -221,28 +234,26 @@ export default function AccountsPage() {
           </button>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {/* Grouped Accounts Section */}
           {groupedAccountsMap.size > 0 && (
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                Account Groups
+              <div className="flex items-center justify-between">
+                <Text variant="h2">Account Groups</Text>
                 <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                   ({groupedAccountsMap.size} groups, {groupedCount} accounts)
                 </span>
-              </h2>
+              </div>
               <div className="space-y-6">
                 {Array.from(groupedAccountsMap.entries()).map(
                   ([groupId, groupAccounts]) => (
-                    <div
-                      key={groupId}
-                      className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
-                    >
-                      <div className="flex items-center justify-between mb-3">
+                    <div key={groupId}>
+                      <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-4">
-                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                            {groupId}
-                          </h3>
+                          <Heading level={3}>
+                            {getAccountGroupName(groupId)}
+                          </Heading>
+
                           <span className="text-sm text-gray-500 dark:text-gray-400">
                             {groupAccounts.length} account
                             {groupAccounts.length !== 1 ? "s" : ""}

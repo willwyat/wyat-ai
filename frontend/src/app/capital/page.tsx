@@ -188,25 +188,6 @@ export default function TransactionsPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="mx-auto">
-        {/* Header
-
-        <div className="py-16 sm:px-3 lg:px-8 bg-red-500 flex justify-between items-start">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white font-serif">
-              Capital
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300">
-              View and filter transaction history
-            </p>
-          </div>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
-          >
-            <span className="material-symbols-rounded text-lg">add</span>
-            Create Transaction
-          </button>
-        </div> */}
         <div className="px-3 sm:px-3 lg:px-8 py-4">
           {/* Actions */}
           <div className="mb-4 flex justify-end">
