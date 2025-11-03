@@ -5,6 +5,7 @@ import { useCapitalStore } from "@/stores";
 import Modal from "@/components/ui/Modal";
 import type { LegAmount, Account } from "@/app/capital/types";
 import { getTimezoneIdentifier } from "@/lib/timezone-utils";
+import { TimezoneSelect } from "@/components/ui/TimezoneSelect";
 
 interface TransactionCreateModalProps {
   isOpen: boolean;
@@ -111,6 +112,7 @@ export default function TransactionCreateModal({
   const { createTransaction, accounts } = useCapitalStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useUnixInput, setUseUnixInput] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -397,40 +399,120 @@ export default function TransactionCreateModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Date & Time
-            </label>
-            <input
-              type="datetime-local"
-              value={(() => {
-                try {
-                  const timestamp =
-                    formData.ts || Math.floor(Date.now() / 1000);
-                  const date = new Date(timestamp * 1000);
-                  if (isNaN(date.getTime())) {
-                    return new Date().toISOString().slice(0, 16);
-                  }
-                  return date.toISOString().slice(0, 16);
-                } catch (e) {
-                  console.error("Error formatting date:", e);
-                  return new Date().toISOString().slice(0, 16);
-                }
-              })()}
-              onChange={(e) => {
-                try {
-                  const localDateTime = new Date(e.target.value);
-                  if (!isNaN(localDateTime.getTime())) {
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Date & Time
+              </label>
+              <button
+                type="button"
+                onClick={() => setUseUnixInput(!useUnixInput)}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {useUnixInput ? "Use Date Picker" : "Use Unix Timestamp"}
+              </button>
+            </div>
+
+            {useUnixInput ? (
+              <>
+                <input
+                  type="number"
+                  value={formData.ts}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    if (!isNaN(value)) {
+                      setFormData({
+                        ...formData,
+                        ts: value,
+                      });
+                    }
+                  }}
+                  placeholder="e.g., 1234567890"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                />
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Unix timestamp (seconds since epoch)
+                </div>
+              </>
+            ) : (
+              <>
+                <input
+                  type="datetime-local"
+                  value={(() => {
+                    try {
+                      const timestamp =
+                        formData.ts || Math.floor(Date.now() / 1000);
+                      const date = new Date(timestamp * 1000);
+                      if (isNaN(date.getTime())) {
+                        const now = new Date();
+                        const year = now.getFullYear();
+                        const month = String(now.getMonth() + 1).padStart(
+                          2,
+                          "0"
+                        );
+                        const day = String(now.getDate()).padStart(2, "0");
+                        const hours = String(now.getHours()).padStart(2, "0");
+                        const minutes = String(now.getMinutes()).padStart(
+                          2,
+                          "0"
+                        );
+                        return `${year}-${month}-${day}T${hours}:${minutes}`;
+                      }
+                      // Format as local time for datetime-local input
+                      const year = date.getFullYear();
+                      const month = String(date.getMonth() + 1).padStart(
+                        2,
+                        "0"
+                      );
+                      const day = String(date.getDate()).padStart(2, "0");
+                      const hours = String(date.getHours()).padStart(2, "0");
+                      const minutes = String(date.getMinutes()).padStart(
+                        2,
+                        "0"
+                      );
+                      return `${year}-${month}-${day}T${hours}:${minutes}`;
+                    } catch (e) {
+                      console.error("Error formatting date:", e);
+                      const now = new Date();
+                      const year = now.getFullYear();
+                      const month = String(now.getMonth() + 1).padStart(2, "0");
+                      const day = String(now.getDate()).padStart(2, "0");
+                      const hours = String(now.getHours()).padStart(2, "0");
+                      const minutes = String(now.getMinutes()).padStart(2, "0");
+                      return `${year}-${month}-${day}T${hours}:${minutes}`;
+                    }
+                  })()}
+                  onChange={(e) => {
+                    try {
+                      // datetime-local value is in local time, convert to UTC unix timestamp
+                      const localDateTime = new Date(e.target.value);
+                      if (!isNaN(localDateTime.getTime())) {
+                        setFormData({
+                          ...formData,
+                          ts: Math.floor(localDateTime.getTime() / 1000),
+                        });
+                      }
+                    } catch (e) {
+                      console.error("Error parsing date:", e);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                />
+
+                <TimezoneSelect
+                  value={formData.timezone}
+                  onChange={(value) => {
                     setFormData({
                       ...formData,
-                      ts: Math.floor(localDateTime.getTime() / 1000),
+                      timezone: value,
                     });
-                  }
-                } catch (e) {
-                  console.error("Error parsing date:", e);
-                }
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-            />
+                  }}
+                  label="Timezone"
+                  helperText="Select the timezone for the datetime above"
+                  className="mt-2"
+                />
+              </>
+            )}
+
             <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Timezone: {formData.timezone}
             </div>
@@ -440,6 +522,9 @@ export default function TransactionCreateModal({
                 .toISOString()
                 .replace("T", " ")
                 .slice(0, 19)}
+            </div>
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Unix: {formData.ts}
             </div>
           </div>
         </div>
