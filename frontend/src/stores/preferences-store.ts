@@ -4,8 +4,6 @@ import { persist } from "zustand/middleware";
 interface PreferencesState {
   // Privacy settings
   hideBalances: boolean;
-  hideSensitive: boolean;
-
   // Theme settings
   isDarkMode: boolean;
 
