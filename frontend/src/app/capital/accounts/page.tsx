@@ -51,7 +51,7 @@ export default function AccountsPage() {
       case "grp.chase_william":
         return "Chase William";
       case "grp.sofi_william":
-        return "Sofi William";
+        return "SoFi William";
       case "grp.fund_altcoins":
         return "Altcoins Fund";
       case "grp.fund_btc_accum":
@@ -135,7 +135,7 @@ export default function AccountsPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <header className="h-8 mb-8 flex justify-between items-center">
+      <header className="h-20 mb-8 flex justify-between items-center">
         <Heading level={1}>Accounts</Heading>
         <button
           onClick={() => setIsCreateModalOpen(true)}
@@ -238,12 +238,12 @@ export default function AccountsPage() {
           {/* Grouped Accounts Section */}
           {groupedAccountsMap.size > 0 && (
             <div>
-              <div className="flex items-center justify-between">
+              {/* <div className="flex items-center justify-between">
                 <Text variant="h2">Account Groups</Text>
                 <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                   ({groupedAccountsMap.size} groups, {groupedCount} accounts)
                 </span>
-              </div>
+              </div> */}
               <div className="space-y-6">
                 {Array.from(groupedAccountsMap.entries()).map(
                   ([groupId, groupAccounts]) => (

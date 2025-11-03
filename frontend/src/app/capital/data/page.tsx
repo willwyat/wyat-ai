@@ -205,7 +205,7 @@ export default function CapitalDataPage() {
   return (
     <div className="min-h-screen">
       <div className="max-w-6xl mx-auto p-6">
-        <header className="h-8 mb-8 flex flex-col gap-2">
+        <header className="h-20 mb-8 flex items-center gap-2">
           <Heading level={1}>Market Data Watchlist</Heading>
         </header>
 

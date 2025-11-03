@@ -427,7 +427,7 @@ export default function JournalPage() {
               {selectedDayEntries.length === 0 ? (
                 // JOURNAL ENTRIES NOT FOUND
                 <div className="px-6 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8">
-                  <Heading level={1}>
+                  <Heading level={2}>
                     {parse(
                       selectedDate,
                       "yyyy-MM-dd",
@@ -470,7 +470,7 @@ export default function JournalPage() {
                         className="px-6 py-8 w-full lg:max-w-xl xl:max-w-3xl mx-auto flex flex-col gap-8"
                       >
                         <div className="flex flex-col gap-1">
-                          <h1 className="text-3xl font-bold">
+                          <Heading level={2}>
                             {parse(
                               entry.date,
                               "yyyy-MM-dd",
@@ -488,7 +488,7 @@ export default function JournalPage() {
                               weekday: "long",
                             })}
                             {")"}
-                          </h1>
+                          </Heading>
                         </div>
                         <article className="leading-relaxed whitespace-pre-wrap font-serif text-base ">
                           {latestVersion || "No content available."}
@@ -505,7 +505,7 @@ export default function JournalPage() {
               </div>
 
               <div className="px-6 py-4 w-full lg:max-w-xl xl:max-w-3xl mx-auto">
-                <Heading level={2}>支出</Heading>
+                <Heading level={3}>支出</Heading>
               </div>
             </div>
           </div>
@@ -572,7 +572,7 @@ export default function JournalPage() {
                   {selectedDayEntries.length === 0 ? (
                     // JOURNAL ENTRIES NOT FOUND
                     <div className="px-6 py-8 w-full flex flex-col gap-8">
-                      <h1 className="text-3xl font-bold">
+                      <Heading level={1}>
                         {parse(
                           selectedDate,
                           "yyyy-MM-dd",
@@ -590,7 +590,26 @@ export default function JournalPage() {
                           weekday: "long",
                         })}
                         {")"}
-                      </h1>
+                      </Heading>
+                      {/* <h1 className="text-3xl font-bold">
+                        {parse(
+                          selectedDate,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                        })}
+                        {" ("}
+                        {parse(
+                          selectedDate,
+                          "yyyy-MM-dd",
+                          new Date()
+                        ).toLocaleDateString("en-US", {
+                          weekday: "long",
+                        })}
+                        {")"}
+                      </h1> */}
                       <div className="h-24 flex flex-col items-center justify-center">
                         <p className="text-sm text-gray-400 dark:text-gray-500">
                           この日は日記なし
