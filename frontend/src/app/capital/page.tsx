@@ -195,7 +195,7 @@ export default function TransactionsPage() {
               onClick={() => setIsCreateModalOpen(true)}
               className="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
             >
-              <span className="material-symbols-rounded text-lg">add</span>
+              <span className="text-lg font-bold">+</span>
               Create Transaction
             </button>
           </div>
