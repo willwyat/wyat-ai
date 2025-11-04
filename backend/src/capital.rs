@@ -713,7 +713,13 @@ impl Transaction {
                 net += signed;
             }
         }
-        (net.is_zero(), Money::new(net, report_ccy))
+
+        // Use a tolerance of 0.01 (1 cent) to account for floating-point precision errors
+        // Common in FX conversions and decimal arithmetic
+        let tolerance = Decimal::new(1, 2); // 0.01
+        let is_balanced = net.abs() < tolerance;
+
+        (is_balanced, Money::new(net, report_ccy))
     }
 
     fn apply_spending_autobalance(&mut self) {

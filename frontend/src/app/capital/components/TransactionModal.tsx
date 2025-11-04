@@ -49,6 +49,11 @@ export default function TransactionModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
+  // FX rate editing for transfer_fx transactions
+  const [fxRate, setFxRate] = useState<string>("");
+  const [fxFrom, setFxFrom] = useState<string>("");
+  const [fxTo, setFxTo] = useState<string>("");
+
   useEffect(() => {
     if (transaction && isOpen) {
       setEditedPayee(transaction.payee || "");
@@ -57,6 +62,18 @@ export default function TransactionModal({
       setEditMode(false);
       setActionError(null);
       setActionSuccess(null);
+
+      // Extract FX rate from first leg with FX data
+      const legWithFx = transaction.legs.find((leg) => leg.fx);
+      if (legWithFx && legWithFx.fx) {
+        setFxRate(legWithFx.fx.rate?.toString() || "");
+        setFxFrom(legWithFx.fx.from || "");
+        setFxTo(legWithFx.fx.to || "");
+      } else {
+        setFxRate("");
+        setFxFrom("");
+        setFxTo("");
+      }
     }
   }, [transaction, isOpen]);
 
@@ -107,8 +124,40 @@ export default function TransactionModal({
     setActionSuccess(null);
 
     try {
+      // Build FX object for transfer_fx transactions
+      const buildFxObject = (leg: Leg) => {
+        if (tx.tx_type === "transfer_fx" && fxRate) {
+          let legIdentifier = "";
+
+          // Get the currency/asset identifier from the leg
+          if (leg.amount.kind === "Fiat") {
+            legIdentifier = leg.amount.data.ccy;
+          } else if (leg.amount.kind === "Crypto" && leg.amount.data?.asset) {
+            legIdentifier = leg.amount.data.asset;
+          }
+
+          // Add FX if this leg's currency/asset matches the "from" currency/asset
+          if (legIdentifier === fxFrom) {
+            return {
+              from: fxFrom,
+              to: fxTo,
+              rate: parseFloat(fxRate),
+              source: "manual",
+              ts: tx.ts,
+            };
+          }
+        }
+        return leg.fx || null; // Keep existing FX if not matched
+      };
+
+      // Apply FX to legs
+      const legsWithFx = editedLegs.map((leg) => ({
+        ...leg,
+        fx: buildFxObject(leg),
+      }));
+
       await updateTransactionLegs(tx.id, {
-        legs: editedLegs,
+        legs: legsWithFx,
         payee: editedPayee || undefined,
         memo: editedMemo || undefined,
       });
@@ -151,6 +200,19 @@ export default function TransactionModal({
     setEditedPayee(tx.payee || "");
     setEditedMemo(tx.memo || "");
     setEditedLegs(JSON.parse(JSON.stringify(tx.legs)));
+
+    // Reset FX rate from transaction
+    const legWithFx = tx.legs.find((leg) => leg.fx);
+    if (legWithFx && legWithFx.fx) {
+      setFxRate(legWithFx.fx.rate?.toString() || "");
+      setFxFrom(legWithFx.fx.from || "");
+      setFxTo(legWithFx.fx.to || "");
+    } else {
+      setFxRate("");
+      setFxFrom("");
+      setFxTo("");
+    }
+
     setEditMode(false);
     setActionError(null);
     setActionSuccess(null);
@@ -354,6 +416,68 @@ export default function TransactionModal({
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* FX Rate Section - Only shown for transfer_fx in edit mode */}
+      {editMode && tx.tx_type === "transfer_fx" && (
+        <div className="mb-8 border border-blue-200 dark:border-blue-800 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+            Foreign Exchange Rate
+          </h3>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
+            Set the exchange rate for this FX transfer (crypto ↔ fiat or fiat ↔
+            fiat). The rate will be applied to legs matching the "From"
+            currency/asset.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                From Currency/Asset <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={fxFrom}
+                onChange={(e) => setFxFrom(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                placeholder="e.g. USD, HKD, USDC"
+              />
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enter the asset/currency code
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                To Currency/Asset <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={fxTo}
+                onChange={(e) => setFxTo(e.target.value.toUpperCase())}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                placeholder="e.g. USD, HKD, USDC"
+              />
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Enter the asset/currency code
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Exchange Rate <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.000001"
+                value={fxRate}
+                onChange={(e) => setFxRate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                placeholder="e.g., 0.127759 or 95000"
+              />
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                1 {fxFrom || "FROM"} = {fxRate || "?"} {fxTo || "TO"}
+              </div>
+            </div>
           </div>
         </div>
       )}
