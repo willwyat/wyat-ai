@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useNav, NavigationMode } from "@/contexts/NavContext";
 import { useEffect, useState } from "react";
 import {
@@ -94,7 +95,7 @@ function TabletSideMenu() {
   return (
     <>
       {/* Toggle button */}
-      <button
+      {/* <button
         onClick={toggleSidebar}
         className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 dark:border-gray-700 lg:hidden md:block hidden"
       >
@@ -115,7 +116,7 @@ function TabletSideMenu() {
             }`}
           ></div>
         </div>
-      </button>
+      </button> */}
 
       {/* Side menu */}
       <div
@@ -124,6 +125,18 @@ function TabletSideMenu() {
         }`}
       >
         <div className="w-64 h-full pt-16">
+          {/* Logo */}
+          <div className="px-4 pt-4 pb-6 flex justify-center">
+            <Link href="/">
+              <Image
+                src="/images/wyat-vertical.svg"
+                alt="Wyat Logo"
+                width={80}
+                height={120}
+                className="dark:invert"
+              />
+            </Link>
+          </div>
           <nav className="p-4">
             <ul className="space-y-2">
               {coreFeatures.map((feature, index) => {
@@ -173,7 +186,7 @@ function DesktopSideMenu() {
   return (
     <>
       {/* Toggle button */}
-      <button
+      {/* <button
         onClick={toggleSidebar}
         className="fixed top-4 left-4 z-40 bg-white dark:bg-gray-900 rounded-xs shadow-md p-3 border border-gray-200 dark:border-gray-800 hidden lg:block"
       >
@@ -194,7 +207,7 @@ function DesktopSideMenu() {
             }`}
           ></div>
         </div>
-      </button>
+      </button> */}
 
       {/* Side menu */}
       <div
@@ -202,7 +215,24 @@ function DesktopSideMenu() {
           sidebarOpen ? "w-64" : "w-20"
         }`}
       >
-        <div className="h-full pt-16">
+        <div className="h-full">
+          {/* Logo */}
+          <div
+            className={`flex justify-center ${
+              sidebarOpen ? "px-4 pt-4 pb-6" : "px-2 pt-4 pb-6"
+            }`}
+          >
+            <Link href="/">
+              <Image
+                src="/images/wyat-vertical.svg"
+                alt="Wyat Logo"
+                width={sidebarOpen ? 80 : 48}
+                height={sidebarOpen ? 120 : 72}
+                className="dark:invert transition-all duration-300"
+              />
+            </Link>
+          </div>
+          {/* Navigation Links */}
           <nav className="p-4">
             {sidebarOpen ? (
               <>
