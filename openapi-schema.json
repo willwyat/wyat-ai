@@ -1522,24 +1522,37 @@
           "asset",
           "qty",
           "price_in_base_ccy",
+          "cost_basis_usd",
+          "avg_entry_price_usd",
           "last_updated"
         ],
         "properties": {
           "asset": {
-            "type": "string"
+            "type": "string",
+            "description": "Asset symbol (e.g., BONK, DOGE, ETH)"
           },
           "fund_id": {
             "type": "string"
           },
-          "last_updated": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "price_in_base_ccy": {
-            "$ref": "#/components/schemas/Decimal"
-          },
           "qty": {
             "$ref": "#/components/schemas/Decimal"
+          },
+          "price_in_base_ccy": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Current market price in fund's base currency"
+          },
+          "cost_basis_usd": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Total USD paid for this position (from USDT/USDC pairs)"
+          },
+          "avg_entry_price_usd": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Average entry price: cost_basis_usd / qty"
+          },
+          "last_updated": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp"
           }
         }
       },

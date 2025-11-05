@@ -96,6 +96,8 @@ export interface Position {
   asset: string;
   qty: number | string;
   price_in_base_ccy: number | string;
+  cost_basis_usd: number | string;
+  avg_entry_price_usd: number | string;
   last_updated: number;
 }
 

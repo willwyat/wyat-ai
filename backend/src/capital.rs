@@ -877,10 +877,12 @@ pub struct PublicFund {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Position {
     pub fund_id: String,
-    pub asset: String, // "BONK", "DOGE"
+    pub asset: String, // "BONK", "DOGE", "ETH", etc.
     pub qty: Decimal,
-    pub price_in_base_ccy: Decimal,
-    pub last_updated: i64, // Unix timestamp
+    pub price_in_base_ccy: Decimal, // Current market price in fund's base currency
+    pub cost_basis_usd: Decimal,    // Total USD paid for this position (from USDT/USDC pairs)
+    pub avg_entry_price_usd: Decimal, // Average entry price: cost_basis_usd / qty
+    pub last_updated: i64,          // Unix timestamp
 }
 
 /// --- Fund Positions API Response Types ---
@@ -1332,84 +1334,179 @@ pub async fn get_all_funds(State(state): State<Arc<AppState>>) -> Json<Vec<Publi
     }
 }
 
-/// Helper function to get positions for a single fund
+/// Helper function to get positions for a single fund with cost basis calculation.
+///
+/// Trading Rule: All crypto trades MUST be against USDT or USDC pairs for proper accounting.
+/// This function extracts paired stablecoin legs to compute USD cost basis and average entry price.
 async fn get_positions_for_fund(state: &Arc<AppState>, fund_id: &str) -> Vec<Position> {
     use futures::stream::TryStreamExt;
     use mongodb::bson::{Bson, doc};
+    use std::collections::HashMap;
 
     let db = state.mongo_client.database("wyat");
     let ledger = db.collection::<mongodb::bson::Document>("capital_ledger");
 
+    // Step 1: Find all transactions that touch this fund
     let pipeline = vec![
-        doc! { "$unwind": "$legs" },
         doc! { "$match": {
             "legs.category_id": &fund_id
         }},
-        doc! { "$addFields": {
-            "signed_qty": { "$cond": [
-                { "$eq": ["$legs.direction", "Debit"] },
-                { "$cond": [
-                    { "$eq": ["$legs.amount.kind", "Crypto"] },
-                    { "$toDecimal": "$legs.amount.data.qty" },
-                    { "$toDecimal": "$legs.amount.data.amount" }
-                ]},
-                { "$cond": [
-                    { "$eq": ["$legs.amount.kind", "Crypto"] },
-                    { "$multiply": [{ "$toDecimal": "$legs.amount.data.qty" }, -1] },
-                    { "$multiply": [{ "$toDecimal": "$legs.amount.data.amount" }, -1] }
-                ]}
-            ]},
-            "asset_name": { "$cond": [
-                { "$eq": ["$legs.amount.kind", "Crypto"] },
-                "$legs.amount.data.asset",
-                "$legs.amount.data.ccy"
-            ]}
-        }},
-        doc! { "$group": {
-            "_id": "$asset_name",
-            "qty": { "$sum": "$signed_qty" },
-            "last_updated": { "$max": { "$ifNull": ["$posted_ts", "$ts"] } }
+        doc! { "$project": {
+            "id": 1,
+            "ts": 1,
+            "posted_ts": 1,
+            "legs": 1
         }},
     ];
 
-    let mut out: Vec<Position> = Vec::new();
+    #[derive(Debug)]
+    struct TradeData {
+        asset: String,
+        qty_change: Decimal,
+        usd_cost: Decimal, // From USDT/USDC leg
+        timestamp: i64,
+    }
+
+    let mut trades: Vec<TradeData> = Vec::new();
+
     match ledger.aggregate(pipeline, None).await {
         Ok(mut cursor) => {
             while let Ok(Some(doc)) = cursor.try_next().await {
-                let asset = doc.get_str("_id").unwrap_or("").to_string();
+                // Extract legs array
+                let legs = match doc.get_array("legs") {
+                    Ok(legs_arr) => legs_arr,
+                    Err(_) => continue,
+                };
 
-                // qty as Decimal
-                let mut qty_dec = Decimal::ZERO;
-                if let Some(qv) = doc.get("qty") {
-                    qty_dec = match qv {
-                        Bson::Decimal128(d) => {
-                            Decimal::from_str_exact(&d.to_string()).unwrap_or(Decimal::ZERO)
-                        }
-                        Bson::Double(f) => Decimal::try_from(*f).unwrap_or(Decimal::ZERO),
-                        Bson::Int32(i) => Decimal::from(*i),
-                        Bson::Int64(i) => Decimal::from(*i),
-                        _ => Decimal::ZERO,
-                    };
-                }
-
-                // last_updated
-                let last_updated = doc
-                    .get_i64("last_updated")
+                let timestamp = doc
+                    .get_i64("posted_ts")
+                    .or_else(|_| doc.get_i64("ts"))
                     .unwrap_or_else(|_| chrono::Utc::now().timestamp());
 
-                out.push(Position {
-                    fund_id: fund_id.to_string(),
-                    asset,
-                    qty: qty_dec,
-                    // price unknown here; can be filled by valuation service later
-                    price_in_base_ccy: Decimal::ZERO,
-                    last_updated,
-                });
+                // Find the fund leg (has category_id matching fund_id)
+                let mut fund_leg: Option<&Bson> = None;
+                let mut stable_leg: Option<&Bson> = None;
+
+                for leg in legs {
+                    if let Some(leg_doc) = leg.as_document() {
+                        // Check if this leg belongs to the fund
+                        if let Ok(cat_id) = leg_doc.get_str("category_id") {
+                            if cat_id == fund_id {
+                                fund_leg = Some(leg);
+                            }
+                        }
+
+                        // Check if this is a USDT/USDC leg
+                        if let Some(amount) = leg_doc.get_document("amount").ok() {
+                            if let Ok(kind) = amount.get_str("kind") {
+                                if kind == "Crypto" {
+                                    if let Some(data) = amount.get_document("data").ok() {
+                                        if let Ok(asset) = data.get_str("asset") {
+                                            if asset == "USDT" || asset == "USDC" {
+                                                stable_leg = Some(leg);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If we have both fund leg and stable leg, extract the trade data
+                if let (Some(fl), Some(sl)) = (fund_leg, stable_leg) {
+                    if let (Some(fl_doc), Some(sl_doc)) = (fl.as_document(), sl.as_document()) {
+                        // Extract fund leg details
+                        if let Some(fl_amount) = fl_doc.get_document("amount").ok() {
+                            if let Some(fl_data) = fl_amount.get_document("data").ok() {
+                                let asset = fl_data.get_str("asset").unwrap_or("").to_string();
+                                let fl_dir = fl_doc.get_str("direction").unwrap_or("Debit");
+
+                                // Parse qty
+                                let qty_raw = if let Ok(q) = fl_data.get_str("qty") {
+                                    Decimal::from_str_exact(q).unwrap_or(Decimal::ZERO)
+                                } else if let Ok(q) = fl_data.get_f64("qty") {
+                                    Decimal::try_from(q).unwrap_or(Decimal::ZERO)
+                                } else {
+                                    Decimal::ZERO
+                                };
+
+                                let qty_change = if fl_dir == "Debit" { qty_raw } else { -qty_raw };
+
+                                // Extract stable leg details (USD cost)
+                                if let Some(sl_amount) = sl_doc.get_document("amount").ok() {
+                                    if let Some(sl_data) = sl_amount.get_document("data").ok() {
+                                        let sl_dir =
+                                            sl_doc.get_str("direction").unwrap_or("Credit");
+
+                                        let usd_raw = if let Ok(q) = sl_data.get_str("qty") {
+                                            Decimal::from_str_exact(q).unwrap_or(Decimal::ZERO)
+                                        } else if let Ok(q) = sl_data.get_f64("qty") {
+                                            Decimal::try_from(q).unwrap_or(Decimal::ZERO)
+                                        } else {
+                                            Decimal::ZERO
+                                        };
+
+                                        // Credit means we gave USD (buying), Debit means we received USD (selling)
+                                        let usd_cost = if sl_dir == "Credit" {
+                                            usd_raw
+                                        } else {
+                                            -usd_raw
+                                        };
+
+                                        if !asset.is_empty() && qty_change != Decimal::ZERO {
+                                            trades.push(TradeData {
+                                                asset,
+                                                qty_change,
+                                                usd_cost,
+                                                timestamp,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         Err(e) => {
             eprintln!("Error aggregating fund positions for {}: {}", fund_id, e);
+            return Vec::new();
         }
+    }
+
+    // Step 2: Aggregate by asset
+    let mut position_map: HashMap<String, (Decimal, Decimal, i64)> = HashMap::new();
+
+    for trade in trades {
+        let entry =
+            position_map
+                .entry(trade.asset.clone())
+                .or_insert((Decimal::ZERO, Decimal::ZERO, 0));
+        entry.0 += trade.qty_change; // total qty
+        entry.1 += trade.usd_cost; // total cost basis
+        entry.2 = entry.2.max(trade.timestamp); // last updated
+    }
+
+    // Step 3: Build Position structs
+    let mut out: Vec<Position> = Vec::new();
+    for (asset, (qty, cost_basis, last_updated)) in position_map {
+        let avg_entry_price = if qty != Decimal::ZERO {
+            cost_basis / qty
+        } else {
+            Decimal::ZERO
+        };
+
+        out.push(Position {
+            fund_id: fund_id.to_string(),
+            asset,
+            qty,
+            price_in_base_ccy: Decimal::ZERO, // To be filled by market data service
+            cost_basis_usd: cost_basis,
+            avg_entry_price_usd: avg_entry_price,
+            last_updated,
+        });
     }
 
     out

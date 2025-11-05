@@ -415,10 +415,16 @@ export default function FundsPage() {
                                 Qty
                               </th>
                               <th className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">
+                                Avg Entry
+                              </th>
+                              <th className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">
                                 Price ({f.denominated_in})
                               </th>
                               <th className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">
                                 Value ({f.denominated_in})
+                              </th>
+                              <th className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">
+                                Unrealized P&L
                               </th>
                               <th className="px-2 py-1 text-left text-gray-700 dark:text-gray-300">
                                 Updated
@@ -428,12 +434,21 @@ export default function FundsPage() {
                           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {positions.map((p, i) => {
                               const qty = toNumber(p.qty);
+                              const avgEntry = toNumber(p.avg_entry_price_usd);
+                              const costBasis = toNumber(p.cost_basis_usd);
                               // Use real-time prices if available, otherwise fall back to stored price
                               const price = getPriceForAsset(
                                 p.asset,
                                 toNumber(p.price_in_base_ccy)
                               );
                               const value = qty * price;
+                              const unrealizedPnL = qty * (price - avgEntry);
+                              const pnlPercent =
+                                avgEntry > 0
+                                  ? ((price - avgEntry) / avgEntry) * 100
+                                  : 0;
+                              const isPnlPositive = unrealizedPnL >= 0;
+
                               return (
                                 <tr
                                   key={`${f.fund_id}-${p.asset}-${i}`}
@@ -444,6 +459,13 @@ export default function FundsPage() {
                                     {qty.toLocaleString(undefined, {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 8,
+                                    })}
+                                  </td>
+                                  <td className="px-2 py-1 text-right text-gray-600 dark:text-gray-400">
+                                    $
+                                    {avgEntry.toLocaleString(undefined, {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 6,
                                     })}
                                   </td>
                                   <td className="px-2 py-1 text-right">
@@ -459,6 +481,23 @@ export default function FundsPage() {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 2,
                                     })}
+                                  </td>
+                                  <td
+                                    className={`px-2 py-1 text-right font-medium ${
+                                      isPnlPositive
+                                        ? "text-green-600 dark:text-green-400"
+                                        : "text-red-600 dark:text-red-400"
+                                    }`}
+                                  >
+                                    {isPnlPositive ? "+" : ""}$
+                                    {unrealizedPnL.toLocaleString(undefined, {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                    <span className="ml-1 text-xs">
+                                      ({isPnlPositive ? "+" : ""}
+                                      {pnlPercent.toFixed(1)}%)
+                                    </span>
                                   </td>
                                   <td className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">
                                     {new Date(
@@ -517,6 +556,8 @@ type Position = {
   asset: string;
   qty: number | string;
   price_in_base_ccy: number | string;
+  cost_basis_usd: number | string;
+  avg_entry_price_usd: number | string;
   last_updated: number;
 };
 
