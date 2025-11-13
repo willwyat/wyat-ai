@@ -1413,7 +1413,106 @@ async fn get_positions_for_fund(state: &Arc<AppState>, fund_id: &str) -> Vec<Pos
                     }
                 }
 
-                // If we have both fund leg and stable leg, extract the trade data
+                // Process fund leg if it exists
+                if let Some(fl) = fund_leg {
+                    if let Some(fl_doc) = fl.as_document() {
+                        if let Some(fl_amount) = fl_doc.get_document("amount").ok() {
+                            if let Ok(kind) = fl_amount.get_str("kind") {
+                                // Handle fiat currency legs (USD, HKD)
+                                if kind == "Fiat" {
+                                    if let Some(fl_data) = fl_amount.get_document("data").ok() {
+                                        let ccy = fl_data.get_str("ccy").unwrap_or("").to_string();
+                                        let fl_dir = fl_doc.get_str("direction").unwrap_or("Debit");
+
+                                        // Parse amount
+                                        let amount_raw = if let Ok(a) = fl_data.get_str("amount") {
+                                            Decimal::from_str_exact(a).unwrap_or(Decimal::ZERO)
+                                        } else if let Ok(a) = fl_data.get_f64("amount") {
+                                            Decimal::try_from(a).unwrap_or(Decimal::ZERO)
+                                        } else {
+                                            Decimal::ZERO
+                                        };
+
+                                        // Debit increases position, Credit decreases position
+                                        let qty_change = if fl_dir == "Debit" {
+                                            amount_raw
+                                        } else {
+                                            -amount_raw
+                                        };
+
+                                        // For fiat, cost basis equals the amount in USD (or converted to USD)
+                                        let usd_cost = if ccy == "USD" {
+                                            qty_change
+                                        } else if ccy == "HKD" {
+                                            // Convert HKD to USD (approximate peg: 1 USD = 7.8 HKD)
+                                            qty_change
+                                                / Decimal::from_str_exact("7.8")
+                                                    .unwrap_or(Decimal::ONE)
+                                        } else {
+                                            qty_change // Default to same value
+                                        };
+
+                                        if !ccy.is_empty() && qty_change != Decimal::ZERO {
+                                            trades.push(TradeData {
+                                                asset: ccy,
+                                                qty_change,
+                                                usd_cost,
+                                                timestamp,
+                                            });
+                                        }
+                                    }
+                                }
+                                // Handle crypto legs without USDT/USDC pairs (e.g., transfers)
+                                else if kind == "Crypto" && stable_leg.is_none() {
+                                    if let Some(fl_data) = fl_amount.get_document("data").ok() {
+                                        let asset =
+                                            fl_data.get_str("asset").unwrap_or("").to_string();
+                                        let fl_dir = fl_doc.get_str("direction").unwrap_or("Debit");
+
+                                        // Parse qty
+                                        let qty_raw = if let Ok(q) = fl_data.get_str("qty") {
+                                            Decimal::from_str_exact(q).unwrap_or(Decimal::ZERO)
+                                        } else if let Ok(q) = fl_data.get_f64("qty") {
+                                            Decimal::try_from(q).unwrap_or(Decimal::ZERO)
+                                        } else {
+                                            Decimal::ZERO
+                                        };
+
+                                        let qty_change =
+                                            if fl_dir == "Debit" { qty_raw } else { -qty_raw };
+
+                                        // For transfers, try to get USD value from fx snapshot if available
+                                        let usd_cost =
+                                            if let Some(fx_doc) = fl_doc.get_document("fx").ok() {
+                                                if let Ok(rate_str) = fx_doc.get_str("rate") {
+                                                    let rate = Decimal::from_str_exact(rate_str)
+                                                        .unwrap_or(Decimal::ZERO);
+                                                    qty_change * rate
+                                                } else {
+                                                    Decimal::ZERO
+                                                }
+                                            } else {
+                                                // No fx snapshot, set cost basis to 0
+                                                // (will need to be valued using current market prices)
+                                                Decimal::ZERO
+                                            };
+
+                                        if !asset.is_empty() && qty_change != Decimal::ZERO {
+                                            trades.push(TradeData {
+                                                asset,
+                                                qty_change,
+                                                usd_cost,
+                                                timestamp,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If we have both fund leg and stable leg (for crypto trades), extract the trade data
                 if let (Some(fl), Some(sl)) = (fund_leg, stable_leg) {
                     if let (Some(fl_doc), Some(sl_doc)) = (fl.as_document(), sl.as_document()) {
                         // Extract fund leg details
