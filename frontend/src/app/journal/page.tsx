@@ -27,6 +27,7 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [allEntries, setAllEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [datesWithEntries, setDatesWithEntries] = useState<Set<string>>(
     new Set()
@@ -41,13 +42,25 @@ export default function JournalPage() {
   useEffect(() => {
     document.title = "Journal - Wyat AI";
 
+    console.log(
+      "🔍 Fetching journal entries from:",
+      `${API_URL}/journal/mongo/all`
+    );
+
     fetch(`${API_URL}/journal/mongo/all`, {
       headers: {
         "x-wyat-api-key": WYAT_API_KEY,
       },
     })
-      .then((res) => res.json())
+      .then((res) => {
+        console.log("📥 Response status:", res.status, res.statusText);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then((data) => {
+        console.log("✅ Successfully fetched", data.length, "journal entries");
         // Sort entries by date in descending order (newest first)
         const sortedEntries = data.sort((a: JournalEntry, b: JournalEntry) =>
           b.date.localeCompare(a.date)
@@ -62,6 +75,31 @@ export default function JournalPage() {
         setDatesWithEntries(dates);
 
         setLoading(false);
+      })
+      .catch((error) => {
+        console.error("❌ Error fetching journal entries:", error);
+        console.error("🔧 Check:");
+        console.error("  1. Backend is running");
+        console.error(
+          "  2. FRONTEND_ORIGIN in backend .env is set to:",
+          window.location.origin
+        );
+        console.error("  3. CORS configuration allows this domain");
+        console.error("  4. API_URL is correct:", API_URL);
+
+        // Set error message for UI
+        if (
+          error.message.includes("Failed to fetch") ||
+          error.name === "TypeError"
+        ) {
+          setError(
+            "Cannot connect to backend. This is likely a CORS issue. Check backend FRONTEND_ORIGIN environment variable."
+          );
+        } else {
+          setError(`Error loading journal entries: ${error.message}`);
+        }
+
+        setLoading(false); // Stop loading even on error
       });
   }, []);
 
@@ -244,7 +282,80 @@ export default function JournalPage() {
   // * * * RENDER. * * * //
   // =================== //
   // Render loading if loading is true
-  if (loading) return <p>Loading...</p>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">
+            Loading journal entries...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render error if there's an error
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-2xl w-full border border-red-500">
+          <div className="flex items-start gap-4">
+            <svg
+              className="w-6 h-6 text-red-500 flex-shrink-0 mt-1"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="flex-1">
+              <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-2">
+                Connection Error
+              </h2>
+              <p className="text-gray-700 dark:text-gray-300 mb-4">{error}</p>
+              <div className="bg-gray-100 dark:bg-gray-900 p-4 rounded-md text-sm font-mono mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-2">
+                  <strong>Troubleshooting:</strong>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-gray-600 dark:text-gray-400">
+                  <li>Check backend is running</li>
+                  <li>
+                    Update backend{" "}
+                    <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">
+                      FRONTEND_ORIGIN
+                    </code>{" "}
+                    to:{" "}
+                    <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">
+                      {window.location.origin}
+                    </code>
+                  </li>
+                  <li>Restart backend service</li>
+                  <li>
+                    API URL:{" "}
+                    <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">
+                      {API_URL}
+                    </code>
+                  </li>
+                </ol>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Render journal page
   return (
