@@ -19,6 +19,7 @@ import {
   ShieldCheckIcon,
   DocumentTextIcon,
   CurrencyDollarIcon,
+  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 
 // Helper function to get icon component
@@ -52,6 +53,8 @@ function getIconComponent(iconName: string) {
       return DocumentTextIcon;
     case "currency-dollar":
       return CurrencyDollarIcon;
+    case "check-circle":
+      return CheckCircleIcon;
     default:
       return HomeIcon;
   }

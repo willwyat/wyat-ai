@@ -3,6 +3,7 @@ mod journal;
 use axum::http::{HeaderName, HeaderValue, Method};
 use dotenvy::dotenv;
 mod meta;
+mod projects;
 mod storage;
 mod vitals;
 mod workout;
@@ -986,6 +987,15 @@ async fn main() {
         .route("/meta/places", post(add_place))
         .route("/meta/places", patch(update_place))
         .route("/meta/places/:tag", delete(delete_place))
+        // Projects routes
+        .route("/projects", get(projects::get_all_projects))
+        .route(
+            "/projects/with-planning",
+            get(projects::get_projects_with_planning),
+        )
+        .route("/projects/:id", get(projects::get_project_by_id))
+        .route("/project-planning", get(projects::get_all_planning))
+        .route("/project-planning/:id", get(projects::get_planning_by_id))
         // .route("/vitals/daily", get(get_daily_vitals))
         .route("/vitals/readiness", get(get_daily_readiness))
         .route("/vitals/activity", get(get_daily_activity))

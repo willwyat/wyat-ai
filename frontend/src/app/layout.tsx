@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, IBM_Plex_Serif, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { NavProvider } from "@/contexts/NavContext";
+import { PasscodeProvider } from "@/contexts/PasscodeContext";
 import Navigation from "@/components/Navigation";
 
 const inter = Inter({
@@ -123,10 +124,12 @@ export default function RootLayout({
         className={`${inter.variable} ${ibmPlexSerif.variable} ${ibmPlexSans.variable} font-sans antialiased`}
         suppressHydrationWarning={true}
       >
-        <NavProvider>
-          <Navigation />
-          <div className="lg:pl-20">{children}</div>
-        </NavProvider>
+        <PasscodeProvider>
+          <NavProvider>
+            <Navigation />
+            <div className="lg:pl-20">{children}</div>
+          </NavProvider>
+        </PasscodeProvider>
       </body>
     </html>
   );

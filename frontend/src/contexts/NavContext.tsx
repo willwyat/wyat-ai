@@ -60,6 +60,11 @@ const coreFeatures: NavigationItem[] = [
     label: "資本",
     icon: "currency-dollar",
   },
+  {
+    href: "/todo",
+    label: "やる事",
+    icon: "check-circle",
+  },
 ];
 
 const defaultNavigationSections: NavigationSection[] = [

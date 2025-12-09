@@ -9,6 +9,7 @@ export { useWorkoutStore } from "./workout-store";
 export { useMetaStore } from "./meta-store";
 export { useUIStore } from "./ui-store";
 export { usePreferencesStore } from "./preferences-store";
+export { useProjectStore } from "./project-store";
 
 // Export types
 export type {
